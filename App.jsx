@@ -3,6 +3,10 @@ import Cadastro from './Cadastro.jsx'
 import Admin from './Admin.jsx'
 import Empresario from './Empresario.jsx'
 import Motoboy from './Motoboy.jsx'
+import Rastreio from './Rastreio.jsx'
+import AdminGate from './AdminGate.jsx'
+import EmpresarioGate from './EmpresarioGate.jsx'
+import MotoboyGate from './MotoboyGate.jsx'
 
 export default function App() {
   return (
@@ -11,14 +15,17 @@ export default function App() {
         {/* Tela inicial — cadastro e login */}
         <Route path="/" element={<Cadastro />} />
 
-        {/* Painel do empresário */}
-        <Route path="/empresario" element={<Empresario />} />
+        {/* Painel do empresário — protegido temporariamente */}
+        <Route path="/empresario" element={<EmpresarioGate><Empresario /></EmpresarioGate>} />
 
-        {/* Painel do motoboy */}
-        <Route path="/motoboy" element={<Motoboy />} />
+        {/* Painel do motoboy — protegido temporariamente */}
+        <Route path="/motoboy" element={<MotoboyGate><Motoboy /></MotoboyGate>} />
 
-        {/* Painel administrativo (privado — só você acessa) */}
-        <Route path="/admin" element={<Admin />} />
+        {/* Painel administrativo — protegido por senha */}
+        <Route path="/admin" element={<AdminGate><Admin /></AdminGate>} />
+
+        {/* Rastreio público — o cliente final acompanha o pedido, sem login */}
+        <Route path="/rastreio" element={<Rastreio />} />
 
         {/* Qualquer outro link redireciona pra tela inicial */}
         <Route path="*" element={<Navigate to="/" replace />} />

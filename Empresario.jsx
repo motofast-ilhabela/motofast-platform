@@ -52,7 +52,7 @@ const HIST_INIT = [
 ];
 
 const SUPORTE_TEL = "5512999999999";
-const SUPORTE_HORARIO = "Seg a Sáb, 8h às 22h";
+const SUPORTE_HORARIO = "Seg-Sex 9h-22h • Sáb 9h-19h • Dom/feriados: fechado";
 
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
 function Card({ children, style={} }) {
@@ -166,7 +166,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar }) {
       bairro:bairroFinal, ref:endEfetivo.ref,
       pagamento, taxa:taxa?.e||0, obs,
       status:"aguardando", criadoEm:Date.now(),
-      motoboyNome:null, motoboyTel:null,
+      motoboyNome:null, motoboyTel:null, corridaId:null,
     });
     // Reset
     setBuscaCliente(""); setClienteSel(null); setModoEndereco("salvo");
@@ -339,10 +339,201 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar }) {
   );
 }
 
+// ─── ADICIONAR PEDIDO À CORRIDA (mesmo motoboy, sem escolher) ────────────────
+function ModalAddPedidoCorrida({ clientes, setClientes, motoboyNome, motoboyTel, vagaNum, onSalvar, onFechar }) {
+  const [buscaCliente, setBuscaCliente] = useState("");
+  const [clienteSel, setClienteSel] = useState(null);
+  const [modoEndereco, setModoEndereco] = useState("salvo");
+  const [novoEndereco, setNovoEndereco] = useState({rua:"",num:"",bairro:BAIRROS[0],ref:""});
+  const [clienteNome, setClienteNome] = useState("");
+  const [clienteTel, setClienteTel] = useState("");
+  const [pagamento, setPagamento] = useState("pix");
+  const [obs, setObs] = useState("");
+  const [erro, setErro] = useState("");
+
+  const resultados = buscaCliente.length>=2
+    ? clientes.filter(c=>c.nome.toLowerCase().includes(buscaCliente.toLowerCase())||c.tel.includes(buscaCliente))
+    : [];
+
+  const endEfetivo = (clienteSel && modoEndereco==="salvo") ? clienteSel.endereco : novoEndereco;
+  const bairroFinal = endEfetivo.bairro || BAIRROS[0];
+  const taxa = EMPRESA.taxas[bairroFinal];
+  const nomeEfetivo = clienteSel ? clienteSel.nome : clienteNome;
+  const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
+
+  function detectarBairro(rua) {
+    const l = rua.toLowerCase();
+    for (const b of BAIRROS) if (l.includes(b.toLowerCase())) return b;
+    return null;
+  }
+  function handleRua(v) {
+    const b = detectarBairro(v);
+    setNovoEndereco(prev=>({...prev, rua:v, bairro:b||prev.bairro}));
+  }
+
+  function salvar() {
+    if (!nomeEfetivo || !endEfetivo.rua || !endEfetivo.num) {
+      setErro("Preencha o nome do cliente e o endereço completo."); return;
+    }
+    if (!clienteSel) {
+      const novo = {id:Date.now(), nome:clienteNome||buscaCliente, tel:clienteTel, endereco:novoEndereco};
+      setClientes(p=>[...p, novo]);
+    } else if (modoEndereco==="novo") {
+      setClientes(p=>p.map(c=>c.id===clienteSel.id?{...c,endereco:novoEndereco}:c));
+    }
+    onSalvar({
+      id:Date.now(),
+      clienteNome:nomeEfetivo, clienteTel:telEfetivo,
+      rua:endEfetivo.rua, num:endEfetivo.num,
+      bairro:bairroFinal, ref:endEfetivo.ref,
+      pagamento, taxa:taxa?.e||0, obs,
+      status:"em_rota", criadoEm:Date.now(),
+      motoboyNome, motoboyTel,
+    });
+  }
+
+  return (
+    <Overlay onClose={onFechar} maxW={520} borderColor="#3b82f6">
+      <OvHeader titulo="➕ Adicionar Pedido à Corrida" sub={`${vagaNum}º pedido · Mesmo motoboy: ${motoboyNome}`} onClose={onFechar}/>
+
+      {erro && <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#f87171",fontSize:13}}>{erro}</div>}
+
+      <div style={{background:"#1a2f4a",border:"1px solid #3b82f6",borderRadius:8,padding:"10px 14px",marginBottom:14}}>
+        <div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>🏍️ Esse pedido vai com {motoboyNome} — sem precisar chamar outro motoboy.</div>
+      </div>
+
+      {/* Cliente */}
+      <Card style={{marginBottom:14}}>
+        <STitle>👤 Cliente</STitle>
+        <input value={buscaCliente}
+          onChange={e=>{setBuscaCliente(e.target.value);setClienteSel(null);}}
+          placeholder="Buscar por nome ou telefone..."
+          style={{background:"#0f172a",border:`1px solid ${clienteSel?"#34d399":"#374151"}`,borderRadius:8,color:"#f9fafb",padding:"9px 12px",width:"100%",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+
+        {resultados.length>0 && !clienteSel && (
+          <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,marginTop:6,overflow:"hidden",maxHeight:180,overflowY:"auto"}}>
+            {resultados.map(c=>(
+              <div key={c.id} onClick={()=>{setClienteSel(c);setBuscaCliente(c.nome);setModoEndereco("salvo");}}
+                style={{padding:"10px 14px",cursor:"pointer",borderBottom:"1px solid #1f2937"}}
+                onMouseOver={e=>e.currentTarget.style.background="#1f2937"}
+                onMouseOut={e=>e.currentTarget.style.background="transparent"}>
+                <div style={{color:"#f9fafb",fontWeight:600,fontSize:13}}>{c.nome}</div>
+                <div style={{color:"#6b7280",fontSize:11}}>📞 {c.tel} · 📍 {c.endereco?.rua}, {c.endereco?.num} — {c.endereco?.bairro}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {buscaCliente.length>=2 && resultados.length===0 && !clienteSel && (
+          <div style={{background:"#1a2035",borderRadius:8,padding:"9px 14px",marginTop:6}}>
+            <div style={{color:"#9ca3af",fontSize:12}}>Cliente não encontrado — preencha abaixo para cadastrar</div>
+          </div>
+        )}
+
+        {clienteSel && (
+          <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"12px 16px",marginTop:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+              <div>
+                <div style={{color:"#34d399",fontWeight:700,fontSize:14}}>✅ {clienteSel.nome}</div>
+                <div style={{color:"#6b7280",fontSize:12,marginTop:1}}>📞 {clienteSel.tel}</div>
+              </div>
+              <button onClick={()=>{setClienteSel(null);setBuscaCliente("");}}
+                style={{background:"none",border:"none",color:"#6b7280",cursor:"pointer",fontSize:20,lineHeight:1}}>×</button>
+            </div>
+            <div style={{background:"#111827",borderRadius:8,padding:"9px 12px",marginTop:10}}>
+              <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:4}}>📍 Endereço cadastrado:</div>
+              <div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{clienteSel.endereco?.rua}, {clienteSel.endereco?.num} — {clienteSel.endereco?.bairro}</div>
+              {clienteSel.endereco?.ref && <div style={{color:"#fbbf24",fontSize:11,marginTop:2}}>📌 {clienteSel.endereco.ref}</div>}
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:10}}>
+              <button onClick={()=>setModoEndereco("salvo")} style={{flex:1,padding:"9px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,background:modoEndereco==="salvo"?"#0d3d2e":"#0f172a",border:modoEndereco==="salvo"?"2px solid #34d399":"2px solid #1f2937",color:modoEndereco==="salvo"?"#34d399":"#6b7280"}}>
+                ✅ Mesmo endereço
+              </button>
+              <button onClick={()=>setModoEndereco("novo")} style={{flex:1,padding:"9px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,background:modoEndereco==="novo"?"#1a2f4a":"#0f172a",border:modoEndereco==="novo"?"2px solid #60a5fa":"2px solid #1f2937",color:modoEndereco==="novo"?"#60a5fa":"#6b7280"}}>
+                📍 Endereço diferente
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!clienteSel && buscaCliente.length>=2 && (
+          <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:10,padding:"14px",marginTop:10}}>
+            <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:10}}>📝 Novo cliente — será salvo automaticamente</div>
+            <div style={{display:"flex",gap:10}}>
+              <div style={{flex:2}}><Inp label="Nome completo *" value={clienteNome||buscaCliente} onChange={setClienteNome} placeholder="Nome do cliente"/></div>
+              <div style={{flex:1}}><Inp label="Telefone" value={clienteTel} onChange={setClienteTel} placeholder="(12) 99999-0000"/></div>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Endereço */}
+      {(modoEndereco==="novo" || !clienteSel) && buscaCliente.length>=2 && (
+        <Card style={{marginBottom:14}}>
+          <STitle>📍 Endereço de Entrega</STitle>
+          <div style={{display:"flex",gap:10}}>
+            <div style={{flex:3}}><Inp label="Rua / Avenida *" value={novoEndereco.rua} onChange={handleRua} placeholder="Ex: Rua das Flores"/></div>
+            <div style={{flex:1}}><Inp label="Número *" value={novoEndereco.num} onChange={v=>setNovoEndereco(p=>({...p,num:v}))} placeholder="123"/></div>
+          </div>
+          <SelInput label="Bairro *" value={novoEndereco.bairro} onChange={v=>setNovoEndereco(p=>({...p,bairro:v}))}>
+            {BAIRROS.map(b=><option key={b}>{b}</option>)}
+          </SelInput>
+          {novoEndereco.rua && novoEndereco.num && (
+            <div style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginTop:4}}>
+              <div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{novoEndereco.rua}, {novoEndereco.num} — {bairroFinal}</div>
+              {novoEndereco.ref && <div style={{color:"#fbbf24",fontSize:11,marginTop:2}}>📌 {novoEndereco.ref}</div>}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Taxa */}
+      {taxa && buscaCliente.length>=2 && (
+        <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"14px 18px",marginBottom:14}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>💰 Taxa de entrega — {bairroFinal}</div>
+          <div style={{color:"#34d399",fontWeight:900,fontSize:28}}>R${taxa.e}</div>
+        </div>
+      )}
+
+      {/* Pagamento */}
+      {buscaCliente.length>=2 && (
+        <Card style={{marginBottom:14}}>
+          <STitle>💳 Forma de Pagamento</STitle>
+          <div style={{display:"flex",gap:8,marginBottom:10}}>
+            {Object.entries(PG).map(([k,p])=>(
+              <button key={k} onClick={()=>setPagamento(k)} style={{flex:1,padding:"12px 6px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,background:pagamento===k?"#1e293b":"#0f172a",border:pagamento===k?`2px solid ${p.cor}`:"2px solid #1f2937",color:pagamento===k?p.cor:"#6b7280"}}>
+                {p.icon}<br/>{p.label}
+              </button>
+            ))}
+          </div>
+          {pagamento==="dinheiro" && <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"10px 14px"}}>
+            <div style={{color:"#fbbf24",fontWeight:700,fontSize:13}}>💵 Motoboy cobrará na entrega e retornará com o dinheiro</div>
+          </div>}
+          {pagamento==="cartao" && <div style={{background:"#1a2f4a",border:"1px solid #60a5fa",borderRadius:8,padding:"10px 14px"}}>
+            <div style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>💳 Disponibilize a maquininha para o motoboy</div>
+          </div>}
+          {pagamento==="pix" && <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px"}}>
+            <div style={{color:"#34d399",fontWeight:700,fontSize:13}}>💠 Pix já foi pago — motoboy só entrega</div>
+          </div>}
+        </Card>
+      )}
+
+      {buscaCliente.length>=2 && (
+        <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
+      )}
+
+      <Btn onClick={salvar} full disabled={buscaCliente.length<2}>
+        ➕ Adicionar à Corrida
+      </Btn>
+    </Overlay>
+  );
+}
+
 // ─── PEDIDOS EM ANDAMENTO ─────────────────────────────────────────────────────
-function PedidosAtivos({ pedidos, setPedidos }) {
+function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes }) {
   const [tick, setTick] = useState(0);
   const [modalMapa, setModalMapa] = useState(null);
+  const [modalAddCorrida, setModalAddCorrida] = useState(null); // {corridaId, motoboyNome, motoboyTel, vagaNum}
 
   useEffect(()=>{
     const t = setInterval(()=>setTick(x=>x+1), 1000);
@@ -354,7 +545,7 @@ function PedidosAtivos({ pedidos, setPedidos }) {
     setPedidos(prev=>prev.map(p=>{
       if (p.status==="aguardando") {
         const seg = Math.floor((Date.now()-p.criadoEm)/1000);
-        if (seg>=5 && seg<6) return {...p, status:"em_rota", motoboyNome:"Carlos Silva", motoboyTel:"(12) 99801-2233", aceitoEm:Date.now()};
+        if (seg>=5 && seg<6) return {...p, status:"em_rota", motoboyNome:"Carlos Silva", motoboyTel:"(12) 99801-2233", corridaId:p.id, aceitoEm:Date.now()};
       }
       return p;
     }));
@@ -364,8 +555,28 @@ function PedidosAtivos({ pedidos, setPedidos }) {
     setPedidos(prev=>prev.map(p=>p.id===id?{...p,status:"cancelado"}:p));
   }
 
+  function adicionarPedidoCorrida(novoPedido) {
+    setPedidos(prev=>[...prev, novoPedido]);
+    setModalAddCorrida(null);
+  }
+
   const ativos = pedidos.filter(p=>p.status==="aguardando"||p.status==="em_rota");
   const recentes = pedidos.filter(p=>p.status==="entregue"||p.status==="cancelado").slice(0,3);
+
+  const aguardando = ativos.filter(p=>p.status==="aguardando");
+  const emRotaPedidos = ativos.filter(p=>p.status==="em_rota");
+
+  // Agrupa pedidos em rota pela corrida (mesmo motoboy/mesma saída)
+  const corridasMap = {};
+  emRotaPedidos.forEach(p=>{
+    const cid = p.corridaId || p.id;
+    if (!corridasMap[cid]) corridasMap[cid] = [];
+    corridasMap[cid].push(p);
+  });
+  const corridas = Object.entries(corridasMap).map(([corridaId, lista])=>({
+    corridaId,
+    pedidos: lista.slice().sort((a,b)=>a.criadoEm-b.criadoEm),
+  }));
 
   function formatTempo(ms) {
     const s = Math.floor(ms/1000);
@@ -387,23 +598,19 @@ function PedidosAtivos({ pedidos, setPedidos }) {
     <div>
       <div style={{color:"#34d399",fontWeight:800,fontSize:20,marginBottom:14}}>🚦 Pedidos em Andamento</div>
 
-      {ativos.map(p=>{
+      {/* Pedidos aguardando motoboy aceitar */}
+      {aguardando.map(p=>{
         const decorrido = Date.now()-p.criadoEm;
         const pg = PG[p.pagamento]||{icon:"•",cor:"#9ca3af",label:p.pagamento};
-        const emRota = p.status==="em_rota";
 
         return (
-          <Card key={p.id} style={{marginBottom:14,border:`1px solid ${emRota?"#34d399":"#fbbf24"}`}}>
+          <Card key={p.id} style={{marginBottom:14,border:"1px solid #fbbf24"}}>
             {/* Status */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12,flexWrap:"wrap",gap:8}}>
               <div>
-                {emRota
-                  ? <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                      <span style={{background:"#0d3d2e",color:"#34d399",padding:"3px 12px",borderRadius:20,fontSize:13,fontWeight:700}}>🏍️ Motoboy a caminho!</span>
-                    </div>
-                  : <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                      <span style={{background:"#3d2a00",color:"#fbbf24",padding:"3px 12px",borderRadius:20,fontSize:13,fontWeight:700}}>⏳ Aguardando motoboy...</span>
-                    </div>}
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                  <span style={{background:"#3d2a00",color:"#fbbf24",padding:"3px 12px",borderRadius:20,fontSize:13,fontWeight:700}}>⏳ Aguardando motoboy...</span>
+                </div>
                 <div style={{color:"#f9fafb",fontWeight:700,fontSize:16}}>{p.clienteNome}</div>
                 <div style={{color:"#6b7280",fontSize:12}}>📞 {p.clienteTel||"—"} · {formatTempo(decorrido)} atrás</div>
               </div>
@@ -413,27 +620,6 @@ function PedidosAtivos({ pedidos, setPedidos }) {
                 <div style={{marginTop:4}}><Tag label={`${pg.icon} ${pg.label}`} cor={pg.cor}/></div>
               </div>
             </div>
-
-            {/* Motoboy (quando em rota) */}
-            {emRota && p.motoboyNome && (
-              <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px",marginBottom:12}}>
-                <div style={{color:"#34d399",fontWeight:700,fontSize:13,marginBottom:4}}>🏍️ Motoboy: {p.motoboyNome}</div>
-                <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                  <a href={`https://wa.me/55${p.motoboyTel?.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
-                    style={{background:"#111827",color:"#34d399",padding:"5px 12px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>
-                    💬 WhatsApp
-                  </a>
-                  <a href={`tel:${p.motoboyTel?.replace(/\D/g,"")}`}
-                    style={{background:"#111827",color:"#60a5fa",padding:"5px 12px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>
-                    📱 Ligar
-                  </a>
-                  <button onClick={()=>setModalMapa(p)}
-                    style={{background:"#1a3a5c",color:"#60a5fa",border:"1px solid #3b82f6",padding:"5px 12px",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer"}}>
-                    🗺️ Ver no Mapa
-                  </button>
-                </div>
-              </div>
-            )}
 
             {/* Endereço */}
             <div style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginBottom:12}}>
@@ -451,9 +637,88 @@ function PedidosAtivos({ pedidos, setPedidos }) {
               <div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>💳 Entregue a maquininha ao motoboy antes de ele sair.</div>
             </div>}
 
-            {/* Ação cancelar */}
-            {!emRota && (
-              <Btn small cor="perigo" onClick={()=>cancelar(p.id)}>❌ Cancelar pedido</Btn>
+            <Btn small cor="perigo" onClick={()=>cancelar(p.id)}>❌ Cancelar pedido</Btn>
+          </Card>
+        );
+      })}
+
+      {/* Corridas em rota — agrupa até 3 pedidos no mesmo motoboy */}
+      {corridas.map(corrida=>{
+        const primeiro = corrida.pedidos[0];
+        const totalCorrida = corrida.pedidos.reduce((s,p)=>s+(p.taxa||0),0);
+
+        return (
+          <Card key={corrida.corridaId} style={{marginBottom:14,border:"1px solid #34d399"}}>
+            {/* Status */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12,flexWrap:"wrap",gap:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <span style={{background:"#0d3d2e",color:"#34d399",padding:"3px 12px",borderRadius:20,fontSize:13,fontWeight:700}}>🏍️ Motoboy a caminho!</span>
+                <Tag label={`${corrida.pedidos.length}/3 pedido${corrida.pedidos.length!==1?"s":""} nesta corrida`} cor="#60a5fa"/>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{color:"#6b7280",fontSize:11}}>Total da corrida</div>
+                <div style={{color:"#34d399",fontWeight:900,fontSize:24}}>R${totalCorrida}</div>
+              </div>
+            </div>
+
+            {/* Motoboy (uma vez só por corrida) */}
+            {primeiro.motoboyNome && (
+              <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px",marginBottom:12}}>
+                <div style={{color:"#34d399",fontWeight:700,fontSize:13,marginBottom:4}}>🏍️ Motoboy: {primeiro.motoboyNome}</div>
+                <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                  <a href={`https://wa.me/55${primeiro.motoboyTel?.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                    style={{background:"#111827",color:"#34d399",padding:"5px 12px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>
+                    💬 WhatsApp
+                  </a>
+                  <a href={`tel:${primeiro.motoboyTel?.replace(/\D/g,"")}`}
+                    style={{background:"#111827",color:"#60a5fa",padding:"5px 12px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>
+                    📱 Ligar
+                  </a>
+                  <button onClick={()=>setModalMapa(primeiro)}
+                    style={{background:"#1a3a5c",color:"#60a5fa",border:"1px solid #3b82f6",padding:"5px 12px",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                    🗺️ Ver no Mapa
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Pedidos desta corrida */}
+            {corrida.pedidos.map((p,i)=>{
+              const pg = PG[p.pagamento]||{icon:"•",cor:"#9ca3af",label:p.pagamento};
+              return (
+                <div key={p.id} style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                    <div>
+                      <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,marginBottom:3}}>PEDIDO #{i+1} — {p.clienteNome}</div>
+                      <div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{p.rua}, {p.num} — {p.bairro}</div>
+                      {p.ref && <div style={{color:"#fbbf24",fontSize:11,marginTop:2}}>📌 Ref: {p.ref}</div>}
+                      {p.obs && <div style={{color:"#9ca3af",fontSize:11,marginTop:2}}>💬 Obs: {p.obs}</div>}
+                      {p.pagamento==="dinheiro" && <div style={{color:"#fbbf24",fontSize:11,marginTop:3,fontWeight:700}}>💵 Troco — motoboy retorna com o dinheiro</div>}
+                      {p.pagamento==="cartao" && <div style={{color:"#60a5fa",fontSize:11,marginTop:3,fontWeight:700}}>💳 Maquininha já entregue ao motoboy</div>}
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{color:"#34d399",fontWeight:800,fontSize:18}}>R${p.taxa}</div>
+                      <Tag label={`${pg.icon} ${pg.label}`} cor={pg.cor}/>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Adicionar pedido extra à mesma corrida (máx 3) ou aviso de limite */}
+            {corrida.pedidos.length<3 ? (
+              <Btn small cor="azul" full onClick={()=>setModalAddCorrida({
+                corridaId: corrida.corridaId,
+                motoboyNome: primeiro.motoboyNome,
+                motoboyTel: primeiro.motoboyTel,
+                vagaNum: corrida.pedidos.length+1,
+              })}>
+                ➕ Adicionar pedido a esta corrida (vaga {corrida.pedidos.length+1}/3)
+              </Btn>
+            ) : (
+              <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px"}}>
+                <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⚠️ Máximo de 3 pedidos atingido para esta corrida. Para um 4º pedido, use "Nova Entrega" (vai chamar outro motoboy).</div>
+              </div>
             )}
           </Card>
         );
@@ -500,6 +765,19 @@ function PedidosAtivos({ pedidos, setPedidos }) {
             <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>📞 {modalMapa.motoboyTel}</div>
           </div>
         </Overlay>
+      )}
+
+      {/* Modal adicionar pedido à corrida (mesmo motoboy, sem escolher outro) */}
+      {modalAddCorrida && (
+        <ModalAddPedidoCorrida
+          clientes={clientes}
+          setClientes={setClientes}
+          motoboyNome={modalAddCorrida.motoboyNome}
+          motoboyTel={modalAddCorrida.motoboyTel}
+          vagaNum={modalAddCorrida.vagaNum}
+          onSalvar={(novoPedido)=>adicionarPedidoCorrida({...novoPedido, corridaId:modalAddCorrida.corridaId})}
+          onFechar={()=>setModalAddCorrida(null)}
+        />
       )}
     </div>
   );
@@ -766,7 +1044,7 @@ export default function AppEmpresario() {
       {/* Conteúdo */}
       <div style={{maxWidth:900,margin:"0 auto",padding:"24px 20px"}}>
         {aba==="nova"      && <SolicitarEntrega clientes={clientes} setClientes={setClientes} onPublicar={publicarPedido}/>}
-        {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos}/>}
+        {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes}/>}
         {aba==="historico" && <HistoricoEmp historico={historico} pedidos={pedidos}/>}
         {aba==="clientes"  && <ClientesSalvos clientes={clientes} setClientes={setClientes}/>}
       </div>

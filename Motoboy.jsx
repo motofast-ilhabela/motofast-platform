@@ -131,7 +131,7 @@ const TEMPO_PEDIDO = 30;       // segundos por rodada
 const INTERVALO_SOM = 5;       // toca a cada 5 segundos dentro da rodada
 const MAX_TENTATIVAS = 10;     // 10 rodadas × 30s = 5 minutos
 const SUPORTE_TEL = "5512999999999"; // troque pelo seu WhatsApp
-const SUPORTE_HORARIO = "Seg a Sáb, 8h às 22h";
+const SUPORTE_HORARIO = "Seg-Sex 9h-22h • Sáb 9h-19h • Dom/feriados: fechado";
 
 // ─── SOM DE NOTIFICAÇÃO ───────────────────────────────────────────────────────
 let _audioCtx = null;
@@ -293,6 +293,30 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
     window.open(`https://www.google.com/maps/dir/?api=1&destination=${end}&travelmode=driving`,"_blank");
   }
 
+  // Link de rastreio público + mensagem pronta pro WhatsApp do cliente
+  function linkRastreio(p) {
+    const params = new URLSearchParams({
+      cliente: p.clienteNome || "",
+      empresa: p.empresaNome || "",
+      empresaTel: p.empresaTel || "",
+      motoboy: MOTOBOY.nomeCompleto,
+      bairro: p.bairro || "",
+      rua: p.rua || "",
+      num: p.num || "",
+      ref: p.ref || "",
+    });
+    return `${window.location.origin}/rastreio?${params.toString()}`;
+  }
+  function linkWhatsRastreio(p) {
+    const link = linkRastreio(p);
+    const empresaWa = p.empresaTel ? `https://wa.me/55${p.empresaTel.replace(/\D/g,"")}` : "";
+    const contato = empresaWa
+      ? `entre em contato direto com *${p.empresaNome}*:\n${empresaWa}`
+      : `entre em contato direto com *${p.empresaNome}*`;
+    const msg = `Olá ${p.clienteNome}! 🛵\n\nSeu pedido na *${p.empresaNome}* já saiu para entrega!\n\n📍 Acompanhe em tempo real:\n${link}\n\n⚠️ Esta mensagem é apenas para você acompanhar a entrega — não responda por aqui.\n\nPara falar sobre o seu pedido (trocas, problemas, dúvidas), ${contato}`;
+    return `https://wa.me/55${(p.clienteTel||"").replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`;
+  }
+
   return (
     <div>
       <div style={{marginBottom:14}}>
@@ -377,6 +401,13 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
                 <div style={{background:"#0f172a",borderRadius:8,padding:"8px 12px",marginBottom:10}}>
                   <div style={{color:"#34d399",fontSize:12,fontWeight:700}}>✅ Cliente foi avisado automaticamente que o pedido está a caminho!</div>
                 </div>
+
+                {p.clienteTel && (
+                  <a href={linkWhatsRastreio(p)} target="_blank" rel="noreferrer"
+                    style={{display:"block",width:"100%",padding:"11px",borderRadius:8,background:"#0d3d2e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,fontSize:13,textAlign:"center",textDecoration:"none",marginBottom:10,boxSizing:"border-box"}}>
+                    📲 Enviar link de rastreio ao cliente
+                  </a>
+                )}
 
                 <button onClick={()=>marcarEntregue(p.id)} style={{width:"100%",padding:"14px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
                   ✅ Confirmar entrega
@@ -598,6 +629,7 @@ export default function AppMotoboy() {
       const novoPedido = {
         id: Date.now(),
         empresaNome: "Açaí da Hora",
+        empresaTel: "(12) 3894-3344",
         clienteNome: "Maria Santos",
         clienteTel: "(12) 99802-2222",
         rua: "Rua do Sol", num: "120",
