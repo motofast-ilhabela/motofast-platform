@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { supabase } from "./supabaseClient.js";
 
 // ─── VALIDAÇÕES ───────────────────────────────────────────────────────────────
 function validarSenha(senha) {
@@ -169,10 +170,43 @@ function CadastroEmpresario({ onVoltar, onSucesso }) {
     setStep(s=>s+1);
   }
 
-  function enviar() {
+  async function enviar() {
     if (!validarStep3()) return;
     setLoading(true);
-    setTimeout(()=>{ setLoading(false); onSucesso(); }, 1500);
+
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: form.email,
+      password: form.senha,
+    });
+
+    if (authError) {
+      setLoading(false);
+      setErros({ email: authError.message === "User already registered" ? "Este e-mail já está cadastrado" : "Erro ao criar conta: " + authError.message });
+      setStep(3);
+      return;
+    }
+
+    const { error: dbError } = await supabase.from("empresarios").insert({
+      nome: form.nomeEstab,
+      cnpj: form.cnpj,
+      endereco_estabelecimento: form.enderecoEstab,
+      bairro: form.bairro,
+      telefone: form.tel,
+      nome_dono: form.nomeDono,
+      tel_dono: form.whatsappDono,
+      nome_socio: form.nomeSocio || null,
+      tel_socio: form.whatsappSocio || null,
+    });
+
+    setLoading(false);
+
+    if (dbError) {
+      setErros({ nomeEstab: "Conta criada, mas houve um erro ao salvar seus dados. Fale com o suporte." });
+      setStep(1);
+      return;
+    }
+
+    onSucesso();
   }
 
   const steps = ["Estabelecimento","Responsável","Acesso"];
@@ -320,10 +354,43 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
     setStep(s=>s+1);
   }
 
-  function enviar() {
+  async function enviar() {
     if (!validarStep3()) return;
     setLoading(true);
-    setTimeout(()=>{ setLoading(false); onSucesso(); }, 1500);
+
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: form.email,
+      password: form.senha,
+    });
+
+    if (authError) {
+      setLoading(false);
+      setErros({ email: authError.message === "User already registered" ? "Este e-mail já está cadastrado" : "Erro ao criar conta: " + authError.message });
+      setStep(3);
+      return;
+    }
+
+    const { error: dbError } = await supabase.from("motoboys").insert({
+      nome_completo: form.nomeCompleto,
+      cpf: form.cpf,
+      rg: form.rg,
+      nascimento: form.nascimento,
+      nome_pai: form.nomePai,
+      nome_mae: form.nomeMae,
+      endereco: form.endereco,
+      telefone: form.tel,
+      pix: form.pix,
+    });
+
+    setLoading(false);
+
+    if (dbError) {
+      setErros({ tel: "Conta criada, mas houve um erro ao salvar seus dados. Fale com o suporte." });
+      setStep(2);
+      return;
+    }
+
+    onSucesso();
   }
 
   const steps = ["Dados Pessoais","Contato & PIX","Acesso"];
