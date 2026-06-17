@@ -370,11 +370,19 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
       return;
     }
 
+    // Converte data de DD/MM/AAAA para AAAA-MM-DD (formato que o banco entende)
+    function converterData(dataBr) {
+      const partes = dataBr.split("/");
+      if (partes.length !== 3) return null;
+      const [dia, mes, ano] = partes;
+      return `${ano}-${mes.padStart(2,"0")}-${dia.padStart(2,"0")}`;
+    }
+
     const { error: dbError } = await supabase.from("motoboys").insert({
       nome_completo: form.nomeCompleto,
       cpf: form.cpf,
       rg: form.rg,
-      nascimento: form.nascimento,
+      nascimento: converterData(form.nascimento),
       nome_pai: form.nomePai,
       nome_mae: form.nomeMae,
       endereco: form.endereco,
@@ -385,6 +393,7 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
     setLoading(false);
 
     if (dbError) {
+      console.error("Erro ao salvar motoboy:", dbError);
       setErros({ tel: "Conta criada, mas houve um erro ao salvar seus dados. Fale com o suporte." });
       setStep(2);
       return;
@@ -654,7 +663,7 @@ export default function AppCadastro() {
 
       {/* Footer */}
       <div style={{textAlign:"center",padding:"16px",borderTop:"1px solid #1f2937"}}>
-        <div style={{color:"#4b5563",fontSize:12}}>⚡ MotoFast · Ilhabela/SP · Suporte: Seg a Sáb, 8h às 22h</div>
+        <div style={{color:"#4b5563",fontSize:12}}>⚡ MotoFast · Ilhabela/SP · Suporte: Seg-Sex 9h-22h • Sáb 9h-19h • Dom/feriados: fechado</div>
       </div>
     </div>
   );
