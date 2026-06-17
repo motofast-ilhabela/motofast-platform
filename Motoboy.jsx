@@ -196,11 +196,6 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
   const pct = (restantes/TEMPO_PEDIDO)*100;
   const corTimer = pct>50?"#34d399":pct>25?"#fbbf24":"#ef4444";
 
-  function abrirMaps() {
-    const end = encodeURIComponent(`${pedido.rua}, ${pedido.num}, ${pedido.bairro}, Ilhabela, SP`);
-    window.open(`https://www.google.com/maps/dir/?api=1&destination=${end}&travelmode=driving`,"_blank");
-  }
-
   return (
     <Overlay maxW={460} borderColor={pulsando?"#34d399":"#1a5c3a"}>
       <div style={{textAlign:"center",marginBottom:16}}>
@@ -226,30 +221,29 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
           <div style={{color:"#6b7280",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Você vai receber</div>
           <div style={{color:"#34d399",fontWeight:900,fontSize:48,lineHeight:1}}>R${pedido.taxa}</div>
         </div>
+
+        <div style={{marginBottom:10}}>
+          <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏪 1º — Buscar no estabelecimento</div>
+          <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{pedido.empresaNome}</div>
+          <div style={{color:"#9ca3af",fontSize:13,marginTop:2}}>{pedido.empresaEndereco||"Perequê, Ilhabela/SP"}</div>
+        </div>
+
         <div style={{marginBottom:12}}>
-          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>📍 Endereço de entrega</div>
-          <div style={{color:"#f9fafb",fontWeight:700,fontSize:16}}>{pedido.rua}, {pedido.num}</div>
+          <div style={{color:"#34d399",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏠 2º — Entregar para</div>
+          <div style={{color:"#f9fafb",fontWeight:700,fontSize:16}}>{pedido.clienteNome}</div>
+          <div style={{color:"#f9fafb",fontWeight:600,fontSize:14,marginTop:2}}>{pedido.rua}, {pedido.num}</div>
           <div style={{color:"#34d399",fontSize:14,marginTop:2}}>{pedido.bairro} — Ilhabela/SP</div>
           {pedido.ref && <div style={{color:"#fbbf24",fontSize:13,marginTop:4}}>📌 {pedido.ref}</div>}
         </div>
-        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-          <div style={{background:"#111827",borderRadius:8,padding:"8px 12px",flex:1}}>
-            <div style={{color:"#6b7280",fontSize:10,marginBottom:2}}>Estabelecimento</div>
-            <div style={{color:"#f9fafb",fontWeight:600,fontSize:13}}>{pedido.empresaNome}</div>
-          </div>
-          <div style={{background:"#111827",borderRadius:8,padding:"8px 12px",flex:1}}>
-            <div style={{color:"#6b7280",fontSize:10,marginBottom:2}}>Pagamento</div>
-            <div style={{color:PG[pedido.pagamento]?.cor,fontWeight:700,fontSize:13}}>{PG[pedido.pagamento]?.icon} {PG[pedido.pagamento]?.label}</div>
-          </div>
+
+        <div style={{textAlign:"center",background:"#111827",borderRadius:10,padding:"12px",marginBottom:0}}>
+          <div style={{color:"#6b7280",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Forma de pagamento</div>
+          <div style={{color:PG[pedido.pagamento]?.cor,fontWeight:900,fontSize:22}}>{PG[pedido.pagamento]?.icon} {PG[pedido.pagamento]?.label}</div>
         </div>
         {pedido.pagamento==="dinheiro" && <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"8px 12px",marginTop:10}}><div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>💵 Cobrar na entrega e retornar com o dinheiro</div></div>}
         {pedido.pagamento==="cartao" && <div style={{background:"#1a2f4a",border:"1px solid #60a5fa",borderRadius:8,padding:"8px 12px",marginTop:10}}><div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>💳 Pegar a maquininha no estabelecimento</div></div>}
         {pedido.pagamento==="pix" && <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"8px 12px",marginTop:10}}><div style={{color:"#34d399",fontSize:12,fontWeight:700}}>💠 Pix já pago — só entregar</div></div>}
       </div>
-
-      <button onClick={abrirMaps} style={{width:"100%",padding:"10px",borderRadius:8,background:"#1a3a5c",border:"1px solid #3b82f6",color:"#60a5fa",fontWeight:700,fontSize:13,cursor:"pointer",marginBottom:12}}>
-        🗺️ Ver rota no Google Maps
-      </button>
 
       <div style={{display:"flex",gap:10}}>
         <button onClick={onRecusar} style={{flex:1,padding:"14px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:15,cursor:"pointer"}}>
@@ -293,30 +287,6 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
     window.open(`https://www.google.com/maps/dir/?api=1&destination=${end}&travelmode=driving`,"_blank");
   }
 
-  // Link de rastreio público + mensagem pronta pro WhatsApp do cliente
-  function linkRastreio(p) {
-    const params = new URLSearchParams({
-      cliente: p.clienteNome || "",
-      empresa: p.empresaNome || "",
-      empresaTel: p.empresaTel || "",
-      motoboy: MOTOBOY.nomeCompleto,
-      bairro: p.bairro || "",
-      rua: p.rua || "",
-      num: p.num || "",
-      ref: p.ref || "",
-    });
-    return `${window.location.origin}/rastreio?${params.toString()}`;
-  }
-  function linkWhatsRastreio(p) {
-    const link = linkRastreio(p);
-    const empresaWa = p.empresaTel ? `https://wa.me/55${p.empresaTel.replace(/\D/g,"")}` : "";
-    const contato = empresaWa
-      ? `entre em contato direto com *${p.empresaNome}*:\n${empresaWa}`
-      : `entre em contato direto com *${p.empresaNome}*`;
-    const msg = `Olá ${p.clienteNome}! 🛵\n\nSeu pedido na *${p.empresaNome}* já saiu para entrega!\n\n📍 Acompanhe em tempo real:\n${link}\n\n⚠️ Esta mensagem é apenas para você acompanhar a entrega — não responda por aqui.\n\nPara falar sobre o seu pedido (trocas, problemas, dúvidas), ${contato}`;
-    return `https://wa.me/55${(p.clienteTel||"").replace(/\D/g,"")}?text=${encodeURIComponent(msg)}`;
-  }
-
   return (
     <div>
       <div style={{marginBottom:14}}>
@@ -336,22 +306,10 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
         return (
           <Card key={p.id} style={{marginBottom:12,border:`1px solid ${entregue?"#34d399":saiu?"#fbbf24":"#3b82f6"}`,background:entregue?"#0a1f14":"#111827"}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-              <div>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
-                  {entregue ? <Tag label="✅ Entregue" cor="#34d399"/>
-                    : saiu ? <Tag label="🏍️ A caminho do cliente" cor="#fbbf24"/>
-                    : <Tag label={`📦 Pedido #${i+1} — Buscar no estabelecimento`} cor="#60a5fa"/>}
-                </div>
-                <div style={{color:"#f9fafb",fontWeight:700,fontSize:16}}>{p.clienteNome}</div>
-                {p.clienteTel && saiu && (
-                  <div style={{display:"flex",gap:8,marginTop:4,flexWrap:"wrap"}}>
-                    <span style={{color:"#9ca3af",fontSize:12}}>📞 {p.clienteTel}</span>
-                    <a href={`https://wa.me/55${p.clienteTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
-                      style={{background:"#0d3d2e",color:"#34d399",padding:"2px 8px",borderRadius:6,fontSize:11,fontWeight:700,textDecoration:"none"}}>💬 WhatsApp</a>
-                    <a href={`tel:${p.clienteTel.replace(/\D/g,"")}`}
-                      style={{background:"#1a2f4a",color:"#60a5fa",padding:"2px 8px",borderRadius:6,fontSize:11,fontWeight:700,textDecoration:"none"}}>📱 Ligar</a>
-                  </div>
-                )}
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                {entregue ? <Tag label="✅ Entregue" cor="#34d399"/>
+                  : saiu ? <Tag label="🏍️ A caminho do cliente" cor="#fbbf24"/>
+                  : <Tag label={`📦 Pedido #${i+1} — Buscar no estabelecimento`} cor="#60a5fa"/>}
               </div>
               <div style={{textAlign:"right"}}>
                 <div style={{color:pg.cor,fontSize:13,fontWeight:700}}>{pg.icon} {pg.label}</div>
@@ -363,12 +321,21 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
             {!entregue && !saiu && (
               <div>
                 <div style={{background:"#1a2f4a",border:"1px solid #3b82f6",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
-                  <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏪 Ir buscar no estabelecimento</div>
+                  <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏪 1º — Ir buscar no estabelecimento</div>
                   <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{p.empresaNome}</div>
                   <div style={{color:"#9ca3af",fontSize:13,marginTop:2}}>{p.empresaEndereco||"Perequê, Ilhabela/SP"}</div>
                   <button onClick={()=>abrirGPSEstab(p)} style={{marginTop:8,width:"100%",padding:"9px",borderRadius:8,background:"#1e3a5f",border:"1px solid #3b82f6",color:"#60a5fa",fontWeight:700,fontSize:13,cursor:"pointer"}}>
                     🗺️ Abrir rota para o estabelecimento
                   </button>
+                </div>
+
+                {/* Endereço do cliente já visível, mesmo antes de sair — facilita a vida do motoboy */}
+                <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+                  <div style={{color:"#6b7280",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏠 2º — Depois, entregar para</div>
+                  <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{p.clienteNome}</div>
+                  <div style={{color:"#d1d5db",fontWeight:600,fontSize:14,marginTop:2}}>{p.rua}, {p.num}</div>
+                  <div style={{color:"#9ca3af",fontSize:13,marginTop:2}}>{p.bairro} — Ilhabela/SP</div>
+                  {p.ref && <div style={{color:"#fbbf24",fontSize:12,marginTop:3}}>📌 Ref: {p.ref}</div>}
                 </div>
 
                 {p.pagamento==="dinheiro" && <div style={{background:"#3d2a00",borderRadius:8,padding:"8px 12px",marginBottom:10}}><div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>💵 Cobrar na entrega e retornar com o dinheiro</div></div>}
@@ -379,7 +346,7 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
                   🏍️ Saí do estabelecimento — iniciar entrega
                 </button>
                 <div style={{color:"#4b5563",fontSize:11,textAlign:"center",marginTop:6}}>
-                  ⚠️ Clique obrigatório ao sair — avisa o cliente automaticamente
+                  ⚠️ Clique obrigatório ao sair — registra o horário e libera a navegação para o cliente
                 </div>
               </div>
             )}
@@ -389,25 +356,27 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
               <div>
                 <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
                   <div style={{color:"#34d399",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏠 Entregar ao cliente</div>
-                  <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{p.rua}, {p.num}</div>
+                  <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{p.clienteNome}</div>
+                  <div style={{color:"#f9fafb",fontWeight:600,fontSize:14,marginTop:2}}>{p.rua}, {p.num}</div>
                   <div style={{color:"#34d399",fontSize:13,marginTop:2}}>{p.bairro} — Ilhabela/SP</div>
                   {p.ref && <div style={{color:"#fbbf24",fontSize:12,marginTop:3}}>📌 Ref: {p.ref}</div>}
                   {p.obs && <div style={{color:"#9ca3af",fontSize:12,marginTop:3}}>💬 {p.obs}</div>}
+                  {p.clienteTel && (
+                    <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
+                      <a href={`https://wa.me/55${p.clienteTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                        style={{background:"#0a2a1e",color:"#34d399",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>💬 WhatsApp</a>
+                      <a href={`tel:${p.clienteTel.replace(/\D/g,"")}`}
+                        style={{background:"#0a2a1e",color:"#34d399",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>📱 Ligar</a>
+                    </div>
+                  )}
                   <button onClick={()=>abrirGPSCliente(p)} style={{marginTop:8,width:"100%",padding:"9px",borderRadius:8,background:"#0a2a1e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,fontSize:13,cursor:"pointer"}}>
                     🗺️ Abrir rota para o cliente
                   </button>
                 </div>
 
                 <div style={{background:"#0f172a",borderRadius:8,padding:"8px 12px",marginBottom:10}}>
-                  <div style={{color:"#34d399",fontSize:12,fontWeight:700}}>✅ Cliente foi avisado automaticamente que o pedido está a caminho!</div>
+                  <div style={{color:"#9ca3af",fontSize:12,fontWeight:700}}>ℹ️ O estabelecimento já avisa o cliente que o pedido saiu.</div>
                 </div>
-
-                {p.clienteTel && (
-                  <a href={linkWhatsRastreio(p)} target="_blank" rel="noreferrer"
-                    style={{display:"block",width:"100%",padding:"11px",borderRadius:8,background:"#0d3d2e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,fontSize:13,textAlign:"center",textDecoration:"none",marginBottom:10,boxSizing:"border-box"}}>
-                    📲 Enviar link de rastreio ao cliente
-                  </a>
-                )}
 
                 <button onClick={()=>marcarEntregue(p.id)} style={{width:"100%",padding:"14px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
                   ✅ Confirmar entrega
@@ -417,7 +386,7 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
 
             {entregue && (
               <div style={{textAlign:"center",padding:"10px",background:"#0d3d2e",borderRadius:8}}>
-                <span style={{color:"#34d399",fontWeight:700,fontSize:13}}>✅ Entregue com sucesso!</span>
+                <span style={{color:"#34d399",fontWeight:700,fontSize:13}}>✅ Entregue para {p.clienteNome}!</span>
               </div>
             )}
           </Card>

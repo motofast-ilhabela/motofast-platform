@@ -2,7 +2,7 @@ import { useState } from "react";
 
 const BAIRROS = ["Perequê","Vila","Barra Velha","Itaquanduba","Água Branca","Zabumba","Sul","Centro","Armação","Curral"];
 const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
-const MENSALIDADE = 75;
+const MENSALIDADE = 95;
 const PG = { pix:{label:"Pix",icon:"💠",cor:"#34d399"}, dinheiro:{label:"Dinheiro",icon:"💵",cor:"#fbbf24"}, cartao:{label:"Cartão",icon:"💳",cor:"#60a5fa"} };
 
 // ─── DADOS ────────────────────────────────────────────────────────────────────
@@ -15,10 +15,10 @@ const MB_INIT = [
 ];
 
 const EMP_INIT = [
-  {id:1,nome:"Pizzaria Dom João",tel:"(12) 3894-1122",bairro:"Vila",cnpj:"12.345.678/0001-90",nomeDono:"João Carlos Pereira",telDono:"(12) 99901-1111",nomeSocio:"",telSocio:"",enderecoEstab:"Rua da Padroeira, 45, Vila, Ilhabela/SP",planoPagamento:"semanal",planoGratis:false,dataFimGratis:null,bloqueado:false,mensalidadePaga:true,pagamentosDiarios:{"2026-06-09":true,"2026-06-08":true,"2026-06-07":true,"2026-06-06":true,"2026-06-05":true,"2026-06-04":true,"2026-06-03":true},taxas:{"Perequê":{e:12,m:9},"Vila":{e:8,m:6},"Barra Velha":{e:14,m:10},"Itaquanduba":{e:11,m:8},"Água Branca":{e:13,m:9},"Zabumba":{e:10,m:7},"Sul":{e:18,m:13},"Centro":{e:9,m:7},"Armação":{e:15,m:11},"Curral":{e:12,m:9}}},
-  {id:2,nome:"Açaí da Hora",tel:"(12) 3894-3344",bairro:"Perequê",cnpj:"23.456.789/0001-01",nomeDono:"Alessandro Santos",telDono:"(12) 99902-2222",nomeSocio:"",telSocio:"",enderecoEstab:"Av. Princesa Isabel, 230, Perequê, Ilhabela/SP",planoPagamento:"diario",planoGratis:true,dataFimGratis:"2026-07-10",bloqueado:false,mensalidadePaga:true,pagamentosDiarios:{"2026-06-09":true,"2026-06-08":false,"2026-06-07":true,"2026-06-06":true,"2026-06-05":false,"2026-06-04":true,"2026-06-03":true},taxas:{"Perequê":{e:7,m:5},"Vila":{e:11,m:8},"Barra Velha":{e:12,m:9},"Itaquanduba":{e:9,m:7},"Água Branca":{e:8,m:6},"Zabumba":{e:9,m:6},"Sul":{e:16,m:12},"Centro":{e:10,m:7},"Armação":{e:14,m:10},"Curral":{e:10,m:7}}},
-  {id:3,nome:"Farmácia Central",tel:"(12) 3894-5566",bairro:"Centro",cnpj:"34.567.890/0001-12",nomeDono:"Maria Aparecida Lima",telDono:"(12) 99903-3333",nomeSocio:"Carlos Lima",telSocio:"(12) 99903-4444",enderecoEstab:"Rua do Comércio, 12, Centro, Ilhabela/SP",planoPagamento:"semanal",planoGratis:false,dataFimGratis:null,bloqueado:true,mensalidadePaga:false,pagamentosDiarios:{},taxas:{"Perequê":{e:11,m:8},"Vila":{e:10,m:7},"Barra Velha":{e:13,m:9},"Itaquanduba":{e:10,m:7},"Água Branca":{e:11,m:8},"Zabumba":{e:9,m:6},"Sul":{e:17,m:12},"Centro":{e:6,m:4},"Armação":{e:14,m:10},"Curral":{e:11,m:8}}},
-  {id:4,nome:"Supermercado Norte",tel:"(12) 3894-7788",bairro:"Barra Velha",cnpj:"45.678.901/0001-23",nomeDono:"Roberto Alves Costa",telDono:"(12) 99904-5555",nomeSocio:"Ana Paula Costa",telSocio:"(12) 99904-6666",enderecoEstab:"Estrada do Sul, 800, Barra Velha, Ilhabela/SP",planoPagamento:"diario",planoGratis:false,dataFimGratis:null,bloqueado:false,mensalidadePaga:true,pagamentosDiarios:{"2026-06-09":true,"2026-06-08":true,"2026-06-07":true,"2026-06-06":true,"2026-06-05":true,"2026-06-04":true,"2026-06-03":true},taxas:{"Perequê":{e:13,m:9},"Vila":{e:12,m:9},"Barra Velha":{e:7,m:5},"Itaquanduba":{e:10,m:7},"Água Branca":{e:12,m:9},"Zabumba":{e:9,m:6},"Sul":{e:15,m:11},"Centro":{e:11,m:8},"Armação":{e:16,m:11},"Curral":{e:11,m:8}}},
+  {id:1,nome:"Pizzaria Dom João",tel:"(12) 3894-1122",bairro:"Vila",cnpj:"12.345.678/0001-90",nomeDono:"João Carlos Pereira",telDono:"(12) 99901-1111",nomeSocio:"",telSocio:"",enderecoEstab:"Rua da Padroeira, 45, Vila, Ilhabela/SP",planoPagamento:"semanal",planoPagamentoMotoboy:"semanal",planoGratis:false,dataFimGratis:null,bloqueado:false,mensalidadePaga:true,pagamentosDiarios:{"2026-06-09":true,"2026-06-08":true,"2026-06-07":true,"2026-06-06":true,"2026-06-05":true,"2026-06-04":true,"2026-06-03":true},taxas:{"Perequê":{e:12,m:9},"Vila":{e:8,m:6},"Barra Velha":{e:14,m:10},"Itaquanduba":{e:11,m:8},"Água Branca":{e:13,m:9},"Zabumba":{e:10,m:7},"Sul":{e:18,m:13},"Centro":{e:9,m:7},"Armação":{e:15,m:11},"Curral":{e:12,m:9}}},
+  {id:2,nome:"Açaí da Hora",tel:"(12) 3894-3344",bairro:"Perequê",cnpj:"23.456.789/0001-01",nomeDono:"Alessandro Santos",telDono:"(12) 99902-2222",nomeSocio:"",telSocio:"",enderecoEstab:"Av. Princesa Isabel, 230, Perequê, Ilhabela/SP",planoPagamento:"semanal",planoPagamentoMotoboy:"diario",planoGratis:true,dataFimGratis:"2026-07-10",bloqueado:false,mensalidadePaga:true,pagamentosDiarios:{"2026-06-09":true,"2026-06-08":false,"2026-06-07":true,"2026-06-06":true,"2026-06-05":false,"2026-06-04":true,"2026-06-03":true},taxas:{"Perequê":{e:7,m:5},"Vila":{e:11,m:8},"Barra Velha":{e:12,m:9},"Itaquanduba":{e:9,m:7},"Água Branca":{e:8,m:6},"Zabumba":{e:9,m:6},"Sul":{e:16,m:12},"Centro":{e:10,m:7},"Armação":{e:14,m:10},"Curral":{e:10,m:7}}},
+  {id:3,nome:"Farmácia Central",tel:"(12) 3894-5566",bairro:"Centro",cnpj:"34.567.890/0001-12",nomeDono:"Maria Aparecida Lima",telDono:"(12) 99903-3333",nomeSocio:"Carlos Lima",telSocio:"(12) 99903-4444",enderecoEstab:"Rua do Comércio, 12, Centro, Ilhabela/SP",planoPagamento:"semanal",planoPagamentoMotoboy:"semanal",planoGratis:false,dataFimGratis:null,bloqueado:true,mensalidadePaga:false,pagamentosDiarios:{},taxas:{"Perequê":{e:11,m:8},"Vila":{e:10,m:7},"Barra Velha":{e:13,m:9},"Itaquanduba":{e:10,m:7},"Água Branca":{e:11,m:8},"Zabumba":{e:9,m:6},"Sul":{e:17,m:12},"Centro":{e:6,m:4},"Armação":{e:14,m:10},"Curral":{e:11,m:8}}},
+  {id:4,nome:"Supermercado Norte",tel:"(12) 3894-7788",bairro:"Barra Velha",cnpj:"45.678.901/0001-23",nomeDono:"Roberto Alves Costa",telDono:"(12) 99904-5555",nomeSocio:"Ana Paula Costa",telSocio:"(12) 99904-6666",enderecoEstab:"Estrada do Sul, 800, Barra Velha, Ilhabela/SP",planoPagamento:"semanal",planoPagamentoMotoboy:"diario",planoGratis:false,dataFimGratis:null,bloqueado:false,mensalidadePaga:true,pagamentosDiarios:{"2026-06-09":true,"2026-06-08":true,"2026-06-07":true,"2026-06-06":true,"2026-06-05":true,"2026-06-04":true,"2026-06-03":true},taxas:{"Perequê":{e:13,m:9},"Vila":{e:12,m:9},"Barra Velha":{e:7,m:5},"Itaquanduba":{e:10,m:7},"Água Branca":{e:12,m:9},"Zabumba":{e:9,m:6},"Sul":{e:15,m:11},"Centro":{e:11,m:8},"Armação":{e:16,m:11},"Curral":{e:11,m:8}}},
 ];
 
 const CLI_INIT = [
@@ -44,7 +44,13 @@ function gerarHist(mbs, emps) {
         const pg = pgs[Math.floor(Math.random()*pgs.length)];
         const dia = Math.floor(Math.random()*27)+1;
         const sem = dia<=7?1:dia<=14?2:dia<=21?3:4;
-        h.push({id:id++,motoboyId:mb.id,empresarioId:emp.id,clienteNome:nomes[Math.floor(Math.random()*nomes.length)],bairro,pagamento:pg,taxaEmpresario:t.e,taxaMotoboy:t.m,lucro:t.e-t.m,status:Math.random()>0.08?"Entregue":"Cancelada",data:`2026-${String(mes).padStart(2,"0")}-${String(dia).padStart(2,"0")}`,mes,semana:sem,repasePago:mes<6||(mes===6&&sem<3)});
+        const hSaidaH = Math.floor(Math.random()*12)+10; // 10h-22h
+        const hSaidaM = Math.floor(Math.random()*60);
+        const horaSaida = `${String(hSaidaH).padStart(2,"0")}:${String(hSaidaM).padStart(2,"0")}`;
+        const minEntrega = Math.floor(Math.random()*20)+8; // 8 a 28 min de entrega
+        const dEntrega = new Date(2026,0,1,hSaidaH,hSaidaM+minEntrega);
+        const horaEntrega = `${String(dEntrega.getHours()).padStart(2,"0")}:${String(dEntrega.getMinutes()).padStart(2,"0")}`;
+        h.push({id:id++,motoboyId:mb.id,empresarioId:emp.id,clienteNome:nomes[Math.floor(Math.random()*nomes.length)],bairro,pagamento:pg,taxaEmpresario:t.e,taxaMotoboy:t.m,lucro:t.e-t.m,status:Math.random()>0.08?"Entregue":"Cancelada",data:`2026-${String(mes).padStart(2,"0")}-${String(dia).padStart(2,"0")}`,horaSaida,horaEntrega,mes,semana:sem,repasePago:mes<6||(mes===6&&sem<3)});
       }
     });
   }
@@ -238,7 +244,8 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
 
   const dadosEmp = empresarios.map(emp=>{
     const ents = fonte.filter(e=>e.empresarioId===emp.id);
-    const mens = (!emp.planoGratis&&!emp.mensalidadePaga)?MENSALIDADE:0;
+    const valorPlano = emp.planoPagamento==="mensal" ? MENSALIDADE*4 : MENSALIDADE;
+    const mens = (!emp.planoGratis&&!emp.mensalidadePaga)?valorPlano:0;
     const taxas = +ents.reduce((s,e)=>s+e.taxaEmpresario,0).toFixed(2);
     return {...emp, ents, qtd:ents.length, taxas, mensalidade:mens, total:+(taxas+mens).toFixed(2)};
   }).filter(e=>e.qtd>0||e.mensalidade>0);
@@ -352,7 +359,7 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{background:"#0f172a"}}>
-                {["Data","Cliente","Bairro","Pgto","Valor"].map(h=>(
+                {["Data","Saiu às","Cliente","Bairro","Pgto","Valor"].map(h=>(
                   <th key={h} style={{padding:"8px 12px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"}}>{h}</th>
                 ))}
               </tr>
@@ -361,6 +368,7 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
               {entsDet.map(e=>(
                 <tr key={e.id} style={{borderBottom:"1px solid #1a2035"}}>
                   <td style={{padding:"8px 12px",color:"#9ca3af",fontSize:12}}>{e.data}</td>
+                  <td style={{padding:"8px 12px",color:"#fbbf24",fontSize:12,fontWeight:700}}>🏍️ {e.horaSaida||"—"}</td>
                   <td style={{padding:"8px 12px",color:"#f9fafb"}}>{e.clienteNome}</td>
                   <td style={{padding:"8px 12px",color:"#34d399"}}>{e.bairro}</td>
                   <td style={{padding:"8px 12px"}}><span style={{color:PG[e.pagamento]?.cor,fontWeight:700}}>{PG[e.pagamento]?.icon}</span></td>
@@ -603,7 +611,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
   const [novoNomeBairro, setNovoNomeBairro] = useState("");
   const [modalCad, setModalCad] = useState(false);
   const [mesesGratis, setMesesGratis] = useState("0");
-  const FVAZIO = {nome:"",tel:"",bairro:BAIRROS[0],planoPagamento:"semanal",cnpj:"",nomeDono:"",telDono:"",nomeSocio:"",telSocio:"",enderecoEstab:""};
+  const FVAZIO = {nome:"",tel:"",bairro:"",planoPagamento:"semanal",planoPagamentoMotoboy:"diario",cnpj:"",nomeDono:"",telDono:"",nomeSocio:"",telSocio:"",enderecoEstab:""};
   const [form, setForm] = useState(FVAZIO);
 
   const DIAS = ["2026-06-09","2026-06-08","2026-06-07","2026-06-06","2026-06-05","2026-06-04","2026-06-03"];
@@ -665,7 +673,8 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
   function totalSemana(emp) {
     const ents = historico.filter(e=>e.empresarioId===emp.id&&e.status==="Entregue"&&e.mes===6&&e.semana===3&&!e.repasePago);
     const taxas = ents.reduce((s,e)=>s+e.taxaEmpresario,0);
-    const mens = emp.planoGratis||emp.mensalidadePaga?0:MENSALIDADE;
+    const valorPlano = emp.planoPagamento==="mensal" ? MENSALIDADE*4 : MENSALIDADE;
+    const mens = emp.planoGratis||emp.mensalidadePaga?0:valorPlano;
     return {taxas:+taxas.toFixed(2), mensalidade:mens, total:+(taxas+mens).toFixed(2), qtd:ents.length};
   }
 
@@ -673,7 +682,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
     if (emp.planoGratis) return null;
     const m = [];
     if (!emp.mensalidadePaga) m.push("mensalidade não paga");
-    if (emp.planoPagamento==="diario") {
+    if (emp.planoPagamentoMotoboy==="diario") {
       const pend = DIAS.filter(d=>!emp.pagamentosDiarios?.[d]);
       if (pend.length>0) m.push(`${pend.length} dia(s) de taxas pendentes`);
     }
@@ -712,7 +721,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
                   <span style={{color:"#f9fafb",fontWeight:800,fontSize:15}}>{emp.nome}</span>
                   {emp.bloqueado ? <Tag label="⛔ BLOQUEADO" cor="#ef4444"/> : emp.planoGratis ? <Tag label="🎁 Grátis" cor="#a78bfa"/> : <Tag label="✅ Ativo" cor="#34d399"/>}
-                  <Tag label={emp.planoPagamento==="diario"?"📅 Diário":"📋 Semanal"} cor="#60a5fa"/>
+                  <Tag label={emp.planoPagamento==="mensal"?"🗓️ Mensal":"📋 Semanal"} cor="#60a5fa"/>
                 </div>
                 <div style={{color:"#6b7280",fontSize:12}}>📍 {emp.bairro} · 📞 {emp.tel}</div>
                 {emp.cnpj && <div style={{color:"#4b5563",fontSize:11,marginTop:1}}>CNPJ: {emp.cnpj} · Dono: {emp.nomeDono}</div>}
@@ -764,7 +773,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
                   <div style={{color:empSel.bloqueado?"#ef4444":"#34d399",fontWeight:700,fontSize:14}}>{empSel.bloqueado?"⛔ BLOQUEADO":"✅ Ativo"}</div>
                   <Btn small cor={empSel.bloqueado?"verde":"perigo"} onClick={()=>toggleBloqueio(empSel.id)}>{empSel.bloqueado?"🔓 Desbloquear":"⛔ Bloquear"}</Btn>
                 </div>
-                {!empSel.mensalidadePaga&&!empSel.planoGratis && <Btn cor="amarelo" full onClick={()=>marcarMensalidade(empSel.id)}>💰 Confirmar pagamento mensalidade R${MENSALIDADE}</Btn>}
+                {!empSel.mensalidadePaga&&!empSel.planoGratis && <Btn cor="amarelo" full onClick={()=>marcarMensalidade(empSel.id)}>💰 Confirmar pagamento R${empSel.planoPagamento==="mensal"?MENSALIDADE*4:MENSALIDADE}</Btn>}
               </Card>
             </div>
           )}
@@ -773,12 +782,16 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
             <div>
               <Card style={{marginBottom:12,padding:"14px 16px",background:"#0f172a"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                  <div style={{color:"#9ca3af",fontWeight:700,fontSize:13}}>Mensalidade semanal — R${MENSALIDADE}</div>
+                  <div style={{color:"#9ca3af",fontWeight:700,fontSize:13}}>💰 Comissão MotoFast — {empSel.planoPagamento==="mensal"?`R$${MENSALIDADE*4}/mês`:`R$${MENSALIDADE}/semana`}</div>
                   {empSel.planoGratis ? <Tag label="🎁 Grátis" cor="#a78bfa"/> : empSel.mensalidadePaga ? <Tag label="✅ Paga" cor="#34d399"/> : <Btn small cor="amarelo" onClick={()=>marcarMensalidade(empSel.id)}>💰 Marcar paga</Btn>}
                 </div>
-                <div style={{color:"#6b7280",fontSize:12}}>Plano: {empSel.planoPagamento==="diario"?"📅 Diário":"📋 Semanal"}</div>
+                <div style={{color:"#6b7280",fontSize:12}}>Plano: {empSel.planoPagamento==="mensal"?"🗓️ Mensal":"📋 Semanal (toda terça)"}</div>
               </Card>
-              {empSel.planoPagamento==="diario" && (
+              <Card style={{marginBottom:12,padding:"14px 16px",background:"#0f172a"}}>
+                <div style={{color:"#9ca3af",fontWeight:700,fontSize:13,marginBottom:4}}>🏍️ Pagamento ao motoboy</div>
+                <div style={{color:"#6b7280",fontSize:12}}>Plano: {empSel.planoPagamentoMotoboy==="diario"?"📅 Diário (no dia seguinte)":"📋 Semanal (toda terça)"}</div>
+              </Card>
+              {empSel.planoPagamentoMotoboy==="diario" && (
                 <div>
                   <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,marginBottom:8}}>Pagamentos diários desta semana:</div>
                   {DIAS.map(dia=>{
@@ -891,25 +904,31 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
             <div style={{flex:1}}><Inp label="Telefone" value={form.tel} onChange={v=>setForm(f=>({...f,tel:v}))} placeholder="(12) 3894-0000"/></div>
           </div>
           <Inp label="Endereço completo" value={form.enderecoEstab} onChange={v=>setForm(f=>({...f,enderecoEstab:v}))} placeholder="Ex: Rua da Padroeira, 45, Vila, Ilhabela/SP"/>
-          <SelInput label="Bairro" value={form.bairro} onChange={v=>setForm(f=>({...f,bairro:v}))}>
-            {BAIRROS.map(b=><option key={b}>{b}</option>)}
-          </SelInput>
+          <Inp label="Bairro *" value={form.bairro} onChange={v=>setForm(f=>({...f,bairro:v}))} placeholder="Digite o bairro"/>
           <Divider/>
           <SectionTitle>Responsáveis</SectionTitle>
           <div style={{display:"flex",gap:10}}>
             <div style={{flex:1}}><Inp label="Nome do dono *" value={form.nomeDono} onChange={v=>setForm(f=>({...f,nomeDono:v}))} placeholder="Nome completo"/></div>
-            <div style={{flex:1}}><Inp label="WhatsApp do dono" value={form.telDono} onChange={v=>setForm(f=>({...f,telDono:v}))} placeholder="(12) 99999-0000"/></div>
+            <div style={{flex:1}}><Inp label="WhatsApp do dono *" value={form.telDono} onChange={v=>setForm(f=>({...f,telDono:v}))} placeholder="(12) 99999-0000"/></div>
           </div>
           <div style={{display:"flex",gap:10}}>
-            <div style={{flex:1}}><Inp label="Nome do sócio (se houver)" value={form.nomeSocio} onChange={v=>setForm(f=>({...f,nomeSocio:v}))} placeholder="Nome completo"/></div>
-            <div style={{flex:1}}><Inp label="WhatsApp do sócio" value={form.telSocio} onChange={v=>setForm(f=>({...f,telSocio:v}))} placeholder="(12) 99999-0000"/></div>
+            <div style={{flex:1}}><Inp label="Nome do sócio (opcional)" value={form.nomeSocio} onChange={v=>setForm(f=>({...f,nomeSocio:v}))} placeholder="Nome completo"/></div>
+            <div style={{flex:1}}><Inp label="WhatsApp do sócio (opcional)" value={form.telSocio} onChange={v=>setForm(f=>({...f,telSocio:v}))} placeholder="(12) 99999-0000"/></div>
           </div>
           <Divider/>
           <div style={{marginBottom:12}}>
-            <div style={{color:"#9ca3af",fontSize:12,fontWeight:600,marginBottom:8}}>Plano de pagamento</div>
+            <div style={{color:"#9ca3af",fontSize:12,fontWeight:600,marginBottom:8}}>Plano de pagamento — comissão MotoFast</div>
             <div style={{display:"flex",gap:8}}>
-              {[["semanal","📋 Semanal"],["diario","📅 Diário"]].map(([val,label])=>(
+              {[["semanal","📋 Semanal (toda terça)"],["mensal","🗓️ Mensal (uma vez)"]].map(([val,label])=>(
                 <button key={val} onClick={()=>setForm(f=>({...f,planoPagamento:val}))} style={{flex:1,padding:"10px 8px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,background:form.planoPagamento===val?"#1e293b":"#0f172a",border:form.planoPagamento===val?"2px solid #34d399":"2px solid #1f2937",color:form.planoPagamento===val?"#34d399":"#6b7280"}}>{label}</button>
+              ))}
+            </div>
+          </div>
+          <div style={{marginBottom:12}}>
+            <div style={{color:"#9ca3af",fontSize:12,fontWeight:600,marginBottom:8}}>Como o estabelecimento paga o motoboy</div>
+            <div style={{display:"flex",gap:8}}>
+              {[["diario","📅 Diário (dia seguinte)"],["semanal","📋 Semanal (toda terça)"]].map(([val,label])=>(
+                <button key={val} onClick={()=>setForm(f=>({...f,planoPagamentoMotoboy:val}))} style={{flex:1,padding:"10px 8px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,background:form.planoPagamentoMotoboy===val?"#1e293b":"#0f172a",border:form.planoPagamentoMotoboy===val?"2px solid #fbbf24":"2px solid #1f2937",color:form.planoPagamentoMotoboy===val?"#fbbf24":"#6b7280"}}>{label}</button>
               ))}
             </div>
           </div>
@@ -1075,7 +1094,7 @@ function Historico({ historico, motoboys, empresarios }) {
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
           <thead>
             <tr style={{background:"#0f172a",borderBottom:"1px solid #1f2937"}}>
-              {["Data","Cliente","Bairro","Motoboy","Estabelecimento","Pgto","Cobrado","Motoboy","Lucro","Status"].map(h=>(
+              {["Data","Saiu às","Cliente","Bairro","Motoboy","Estabelecimento","Pgto","Cobrado","Motoboy","Lucro","Status"].map(h=>(
                 <th key={h} style={{padding:"10px 12px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
               ))}
             </tr>
@@ -1089,6 +1108,7 @@ function Historico({ historico, motoboys, empresarios }) {
               return (
                 <tr key={e.id} style={{borderBottom:"1px solid #1a2035"}} onMouseOver={ev=>ev.currentTarget.style.background="#0f172a"} onMouseOut={ev=>ev.currentTarget.style.background="transparent"}>
                   <td style={{padding:"8px 12px",color:"#9ca3af",whiteSpace:"nowrap"}}>{e.data}</td>
+                  <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700,whiteSpace:"nowrap"}}>🏍️ {e.horaSaida||"—"}</td>
                   <td style={{padding:"8px 12px",color:"#f9fafb",fontWeight:600}}>{e.clienteNome}</td>
                   <td style={{padding:"8px 12px",color:"#34d399"}}>{e.bairro}</td>
                   <td style={{padding:"8px 12px",color:"#d1d5db"}}>{mb?.nomeCompleto?.split(" ")[0]||"—"}</td>

@@ -535,6 +535,27 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes }) {
   const [modalMapa, setModalMapa] = useState(null);
   const [modalAddCorrida, setModalAddCorrida] = useState(null); // {corridaId, motoboyNome, motoboyTel, vagaNum}
 
+  // Link de rastreio público + mensagem pronta pro empresário enviar ao cliente
+  function linkRastreio(p) {
+    const params = new URLSearchParams({
+      cliente: p.clienteNome || "",
+      empresa: EMPRESA.nome || "",
+      empresaTel: EMPRESA.tel || "",
+      motoboy: p.motoboyNome || "",
+      bairro: p.bairro || "",
+      rua: p.rua || "",
+      num: p.num || "",
+      ref: p.ref || "",
+    });
+    return `${window.location.origin}/rastreio?${params.toString()}`;
+  }
+  function abrirWhatsCliente(p) {
+    const link = linkRastreio(p);
+    const msg = `${p.clienteNome}, seu pedido está a caminho! 🛵\n\nSeu pedido na *${EMPRESA.nome}* já saiu para entrega!\n\n📍 Acompanhe em tempo real:\n${link}`;
+    const tel = (p.clienteTel || "").replace(/\D/g,"");
+    window.open(`https://wa.me/55${tel}?text=${encodeURIComponent(msg)}`, "_blank");
+  }
+
   useEffect(()=>{
     const t = setInterval(()=>setTick(x=>x+1), 1000);
     return ()=>clearInterval(t);
@@ -701,6 +722,11 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes }) {
                       <Tag label={`${pg.icon} ${pg.label}`} cor={pg.cor}/>
                     </div>
                   </div>
+                  {p.clienteTel && (
+                    <button onClick={()=>abrirWhatsCliente(p)} style={{marginTop:10,width:"100%",padding:"9px",borderRadius:8,background:"#0d3d2e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                      📲 Avisar cliente que o pedido saiu
+                    </button>
+                  )}
                 </div>
               );
             })}
