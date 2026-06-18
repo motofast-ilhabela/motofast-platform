@@ -91,8 +91,8 @@ function TelaSucesso({ tipo, onVoltar }) {
         Nossa equipe vai analisar seu cadastro e você receberá uma confirmação por e-mail em até <strong style={{color:"#fbbf24"}}>24 horas</strong>.
         <br/><br/>
         {tipo==="empresario"
-          ? "Assim que aprovado, você já poderá solicitar entregas pelo MotoFast."
-          : "Assim que aprovado, você já poderá receber pedidos pelo MotoFast."}
+          ? "Assim que aprovado, você já poderá solicitar entregas pela MotoFast."
+          : "Assim que aprovado, você já poderá receber pedidos pela MotoFast."}
       </div>
       <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:12,padding:"16px 20px",maxWidth:360,margin:"0 auto 24px",textAlign:"left"}}>
         <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>O que acontece agora?</div>
@@ -497,12 +497,46 @@ function TelaLogin({ tipo, onCadastrar, onEntrar }) {
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
 
-  function entrar() {
+  async function entrar() {
     if (!email || !senha) { setErro("Preencha e-mail e senha."); return; }
     if (!validarEmail(email)) { setErro("E-mail inválido."); return; }
     setErro("");
     setLoading(true);
-    setTimeout(()=>{ setLoading(false); onEntrar(); }, 1200);
+
+    const { error } = await supabase.auth.signInWithPassword({ email: email, password: senha });
+
+    if (error) {
+      setLoading(false);
+      const msg = error.message;
+      if (msg.includes("Invalid login")) {
+        setErro("E-mail ou senha incorretos.");
+      } else if (msg.includes("Email not confirmed")) {
+        setErro("Confirme seu e-mail antes de entrar.");
+      } else {
+        setErro("Erro ao entrar. Tente novamente.");
+      }
+      return;
+    }
+
+    const tabela = tipo === "motoboy" ? "motoboys" : "empresarios";
+    const { data: perfil } = await supabase.from(tabela).select("aprovado,rejeitado,motivo_rejeicao").maybeSingle();
+
+    setLoading(false);
+
+    if (!perfil || !perfil.aprovado) {
+      await supabase.auth.signOut();
+      setErro("Seu cadastro ainda está sendo analisado. Aguarde o e-mail de aprovação.");
+      return;
+    }
+
+    if (perfil.rejeitado) {
+      await supabase.auth.signOut();
+      const motivo = perfil.motivo_rejeicao || "Entre em contato com o suporte.";
+      setErro("Cadastro rejeitado. Motivo: " + motivo);
+      return;
+    }
+
+    window.location.href = tipo === "motoboy" ? "/motoboy" : "/empresario";
   }
 
   const config = {
