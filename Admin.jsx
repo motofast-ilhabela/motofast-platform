@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "./supabaseClient.js";
 
 const BAIRROS = ["Perequê","Vila","Barra Velha","Itaquanduba","Água Branca","Zabumba","Sul","Centro","Armação","Curral"];
 const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -1141,12 +1142,50 @@ export default function App() {
   const [clientes, setClientes]       = useState(CLI_INIT);
   const [historico, setHistorico]     = useState(()=>gerarHist(MB_INIT, EMP_INIT));
 
+  const [pendentes, setPendentes] = useState({motoboys:[], empresarios:[]});
+  const [loadingPendentes, setLoadingPendentes] = useState(false);
+  const [modalRejeitar, setModalRejeitar] = useState(null); // {tipo, id, nome}
+  const [motivoRejeicao, setMotivoRejeicao] = useState("");
+
+  useEffect(()=>{
+    if (aba==="pendentes") carregarPendentes();
+  },[aba]);
+
+  async function carregarPendentes() {
+    setLoadingPendentes(true);
+    const [mb, emp] = await Promise.all([
+      supabase.from("motoboys").select("*").eq("aprovado",false).eq("rejeitado",false),
+      supabase.from("empresarios").select("*").eq("aprovado",false).eq("rejeitado",false),
+    ]);
+    setPendentes({
+      motoboys: mb.data || [],
+      empresarios: emp.data || [],
+    });
+    setLoadingPendentes(false);
+  }
+
+  async function aprovar(tipo, id) {
+    await supabase.from(tipo).update({aprovado:true, aprovado_em: new Date().toISOString()}).eq("id", id);
+    carregarPendentes();
+  }
+
+  async function rejeitar() {
+    if (!modalRejeitar || !motivoRejeicao.trim()) return;
+    await supabase.from(modalRejeitar.tipo).update({rejeitado:true, motivo_rejeicao: motivoRejeicao}).eq("id", modalRejeitar.id);
+    setModalRejeitar(null);
+    setMotivoRejeicao("");
+    carregarPendentes();
+  }
+
+  const totalPendentes = pendentes.motoboys.length + pendentes.empresarios.length;
+
   const saldo     = historico.filter(e=>e.status==="Entregue"&&!e.repasePago).reduce((s,e)=>s+e.lucro,0).toFixed(2);
   const bloqueados = empresarios.filter(e=>e.bloqueado).length;
   const banidos   = motoboys.filter(m=>m.banido).length;
 
   const ABAS = [
     {id:"dashboard",label:"📊 Dashboard"},
+    {id:"pendentes",label:"⏳ Pendentes"},
     {id:"repasse",label:"💰 Repasse"},
     {id:"motoboys",label:"🏍️ Motoboys"},
     {id:"estabelecimentos",label:"🏪 Estabelecimentos"},
@@ -1164,7 +1203,12 @@ export default function App() {
           </div>
           <nav style={{display:"flex",flexWrap:"wrap",flex:1}}>
             {ABAS.map(a=>(
-              <button key={a.id} onClick={()=>setAba(a.id)} style={{background:aba===a.id?"#0d3d2e":"transparent",color:aba===a.id?"#34d399":"#6b7280",border:"none",borderBottom:aba===a.id?"2px solid #34d399":"2px solid transparent",padding:"13px 12px",cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>{a.label}</button>
+              <button key={a.id} onClick={()=>setAba(a.id)} style={{background:aba===a.id?"#0d3d2e":"transparent",color:aba===a.id?"#34d399":"#6b7280",border:"none",borderBottom:aba===a.id?"2px solid #34d399":"2px solid transparent",padding:"13px 12px",cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap",position:"relative"}}>
+                {a.label}
+                {a.id==="pendentes" && totalPendentes>0 && (
+                  <span style={{position:"absolute",top:6,right:2,background:"#ef4444",color:"#fff",borderRadius:"50%",width:16,height:16,fontSize:10,fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center"}}>{totalPendentes}</span>
+                )}
+              </button>
             ))}
           </nav>
           <div style={{display:"flex",gap:8,padding:"8px 0",flexShrink:0}}>
@@ -1175,7 +1219,107 @@ export default function App() {
         </div>
       </div>
       <div style={{maxWidth:1200,margin:"0 auto",padding:"24px 20px"}}>
-        {aba==="dashboard"        && <Dashboard historico={historico} motoboys={motoboys} empresarios={empresarios}/>}
+        {aba==="pendentes" && (
+          <div>
+            <div style={{marginBottom:20,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <div style={{color:"#f9fafb",fontWeight:800,fontSize:20}}>⏳ Cadastros Pendentes</div>
+                <div style={{color:"#6b7280",fontSize:13,marginTop:2}}>Aprove ou rejeite cada cadastro antes de liberar o acesso</div>
+              </div>
+              <button onClick={carregarPendentes} style={{background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:12}}>🔄 Atualizar</button>
+            </div>
+
+            {loadingPendentes && <div style={{textAlign:"center",color:"#6b7280",padding:40}}>Carregando...</div>}
+
+            {!loadingPendentes && totalPendentes===0 && (
+              <Card style={{textAlign:"center",padding:40}}>
+                <div style={{fontSize:48,marginBottom:12}}>✅</div>
+                <div style={{color:"#34d399",fontWeight:700,fontSize:18,marginBottom:6}}>Tudo em dia!</div>
+                <div style={{color:"#6b7280",fontSize:14}}>Não há cadastros aguardando aprovação.</div>
+              </Card>
+            )}
+
+            {pendentes.motoboys.length>0 && (
+              <div style={{marginBottom:24}}>
+                <div style={{color:"#fbbf24",fontWeight:700,fontSize:14,marginBottom:12}}>🏍️ Motoboys aguardando aprovação ({pendentes.motoboys.length})</div>
+                {pendentes.motoboys.map(mb=>(
+                  <Card key={mb.id} style={{marginBottom:12,border:"1px solid #fbbf2444"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10}}>
+                      <div style={{flex:1}}>
+                        <div style={{color:"#f9fafb",fontWeight:700,fontSize:16,marginBottom:4}}>{mb.nome_completo}</div>
+                        <div style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:6}}>
+                          <span style={{color:"#9ca3af",fontSize:12}}>📞 {mb.telefone}</span>
+                          <span style={{color:"#9ca3af",fontSize:12}}>💠 PIX: {mb.pix||"—"}</span>
+                          <span style={{color:"#9ca3af",fontSize:12}}>📅 Nasc: {mb.nascimento||"—"}</span>
+                        </div>
+                        <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
+                          <span style={{color:"#9ca3af",fontSize:12}}>🪪 CPF: {mb.cpf||"—"}</span>
+                          <span style={{color:"#9ca3af",fontSize:12}}>🪪 RG: {mb.rg||"—"}</span>
+                        </div>
+                        {mb.endereco && <div style={{color:"#9ca3af",fontSize:12,marginTop:4}}>🏠 {mb.endereco}</div>}
+                        <div style={{color:"#4b5563",fontSize:11,marginTop:6}}>Cadastrado em: {new Date(mb.criado_em).toLocaleString("pt-BR")}</div>
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",gap:8,minWidth:120}}>
+                        <button onClick={()=>aprovar("motoboys",mb.id)} style={{padding:"10px 16px",borderRadius:8,background:"#10b981",border:"none",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>✅ Aprovar</button>
+                        <button onClick={()=>{setModalRejeitar({tipo:"motoboys",id:mb.id,nome:mb.nome_completo});setMotivoRejeicao("");}} style={{padding:"10px 16px",borderRadius:8,background:"#1f2937",border:"1px solid #ef4444",color:"#f87171",fontWeight:700,fontSize:13,cursor:"pointer"}}>❌ Rejeitar</button>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {pendentes.empresarios.length>0 && (
+              <div>
+                <div style={{color:"#60a5fa",fontWeight:700,fontSize:14,marginBottom:12}}>🏪 Empresários aguardando aprovação ({pendentes.empresarios.length})</div>
+                {pendentes.empresarios.map(emp=>(
+                  <Card key={emp.id} style={{marginBottom:12,border:"1px solid #3b82f644"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10}}>
+                      <div style={{flex:1}}>
+                        <div style={{color:"#f9fafb",fontWeight:700,fontSize:16,marginBottom:4}}>{emp.nome}</div>
+                        <div style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:6}}>
+                          <span style={{color:"#9ca3af",fontSize:12}}>📞 {emp.telefone}</span>
+                          <span style={{color:"#9ca3af",fontSize:12}}>📍 {emp.bairro||"—"}</span>
+                        </div>
+                        <span style={{color:"#9ca3af",fontSize:12}}>👤 Dono: {emp.nome_dono||"—"} · {emp.tel_dono||"—"}</span>
+                        {emp.nome_socio && <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>👥 Sócio: {emp.nome_socio} · {emp.tel_socio}</div>}
+                        <div style={{color:"#4b5563",fontSize:11,marginTop:6}}>Cadastrado em: {new Date(emp.criado_em).toLocaleString("pt-BR")}</div>
+                      </div>
+                      <div style={{display:"flex",flexDirection:"column",gap:8,minWidth:120}}>
+                        <button onClick={()=>aprovar("empresarios",emp.id)} style={{padding:"10px 16px",borderRadius:8,background:"#10b981",border:"none",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>✅ Aprovar</button>
+                        <button onClick={()=>{setModalRejeitar({tipo:"empresarios",id:emp.id,nome:emp.nome});setMotivoRejeicao("");}} style={{padding:"10px 16px",borderRadius:8,background:"#1f2937",border:"1px solid #ef4444",color:"#f87171",fontWeight:700,fontSize:13,cursor:"pointer"}}>❌ Rejeitar</button>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {modalRejeitar && (
+              <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.85)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+                <div style={{background:"#111827",border:"2px solid #ef4444",borderRadius:16,width:"100%",maxWidth:420,padding:24}}>
+                  <div style={{color:"#f87171",fontWeight:900,fontSize:18,marginBottom:6}}>❌ Rejeitar cadastro</div>
+                  <div style={{color:"#9ca3af",fontSize:13,marginBottom:16}}>{modalRejeitar.nome}</div>
+                  <textarea value={motivoRejeicao} onChange={e=>setMotivoRejeicao(e.target.value)}
+                    placeholder="Ex: Documentos inválidos, CPF incorreto..."
+                    rows={3} style={{background:"#0f172a",border:"1px solid #ef4444",borderRadius:8,color:"#f9fafb",padding:"10px 12px",width:"100%",fontSize:13,outline:"none",resize:"none",boxSizing:"border-box",marginBottom:14}}/>
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={rejeitar} disabled={!motivoRejeicao.trim()}
+                      style={{flex:2,padding:"12px",borderRadius:8,background:"#ef4444",border:"none",color:"#fff",fontWeight:700,fontSize:14,cursor:"pointer",opacity:motivoRejeicao.trim()?1:0.4}}>
+                      Confirmar rejeição
+                    </button>
+                    <button onClick={()=>setModalRejeitar(null)}
+                      style={{flex:1,padding:"12px",borderRadius:8,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {aba==="dashboard" && <Dashboard historico={historico} motoboys={motoboys} empresarios={empresarios}/> }
         {aba==="repasse"          && <Repasse historico={historico} setHistorico={setHistorico} motoboys={motoboys} empresarios={empresarios}/>}
         {aba==="motoboys"         && <Motoboys motoboys={motoboys} setMotoboys={setMotoboys} historico={historico}/>}
         {aba==="estabelecimentos" && <Estabelecimentos empresarios={empresarios} setEmpresarios={setEmpresarios} historico={historico}/>}
