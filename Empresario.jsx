@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { supabase } from "./supabaseClient.js";
 
 // ─── DADOS DO ESTABELECIMENTO (viriam do login) ───────────────────────────────
 const EMPRESA = {
@@ -118,12 +119,14 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar }) {
   const [buscaCliente, setBuscaCliente] = useState("");
   const [clienteSel, setClienteSel] = useState(null);
   const [modoEndereco, setModoEndereco] = useState("salvo");
-  const [novoEndereco, setNovoEndereco] = useState({rua:"",num:"",bairro:BAIRROS[0],ref:""});
+  const [novoEndereco, setNovoEndereco] = useState({rua:"",num:"",bairro:"",ref:""});
   const [clienteNome, setClienteNome] = useState("");
   const [clienteTel, setClienteTel] = useState("");
   const [pagamento, setPagamento] = useState("pix");
   const [obs, setObs] = useState("");
   const [erro, setErro] = useState("");
+  const [valorPedido, setValorPedido] = useState("");
+  const [valorReceber, setValorReceber] = useState("");
 
   // Busca cliente
   const resultados = buscaCliente.length>=2
@@ -165,13 +168,18 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar }) {
       rua:endEfetivo.rua, num:endEfetivo.num,
       bairro:bairroFinal, ref:endEfetivo.ref,
       pagamento, taxa:taxa?.e||0, obs,
+      valorPedido: valorPedido ? parseFloat(valorPedido) : null,
+      valorReceber: valorReceber ? parseFloat(valorReceber) : null,
+      troco: (valorPedido && valorReceber && parseFloat(valorReceber)>parseFloat(valorPedido))
+        ? parseFloat(valorReceber)-parseFloat(valorPedido) : null,
       status:"aguardando", criadoEm:Date.now(),
       motoboyNome:null, motoboyTel:null, corridaId:null,
     });
     // Reset
     setBuscaCliente(""); setClienteSel(null); setModoEndereco("salvo");
-    setNovoEndereco({rua:"",num:"",bairro:BAIRROS[0],ref:""});
-    setClienteNome(""); setClienteTel(""); setPagamento("pix"); setObs(""); setErro("");
+    setNovoEndereco({rua:"",num:"",bairro:"",ref:""});
+    setClienteNome(""); setClienteTel(""); setPagamento("pix"); setObs("");
+    setValorPedido(""); setValorReceber(""); setErro("");
   }
 
   return (
@@ -301,20 +309,59 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar }) {
           <STitle>💳 Forma de Pagamento do Cliente</STitle>
           <div style={{display:"flex",gap:8,marginBottom:10}}>
             {Object.entries(PG).map(([k,p])=>(
-              <button key={k} onClick={()=>setPagamento(k)} style={{flex:1,padding:"12px 6px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,background:pagamento===k?"#1e293b":"#0f172a",border:pagamento===k?`2px solid ${p.cor}`:"2px solid #1f2937",color:pagamento===k?p.cor:"#6b7280"}}>
+              <button key={k} onClick={()=>{setPagamento(k);setValorPedido("");setValorReceber("");}} style={{flex:1,padding:"12px 6px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,background:pagamento===k?"#1e293b":"#0f172a",border:pagamento===k?`2px solid ${p.cor}`:"2px solid #1f2937",color:pagamento===k?p.cor:"#6b7280"}}>
                 {p.icon}<br/>{p.label}
               </button>
             ))}
           </div>
-          {pagamento==="dinheiro" && <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"10px 14px"}}>
-            <div style={{color:"#fbbf24",fontWeight:700,fontSize:13}}>💵 Motoboy cobrará na entrega e retornará com o dinheiro</div>
-          </div>}
-          {pagamento==="cartao" && <div style={{background:"#1a2f4a",border:"1px solid #60a5fa",borderRadius:8,padding:"10px 14px"}}>
-            <div style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>💳 Disponibilize a maquininha para o motoboy levar</div>
-          </div>}
-          {pagamento==="pix" && <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px"}}>
-            <div style={{color:"#34d399",fontWeight:700,fontSize:13}}>💠 Pix já foi pago — motoboy só entrega</div>
-          </div>}
+
+          {/* Campos de valor conforme forma de pagamento */}
+          {pagamento==="dinheiro" && (
+            <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"12px 14px",marginBottom:8}}>
+              <div style={{color:"#fbbf24",fontWeight:700,fontSize:13,marginBottom:10}}>💵 Motoboy cobrará na entrega e retornará com o dinheiro</div>
+              <div style={{display:"flex",gap:8}}>
+                <div style={{flex:1}}>
+                  <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>Valor do pedido (R$)</div>
+                  <input type="number" value={valorPedido} onChange={e=>setValorPedido(e.target.value)} placeholder="Ex: 15,00"
+                    style={{background:"#0f172a",border:"1px solid #fbbf24",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>Cliente vai pagar com (R$)</div>
+                  <input type="number" value={valorReceber} onChange={e=>setValorReceber(e.target.value)} placeholder="Ex: 20,00 (se tiver troco)"
+                    style={{background:"#0f172a",border:"1px solid #fbbf24",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+                </div>
+              </div>
+              {valorPedido && valorReceber && parseFloat(valorReceber)>parseFloat(valorPedido) && (
+                <div style={{marginTop:8,background:"#4a2800",borderRadius:6,padding:"6px 10px"}}>
+                  <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>
+                    🪙 Troco: R${(parseFloat(valorReceber)-parseFloat(valorPedido)).toFixed(2)} — motoboy deve ter esse troco
+                  </div>
+                </div>
+              )}
+              {valorPedido && (!valorReceber || parseFloat(valorReceber)===parseFloat(valorPedido)) && (
+                <div style={{marginTop:8,background:"#4a2800",borderRadius:6,padding:"6px 10px"}}>
+                  <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>💵 Sem troco — cliente paga exato R${parseFloat(valorPedido).toFixed(2)}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {pagamento==="cartao" && (
+            <div style={{background:"#1a2f4a",border:"1px solid #60a5fa",borderRadius:8,padding:"12px 14px",marginBottom:8}}>
+              <div style={{color:"#60a5fa",fontWeight:700,fontSize:13,marginBottom:10}}>💳 Disponibilize a maquininha para o motoboy levar</div>
+              <div>
+                <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,marginBottom:4}}>Valor do pedido (R$)</div>
+                <input type="number" value={valorPedido} onChange={e=>setValorPedido(e.target.value)} placeholder="Ex: 15,00"
+                  style={{background:"#0f172a",border:"1px solid #60a5fa",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+            </div>
+          )}
+
+          {pagamento==="pix" && (
+            <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px",marginBottom:8}}>
+              <div style={{color:"#34d399",fontWeight:700,fontSize:13}}>💠 Pix já foi pago — motoboy só entrega, sem cobrar nada</div>
+            </div>
+          )}
         </Card>
       )}
 
@@ -893,25 +940,53 @@ function HistoricoEmp({ historico, pedidos }) {
 }
 
 // ─── CLIENTES SALVOS ──────────────────────────────────────────────────────────
-function ClientesSalvos({ clientes, setClientes }) {
+function ClientesSalvos({ clientes, setClientes, empresaId }) {
   const [busca, setBusca] = useState("");
   const [editId, setEditId] = useState(null);
   const [modalCad, setModalCad] = useState(false);
-  const [form, setForm] = useState({nome:"",tel:"",endereco:{rua:"",num:"",bairro:BAIRROS[0],ref:""}});
+  const [form, setForm] = useState({nome:"",tel:"",endereco:{rua:"",num:"",bairro:"",ref:""}});
 
   const filtrados = clientes.filter(c=>!busca||c.nome.toLowerCase().includes(busca.toLowerCase())||c.tel.includes(busca));
   const editCli = editId ? clientes.find(c=>c.id===editId) : null;
 
-  function abrirEdicao(c) { setEditId(c.id); setForm({nome:c.nome,tel:c.tel,endereco:{...c.endereco}}); }
-  function salvar() { setClientes(p=>p.map(c=>c.id===editId?{...c,...form}:c)); setEditId(null); }
-  function excluir(id) { setClientes(p=>p.filter(c=>c.id!==id)); }
+  function abrirEdicao(c) { setEditId(c.id); setForm({nome:c.nome,tel:c.tel,endereco:{rua:c.rua||"",num:c.num||"",bairro:c.bairro||"",ref:c.ref||""}}); }
 
-  const FORM_VAZIO = {nome:"",tel:"",endereco:{rua:"",num:"",bairro:BAIRROS[0],ref:""}};
+  async function salvar() {
+    await supabase.from("clientes").update({
+      nome: form.nome,
+      telefone: form.tel,
+      rua: form.endereco.rua,
+      numero: form.endereco.num,
+      bairro: form.endereco.bairro,
+      referencia: form.endereco.ref,
+    }).eq("id", editId);
+    setClientes(p=>p.map(c=>c.id===editId?{...c,nome:form.nome,tel:form.tel,rua:form.endereco.rua,num:form.endereco.num,bairro:form.endereco.bairro,ref:form.endereco.ref}:c));
+    setEditId(null);
+  }
+
+  async function excluir(id) {
+    await supabase.from("clientes").delete().eq("id", id);
+    setClientes(p=>p.filter(c=>c.id!==id));
+  }
+
+  const FORM_VAZIO = {nome:"",tel:"",endereco:{rua:"",num:"",bairro:"",ref:""}};
 
   function abrirCadastro() { setForm(FORM_VAZIO); setModalCad(true); }
-  function cadastrar() {
+
+  async function cadastrar() {
     if (!form.nome.trim() || !form.endereco.rua.trim() || !form.endereco.num.trim()) return;
-    setClientes(p=>[...p, {id:Date.now(), ...form}]);
+    const { data } = await supabase.from("clientes").insert({
+      empresario_id: empresaId,
+      nome: form.nome,
+      telefone: form.tel,
+      rua: form.endereco.rua,
+      numero: form.endereco.num,
+      bairro: form.endereco.bairro,
+      referencia: form.endereco.ref,
+    }).select().single();
+    if (data) {
+      setClientes(p=>[...p, {id:data.id, nome:data.nome, tel:data.telefone, rua:data.rua, num:data.numero, bairro:data.bairro, ref:data.referencia}]);
+    }
     setModalCad(false); setForm(FORM_VAZIO);
   }
 
@@ -1011,12 +1086,65 @@ function ClientesSalvos({ clientes, setClientes }) {
 // ─── APP EMPRESÁRIO ───────────────────────────────────────────────────────────
 export default function AppEmpresario() {
   const [aba, setAba] = useState("nova");
-  const [clientes, setClientes] = useState(CLIENTES_INIT);
+  const [clientes, setClientes] = useState([]);
   const [pedidos, setPedidos] = useState([]);
   const [historico] = useState(HIST_INIT);
   const [avisoSemMotoboy, setAvisoSemMotoboy] = useState(null);
+  const [empresa, setEmpresa] = useState(EMPRESA); // começa com demo, substitui pelo real
+  const [carregando, setCarregando] = useState(true);
 
-  const pedidosAtivos = pedidos.filter(p=>p.status==="aguardando"||p.status==="em_rota").length;
+  // Carrega dados reais do Supabase ao entrar
+  useEffect(()=>{
+    async function carregar() {
+      // Pega o usuário logado
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setCarregando(false); return; }
+
+      // Busca o empresário pelo e-mail
+      const { data: emp } = await supabase
+        .from("empresarios")
+        .select("*")
+        .eq("aprovado", true)
+        .maybeSingle();
+
+      if (emp) {
+        setEmpresa({
+          id: emp.id,
+          nome: emp.nome,
+          bairro: emp.bairro,
+          tel: emp.telefone,
+          planoPagamento: emp.plano_pagamento,
+          planoPagamentoMotoboy: emp.plano_pagamento_motoboy,
+          planoGratis: emp.plano_gratis,
+          dataFimGratis: emp.data_fim_gratis,
+          taxas: emp.taxas || {},
+          mensalidadePaga: emp.mensalidade_paga,
+          bloqueado: emp.bloqueado,
+        });
+
+        // Carrega clientes desse empresário
+        const { data: clientesDB } = await supabase
+          .from("clientes")
+          .select("*")
+          .eq("empresario_id", emp.id)
+          .order("nome");
+
+        if (clientesDB) {
+          setClientes(clientesDB.map(c=>({
+            id: c.id,
+            nome: c.nome,
+            tel: c.telefone,
+            rua: c.rua,
+            num: c.numero,
+            bairro: c.bairro,
+            ref: c.referencia,
+          })));
+        }
+      }
+      setCarregando(false);
+    }
+    carregar();
+  },[]);
 
   // Simula 5 minutos sem aceite → aviso ao empresário
   useEffect(()=>{
@@ -1025,13 +1153,41 @@ export default function AppEmpresario() {
     const t = setTimeout(()=>{
       setAvisoSemMotoboy(aguardando[0]);
       setPedidos(prev=>prev.map(p=>p.status==="aguardando"?{...p,status:"cancelado"}:p));
-    }, 15000); // 15s na demo (= 5min no real)
+    }, 15000);
     return ()=>clearTimeout(t);
   },[pedidos]);
 
-  function publicarPedido(pedido) {
-    setPedidos(prev=>[...prev, pedido]);
+  async function publicarPedido(pedido) {
+    // Salva o pedido no Supabase
+    const { data: pedidoDB } = await supabase.from("pedidos").insert({
+      empresario_id: empresa.id,
+      cliente_nome: pedido.clienteNome,
+      cliente_telefone: pedido.clienteTel,
+      rua: pedido.rua,
+      numero: pedido.num,
+      bairro: pedido.bairro,
+      referencia: pedido.ref,
+      observacao: pedido.obs,
+      forma_pagamento: pedido.pagamento,
+      taxa: pedido.taxa,
+      status: "aguardando",
+    }).select().single();
+
+    // Adiciona ao estado local com o id real do banco
+    const pedidoFinal = pedidoDB ? {...pedido, id: pedidoDB.id} : pedido;
+    setPedidos(prev=>[...prev, pedidoFinal]);
     setAba("ativos");
+  }
+
+  if (carregando) {
+    return (
+      <div style={{minHeight:"100vh",background:"#0a0f1a",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter','Segoe UI',sans-serif"}}>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:48,marginBottom:16}}>⚡</div>
+          <div style={{color:"#34d399",fontWeight:700,fontSize:18}}>Carregando...</div>
+        </div>
+      </div>
+    );
   }
 
   const ABAS = [
@@ -1072,7 +1228,7 @@ export default function AppEmpresario() {
         {aba==="nova"      && <SolicitarEntrega clientes={clientes} setClientes={setClientes} onPublicar={publicarPedido}/>}
         {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes}/>}
         {aba==="historico" && <HistoricoEmp historico={historico} pedidos={pedidos}/>}
-        {aba==="clientes"  && <ClientesSalvos clientes={clientes} setClientes={setClientes}/>}
+        {aba==="clientes"  && <ClientesSalvos clientes={clientes} setClientes={setClientes} empresaId={empresa.id}/>}
       </div>
 
       {/* Botão suporte fixo */}
