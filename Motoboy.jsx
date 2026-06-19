@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { supabase } from "./supabaseClient.js";
 
 // ─── DADOS DO MOTOBOY (viriam do login) ──────────────────────────────────────
 const MOTOBOY = {
@@ -693,6 +694,10 @@ export default function AppMotoboy() {
           {/* Toggle online/offline */}
           <button onClick={()=>setOnline(x=>!x)} style={{flexShrink:0,margin:"0 0 0 8px",padding:"6px 14px",borderRadius:20,cursor:"pointer",fontWeight:700,fontSize:12,border:"none",background:online?"#0d3d2e":"#1f2937",color:online?"#34d399":"#6b7280",transition:"all 0.2s"}}>
             {online?"🟢 Online":"⚫ Offline"}
+          </button>
+          <button onClick={async()=>{ await supabase.auth.signOut(); window.location.href = "/"; }}
+            style={{flexShrink:0,margin:"0 0 0 8px",background:"transparent",border:"1px solid #374151",color:"#9ca3af",padding:"6px 10px",borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700}}>
+            🚪 Sair
           </button>
         </div>
       </div>
