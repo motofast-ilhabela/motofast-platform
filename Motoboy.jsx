@@ -266,8 +266,12 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
   const [motivoCancelamento, setMotivoCancelamento] = useState("");
   const [motivoCustom, setMotivoCustom] = useState("");
 
-  function sairEstabelecimento(pedidoId) {
+  async function sairEstabelecimento(pedidoId) {
     setSaiuEstab(prev=>({...prev,[pedidoId]:true}));
+    await supabase.from("pedidos").update({
+      status: "saiu_estabelecimento",
+      saiu_estabelecimento_em: new Date().toISOString(),
+    }).eq("id", pedidoId);
   }
 
   function marcarEntregue(pedidoId) {
@@ -588,31 +592,73 @@ export default function AppMotoboy() {
   const [pedidoDisponivel, setPedidoDisponivel] = useState(null);
   const [corridaAtiva, setCorridaAtiva] = useState(null);
   const [tipoSom, setTipoSom] = useState("alerta_forte");
+  const [motoboyId, setMotoboyId] = useState(null);
+  const [carregando, setCarregando] = useState(true);
   const tentativas = useRef(0);
   const pedidoRef = useRef(null);
 
-  // Simula chegada de pedido após 4 segundos
+  // Carrega o motoboy logado e busca pedidos reais
   useEffect(()=>{
-    if (!online || corridaAtiva || pedidoDisponivel) return;
-    tentativas.current = 0;
-    const t = setTimeout(()=>{
-      const novoPedido = {
-        id: Date.now(),
-        empresaNome: "Açaí da Hora",
-        empresaTel: "(12) 3894-3344",
-        clienteNome: "Maria Santos",
-        clienteTel: "(12) 99802-2222",
-        rua: "Rua do Sol", num: "120",
-        bairro: "Vila", ref: "Prédio azul, apto 3B",
-        pagamento: "pix", taxa: 8, obs: "",
-        criadoEm: Date.now(),
-      };
-      pedidoRef.current = novoPedido;
-      setPedidoDisponivel({...novoPedido});
-      tocarSomEscolhido(tipoSom);
-    }, 4000);
-    return ()=>clearTimeout(t);
-  },[online, corridaAtiva]);
+    async function carregar() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { setCarregando(false); return; }
+
+      const { data: mb } = await supabase
+        .from("motoboys")
+        .select("*")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (mb) setMotoboyId(mb.id);
+      setCarregando(false);
+    }
+    carregar();
+  },[]);
+
+  // Busca pedidos reais aguardando aceite + escuta novos em tempo real
+  useEffect(()=>{
+    if (!online || corridaAtiva || pedidoDisponivel || !motoboyId) return;
+
+    async function buscarPedidoReal() {
+      const { data } = await supabase
+        .from("pedidos")
+        .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
+        .eq("status", "aguardando")
+        .order("criado_em", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      if (data) {
+        const novoPedido = {
+          id: data.id,
+          empresaNome: data.empresarios?.nome || "Estabelecimento",
+          empresaTel: data.empresarios?.telefone || "",
+          empresaEndereco: data.empresarios?.endereco_estabelecimento || "",
+          clienteNome: data.cliente_nome,
+          clienteTel: data.cliente_telefone,
+          rua: data.rua, num: data.numero,
+          bairro: data.bairro, ref: data.referencia,
+          pagamento: data.forma_pagamento, taxa: data.taxa, obs: data.observacao,
+          criadoEm: new Date(data.criado_em).getTime(),
+        };
+        pedidoRef.current = novoPedido;
+        setPedidoDisponivel(novoPedido);
+        tocarSomEscolhido(tipoSom);
+      }
+    }
+
+    buscarPedidoReal();
+
+    // Escuta em tempo real — assim que um pedido novo é publicado, aparece na hora
+    const canal = supabase
+      .channel("pedidos-motoboy")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "pedidos" }, () => {
+        buscarPedidoReal();
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(canal); };
+  },[online, corridaAtiva, motoboyId, pedidoDisponivel]);
 
   // Repete som a cada 30s se ninguém aceitou, por até 5 minutos (10 tentativas)
   useEffect(()=>{
@@ -623,6 +669,7 @@ export default function AppMotoboy() {
         // 5 minutos sem aceite — cancela e avisa empresário
         setPedidoDisponivel(null);
         pedidoRef.current = null;
+        tentativas.current = 0;
         // Aviso ao empresário é tratado na interface do empresário
       } else {
         // Nova rodada — recria o pedido com criadoEm atualizado pra resetar o timer visual
@@ -633,20 +680,44 @@ export default function AppMotoboy() {
     return ()=>clearTimeout(t);
   },[pedidoDisponivel]);
 
-  function aceitar() {
-    if (!pedidoDisponivel) return;
+  async function aceitar() {
+    if (!pedidoDisponivel || !motoboyId) return;
+    // Tenta aceitar no banco — só funciona se ainda estiver "aguardando" (evita 2 motoboys pegarem o mesmo pedido)
+    const { data, error } = await supabase
+      .from("pedidos")
+      .update({ status: "aceito", motoboy_id: motoboyId, aceito_em: new Date().toISOString() })
+      .eq("id", pedidoDisponivel.id)
+      .eq("status", "aguardando")
+      .select()
+      .maybeSingle();
+
+    if (!data) {
+      // Outro motoboy já aceitou primeiro
+      setPedidoDisponivel(null);
+      tentativas.current = 0;
+      return;
+    }
+
     setCorridaAtiva({
       id: Date.now(),
       pedidos: [{...pedidoDisponivel}],
     });
     setPedidoDisponivel(null);
+    tentativas.current = 0;
     setAba("corrida");
   }
 
-  function recusar() { setPedidoDisponivel(null); }
+  function recusar() { setPedidoDisponivel(null); tentativas.current = 0; }
 
-  function finalizarCorrida() {
+  async function finalizarCorrida() {
     if (!corridaAtiva) return;
+    // Marca cada pedido como entregue no banco real
+    for (const p of corridaAtiva.pedidos) {
+      await supabase.from("pedidos").update({
+        status: "entregue",
+        entregue_em: new Date().toISOString(),
+      }).eq("id", p.id);
+    }
     const novos = corridaAtiva.pedidos.map(p=>({
       id:Date.now()+Math.random(),
       clienteNome:p.clienteNome, empresaNome:p.empresaNome,
@@ -659,7 +730,15 @@ export default function AppMotoboy() {
     setAba("ganhos");
   }
 
-  function cancelarCorrida(motivo) {
+  async function cancelarCorrida(motivo) {
+    if (corridaAtiva) {
+      for (const p of corridaAtiva.pedidos) {
+        await supabase.from("pedidos").update({
+          status: "cancelado",
+          motivo_cancelamento: motivo,
+        }).eq("id", p.id);
+      }
+    }
     setCorridaAtiva(null);
     setOnline(false); // fica offline automaticamente
     setAba("home");
@@ -673,6 +752,17 @@ export default function AppMotoboy() {
     {id:"corrida",label:"🏍️ Corrida", badge:corridaAtiva?1:0},
     {id:"ganhos", label:"💰 Ganhos"},
   ];
+
+  if (carregando) {
+    return (
+      <div style={{minHeight:"100vh",background:"#0a0f1a",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter','Segoe UI',sans-serif"}}>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:48,marginBottom:16}}>⚡</div>
+          <div style={{color:"#34d399",fontWeight:700,fontSize:18}}>Carregando...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{minHeight:"100vh",background:"#0a0f1a",fontFamily:"'Inter','Segoe UI',sans-serif",color:"#f9fafb"}}>
