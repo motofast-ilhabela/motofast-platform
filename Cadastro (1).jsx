@@ -497,12 +497,46 @@ function TelaLogin({ tipo, onCadastrar, onEntrar }) {
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
 
-  function entrar() {
+  async function entrar() {
     if (!email || !senha) { setErro("Preencha e-mail e senha."); return; }
     if (!validarEmail(email)) { setErro("E-mail inválido."); return; }
     setErro("");
     setLoading(true);
-    setTimeout(()=>{ setLoading(false); onEntrar(); }, 1200);
+
+    const { error } = await supabase.auth.signInWithPassword({ email: email, password: senha });
+
+    if (error) {
+      setLoading(false);
+      const msg = error.message;
+      if (msg.includes("Invalid login")) {
+        setErro("E-mail ou senha incorretos.");
+      } else if (msg.includes("Email not confirmed")) {
+        setErro("Confirme seu e-mail antes de entrar.");
+      } else {
+        setErro("Erro ao entrar. Tente novamente.");
+      }
+      return;
+    }
+
+    const tabela = tipo === "motoboy" ? "motoboys" : "empresarios";
+    const { data: perfil } = await supabase.from(tabela).select("aprovado,rejeitado,motivo_rejeicao").maybeSingle();
+
+    setLoading(false);
+
+    if (!perfil || !perfil.aprovado) {
+      await supabase.auth.signOut();
+      setErro("Seu cadastro ainda está sendo analisado. Aguarde o e-mail de aprovação.");
+      return;
+    }
+
+    if (perfil.rejeitado) {
+      await supabase.auth.signOut();
+      const motivo = perfil.motivo_rejeicao || "Entre em contato com o suporte.";
+      setErro("Cadastro rejeitado. Motivo: " + motivo);
+      return;
+    }
+
+    window.location.href = tipo === "motoboy" ? "/motoboy" : "/empresario";
   }
 
   const config = {
@@ -611,14 +645,14 @@ export default function AppCadastro() {
           {/* LOGIN EMPRESÁRIO */}
           {tela==="login-emp" && (
             <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,padding:28}}>
-              <TelaLogin tipo="empresario" onCadastrar={()=>setTela("cad-emp")} onEntrar={()=>alert("✅ Login aprovado — redirecionando para o painel do empresário!")}/>
+              <TelaLogin tipo="empresario" onCadastrar={()=>setTela("cad-emp")} onEntrar={()=>{}}/>
             </div>
           )}
 
           {/* LOGIN MOTOBOY */}
           {tela==="login-mb" && (
             <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,padding:28}}>
-              <TelaLogin tipo="motoboy" onCadastrar={()=>setTela("cad-mb")} onEntrar={()=>alert("✅ Login aprovado — redirecionando para o painel do motoboy!")}/>
+              <TelaLogin tipo="motoboy" onCadastrar={()=>setTela("cad-mb")} onEntrar={()=>{}}/>
             </div>
           )}
 
