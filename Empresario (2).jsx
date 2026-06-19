@@ -115,7 +115,7 @@ function Divider() { return <div style={{height:1,background:"#1f2937",margin:"1
 function STitle({ children }) { return <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>{children}</div>; }
 
 // ─── SOLICITAR ENTREGA ────────────────────────────────────────────────────────
-function SolicitarEntrega({ clientes, setClientes, onPublicar }) {
+function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   const [buscaCliente, setBuscaCliente] = useState("");
   const [clienteSel, setClienteSel] = useState(null);
   const [modoEndereco, setModoEndereco] = useState("salvo");
@@ -134,15 +134,17 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar }) {
     : [];
 
   // Endereço e bairro efetivos
-  const endEfetivo = (clienteSel && modoEndereco==="salvo") ? clienteSel.endereco : novoEndereco;
-  const bairroFinal = endEfetivo.bairro || BAIRROS[0];
-  const taxa = EMPRESA.taxas[bairroFinal];
+  const taxasEmpresa = (empresa && empresa.taxas && Object.keys(empresa.taxas).length>0) ? empresa.taxas : EMPRESA.taxas;
+  const bairrosDisponiveis = Object.keys(taxasEmpresa);
+  const endEfetivo = (clienteSel && modoEndereco==="salvo") ? {rua:clienteSel.rua,num:clienteSel.num,bairro:clienteSel.bairro,ref:clienteSel.ref} : novoEndereco;
+  const bairroFinal = endEfetivo.bairro || bairrosDisponiveis[0] || "";
+  const taxa = taxasEmpresa[bairroFinal] || {e:0,m:0};
   const nomeEfetivo = clienteSel ? clienteSel.nome : clienteNome;
   const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
 
   function detectarBairro(rua) {
     const l = rua.toLowerCase();
-    for (const b of BAIRROS) if (l.includes(b.toLowerCase())) return b;
+    for (const b of bairrosDisponiveis) if (l.includes(b.toLowerCase())) return b;
     return null;
   }
 
@@ -151,16 +153,33 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar }) {
     setNovoEndereco(prev=>({...prev, rua:v, bairro:b||prev.bairro}));
   }
 
-  function publicar() {
+  async function publicar() {
     if (!nomeEfetivo || !endEfetivo.rua || !endEfetivo.num) {
       setErro("Preencha o nome do cliente e o endereço completo."); return;
     }
-    // Salva cliente novo automaticamente
+    // Salva cliente novo automaticamente no Supabase
     if (!clienteSel) {
-      const novo = {id:Date.now(), nome:clienteNome||buscaCliente, tel:clienteTel, endereco:novoEndereco};
-      setClientes(p=>[...p, novo]);
+      const { data, error } = await supabase.from("clientes").insert({
+        empresario_id: empresa?.id,
+        nome: clienteNome||buscaCliente,
+        telefone: clienteTel || "Não informado",
+        rua: novoEndereco.rua,
+        numero: novoEndereco.num,
+        bairro: novoEndereco.bairro,
+        referencia: novoEndereco.ref,
+      }).select().single();
+      if (error) {
+        setErro("Erro ao salvar cliente: " + error.message);
+        return;
+      }
+      if (data) {
+        setClientes(p=>[...p, {id:data.id, nome:data.nome, tel:data.telefone, rua:data.rua, num:data.numero, bairro:data.bairro, ref:data.referencia}]);
+      }
     } else if (modoEndereco==="novo") {
-      setClientes(p=>p.map(c=>c.id===clienteSel.id?{...c,endereco:novoEndereco}:c));
+      await supabase.from("clientes").update({
+        rua: novoEndereco.rua, numero: novoEndereco.num, bairro: novoEndereco.bairro, referencia: novoEndereco.ref,
+      }).eq("id", clienteSel.id);
+      setClientes(p=>p.map(c=>c.id===clienteSel.id?{...c,rua:novoEndereco.rua,num:novoEndereco.num,bairro:novoEndereco.bairro,ref:novoEndereco.ref}:c));
     }
     onPublicar({
       id:Date.now(),
@@ -210,7 +229,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar }) {
                 onMouseOver={e=>e.currentTarget.style.background="#1f2937"}
                 onMouseOut={e=>e.currentTarget.style.background="transparent"}>
                 <div style={{color:"#f9fafb",fontWeight:600,fontSize:13}}>{c.nome}</div>
-                <div style={{color:"#6b7280",fontSize:11}}>📞 {c.tel} · 📍 {c.endereco?.rua}, {c.endereco?.num} — {c.endereco?.bairro}</div>
+                <div style={{color:"#6b7280",fontSize:11}}>📞 {c.tel} · 📍 {c.rua}, {c.num} — {c.bairro}</div>
               </div>
             ))}
           </div>
@@ -236,8 +255,8 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar }) {
             {/* Endereço salvo */}
             <div style={{background:"#111827",borderRadius:8,padding:"9px 12px",marginTop:10}}>
               <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:4}}>📍 Endereço cadastrado:</div>
-              <div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{clienteSel.endereco?.rua}, {clienteSel.endereco?.num} — {clienteSel.endereco?.bairro}</div>
-              {clienteSel.endereco?.ref && <div style={{color:"#fbbf24",fontSize:11,marginTop:2}}>📌 {clienteSel.endereco.ref}</div>}
+              <div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{clienteSel.rua}, {clienteSel.num} — {clienteSel.bairro}</div>
+              {clienteSel.ref && <div style={{color:"#fbbf24",fontSize:11,marginTop:2}}>📌 {clienteSel.ref}</div>}
             </div>
             {/* Mesmo ou novo endereço */}
             <div style={{display:"flex",gap:8,marginTop:10}}>
@@ -276,7 +295,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar }) {
             </div>
           </div>
           <SelInput label="Bairro *" value={novoEndereco.bairro} onChange={v=>setNovoEndereco(p=>({...p,bairro:v}))}>
-            {BAIRROS.map(b=><option key={b}>{b}</option>)}
+            {bairrosDisponiveis.map(b=><option key={b}>{b}</option>)}
           </SelInput>
           {/* Preview + taxa */}
           {novoEndereco.rua && novoEndereco.num && (
@@ -387,11 +406,13 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar }) {
 }
 
 // ─── ADICIONAR PEDIDO À CORRIDA (mesmo motoboy, sem escolher) ────────────────
-function ModalAddPedidoCorrida({ clientes, setClientes, motoboyNome, motoboyTel, vagaNum, onSalvar, onFechar }) {
+function ModalAddPedidoCorrida({ clientes, setClientes, motoboyNome, motoboyTel, vagaNum, onSalvar, onFechar, empresa }) {
   const [buscaCliente, setBuscaCliente] = useState("");
   const [clienteSel, setClienteSel] = useState(null);
   const [modoEndereco, setModoEndereco] = useState("salvo");
-  const [novoEndereco, setNovoEndereco] = useState({rua:"",num:"",bairro:BAIRROS[0],ref:""});
+  const taxasEmpresa2 = (empresa && empresa.taxas && Object.keys(empresa.taxas).length>0) ? empresa.taxas : EMPRESA.taxas;
+  const bairrosDisponiveis2 = Object.keys(taxasEmpresa2);
+  const [novoEndereco, setNovoEndereco] = useState({rua:"",num:"",bairro:bairrosDisponiveis2[0]||"",ref:""});
   const [clienteNome, setClienteNome] = useState("");
   const [clienteTel, setClienteTel] = useState("");
   const [pagamento, setPagamento] = useState("pix");
@@ -402,15 +423,15 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyNome, motoboyTel,
     ? clientes.filter(c=>c.nome.toLowerCase().includes(buscaCliente.toLowerCase())||c.tel.includes(buscaCliente))
     : [];
 
-  const endEfetivo = (clienteSel && modoEndereco==="salvo") ? clienteSel.endereco : novoEndereco;
-  const bairroFinal = endEfetivo.bairro || BAIRROS[0];
-  const taxa = EMPRESA.taxas[bairroFinal];
+  const endEfetivo = (clienteSel && modoEndereco==="salvo") ? {rua:clienteSel.rua,num:clienteSel.num,bairro:clienteSel.bairro,ref:clienteSel.ref} : novoEndereco;
+  const bairroFinal = endEfetivo.bairro || bairrosDisponiveis2[0] || "";
+  const taxa = taxasEmpresa2[bairroFinal] || {e:0,m:0};
   const nomeEfetivo = clienteSel ? clienteSel.nome : clienteNome;
   const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
 
   function detectarBairro(rua) {
     const l = rua.toLowerCase();
-    for (const b of BAIRROS) if (l.includes(b.toLowerCase())) return b;
+    for (const b of bairrosDisponiveis2) if (l.includes(b.toLowerCase())) return b;
     return null;
   }
   function handleRua(v) {
@@ -418,15 +439,32 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyNome, motoboyTel,
     setNovoEndereco(prev=>({...prev, rua:v, bairro:b||prev.bairro}));
   }
 
-  function salvar() {
+  async function salvar() {
     if (!nomeEfetivo || !endEfetivo.rua || !endEfetivo.num) {
       setErro("Preencha o nome do cliente e o endereço completo."); return;
     }
     if (!clienteSel) {
-      const novo = {id:Date.now(), nome:clienteNome||buscaCliente, tel:clienteTel, endereco:novoEndereco};
-      setClientes(p=>[...p, novo]);
+      const { data, error } = await supabase.from("clientes").insert({
+        empresario_id: empresa?.id,
+        nome: clienteNome||buscaCliente,
+        telefone: clienteTel || "Não informado",
+        rua: novoEndereco.rua,
+        numero: novoEndereco.num,
+        bairro: novoEndereco.bairro,
+        referencia: novoEndereco.ref,
+      }).select().single();
+      if (error) {
+        setErro("Erro ao salvar cliente: " + error.message);
+        return;
+      }
+      if (data) {
+        setClientes(p=>[...p, {id:data.id, nome:data.nome, tel:data.telefone, rua:data.rua, num:data.numero, bairro:data.bairro, ref:data.referencia}]);
+      }
     } else if (modoEndereco==="novo") {
-      setClientes(p=>p.map(c=>c.id===clienteSel.id?{...c,endereco:novoEndereco}:c));
+      await supabase.from("clientes").update({
+        rua: novoEndereco.rua, numero: novoEndereco.num, bairro: novoEndereco.bairro, referencia: novoEndereco.ref,
+      }).eq("id", clienteSel.id);
+      setClientes(p=>p.map(c=>c.id===clienteSel.id?{...c,rua:novoEndereco.rua,num:novoEndereco.num,bairro:novoEndereco.bairro,ref:novoEndereco.ref}:c));
     }
     onSalvar({
       id:Date.now(),
@@ -465,7 +503,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyNome, motoboyTel,
                 onMouseOver={e=>e.currentTarget.style.background="#1f2937"}
                 onMouseOut={e=>e.currentTarget.style.background="transparent"}>
                 <div style={{color:"#f9fafb",fontWeight:600,fontSize:13}}>{c.nome}</div>
-                <div style={{color:"#6b7280",fontSize:11}}>📞 {c.tel} · 📍 {c.endereco?.rua}, {c.endereco?.num} — {c.endereco?.bairro}</div>
+                <div style={{color:"#6b7280",fontSize:11}}>📞 {c.tel} · 📍 {c.rua}, {c.num} — {c.bairro}</div>
               </div>
             ))}
           </div>
@@ -489,8 +527,8 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyNome, motoboyTel,
             </div>
             <div style={{background:"#111827",borderRadius:8,padding:"9px 12px",marginTop:10}}>
               <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:4}}>📍 Endereço cadastrado:</div>
-              <div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{clienteSel.endereco?.rua}, {clienteSel.endereco?.num} — {clienteSel.endereco?.bairro}</div>
-              {clienteSel.endereco?.ref && <div style={{color:"#fbbf24",fontSize:11,marginTop:2}}>📌 {clienteSel.endereco.ref}</div>}
+              <div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{clienteSel.rua}, {clienteSel.num} — {clienteSel.bairro}</div>
+              {clienteSel.ref && <div style={{color:"#fbbf24",fontSize:11,marginTop:2}}>📌 {clienteSel.ref}</div>}
             </div>
             <div style={{display:"flex",gap:8,marginTop:10}}>
               <button onClick={()=>setModoEndereco("salvo")} style={{flex:1,padding:"9px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,background:modoEndereco==="salvo"?"#0d3d2e":"#0f172a",border:modoEndereco==="salvo"?"2px solid #34d399":"2px solid #1f2937",color:modoEndereco==="salvo"?"#34d399":"#6b7280"}}>
@@ -523,7 +561,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyNome, motoboyTel,
             <div style={{flex:1}}><Inp label="Número *" value={novoEndereco.num} onChange={v=>setNovoEndereco(p=>({...p,num:v}))} placeholder="123"/></div>
           </div>
           <SelInput label="Bairro *" value={novoEndereco.bairro} onChange={v=>setNovoEndereco(p=>({...p,bairro:v}))}>
-            {BAIRROS.map(b=><option key={b}>{b}</option>)}
+            {bairrosDisponiveis2.map(b=><option key={b}>{b}</option>)}
           </SelInput>
           {novoEndereco.rua && novoEndereco.num && (
             <div style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginTop:4}}>
@@ -577,7 +615,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyNome, motoboyTel,
 }
 
 // ─── PEDIDOS EM ANDAMENTO ─────────────────────────────────────────────────────
-function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes }) {
+function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa }) {
   const [tick, setTick] = useState(0);
   const [modalMapa, setModalMapa] = useState(null);
   const [modalAddCorrida, setModalAddCorrida] = useState(null); // {corridaId, motoboyNome, motoboyTel, vagaNum}
@@ -586,8 +624,8 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes }) {
   function linkRastreio(p) {
     const params = new URLSearchParams({
       cliente: p.clienteNome || "",
-      empresa: EMPRESA.nome || "",
-      empresaTel: EMPRESA.tel || "",
+      empresa: (empresa && empresa.nome) || EMPRESA.nome || "",
+      empresaTel: (empresa && empresa.tel) || EMPRESA.tel || "",
       motoboy: p.motoboyNome || "",
       bairro: p.bairro || "",
       rua: p.rua || "",
@@ -598,7 +636,8 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes }) {
   }
   function abrirWhatsCliente(p) {
     const link = linkRastreio(p);
-    const msg = `${p.clienteNome}, seu pedido está a caminho! 🛵\n\nSeu pedido na *${EMPRESA.nome}* já saiu para entrega!\n\n📍 Acompanhe em tempo real:\n${link}`;
+    const nomeEmp = (empresa && empresa.nome) || EMPRESA.nome;
+    const msg = `${p.clienteNome}, seu pedido está a caminho! 🛵\n\nSeu pedido na *${nomeEmp}* já saiu para entrega!\n\n📍 Acompanhe em tempo real:\n${link}`;
     const tel = (p.clienteTel || "").replace(/\D/g,"");
     window.open(`https://wa.me/55${tel}?text=${encodeURIComponent(msg)}`, "_blank");
   }
@@ -850,6 +889,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes }) {
           vagaNum={modalAddCorrida.vagaNum}
           onSalvar={(novoPedido)=>adicionarPedidoCorrida({...novoPedido, corridaId:modalAddCorrida.corridaId})}
           onFechar={()=>setModalAddCorrida(null)}
+          empresa={empresa}
         />
       )}
     </div>
@@ -1013,8 +1053,8 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
                 style={{color:"#34d399",textDecoration:"none",fontSize:12}}>💬 {c.tel}</a>
             </div>
             <div style={{flex:2,minWidth:180}}>
-              <div style={{color:"#d1d5db",fontSize:13}}>{c.endereco?.rua}, {c.endereco?.num} — <span style={{color:"#34d399"}}>{c.endereco?.bairro}</span></div>
-              {c.endereco?.ref && <div style={{color:"#fbbf24",fontSize:11,marginTop:2}}>📌 {c.endereco.ref}</div>}
+              <div style={{color:"#d1d5db",fontSize:13}}>{c.rua}, {c.num} — <span style={{color:"#34d399"}}>{c.bairro}</span></div>
+              {c.ref && <div style={{color:"#fbbf24",fontSize:11,marginTop:2}}>📌 {c.ref}</div>}
             </div>
             <div style={{display:"flex",gap:6}}>
               <Btn small cor="cinza" onClick={()=>abrirEdicao(c)}>✏️ Editar</Btn>
@@ -1190,6 +1230,8 @@ export default function AppEmpresario() {
     );
   }
 
+  const pedidosAtivos = pedidos.filter(p=>p.status==="aguardando"||p.status==="em_rota").length;
+
   const ABAS = [
     {id:"nova",     label:"📦 Nova Entrega"},
     {id:"ativos",   label:"🚦 Pedidos Ativos", badge:pedidosAtivos},
@@ -1204,7 +1246,7 @@ export default function AppEmpresario() {
         <div style={{maxWidth:900,margin:"0 auto",display:"flex",alignItems:"center",flexWrap:"wrap"}}>
           <div style={{padding:"12px 20px 12px 0",borderRight:"1px solid #1f2937",marginRight:16,flexShrink:0}}>
             <div style={{color:"#34d399",fontWeight:900,fontSize:16,letterSpacing:-0.5}}>⚡ MotoFast</div>
-            <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>{EMPRESA.nome}</div>
+            <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>{empresa?.nome || EMPRESA.nome}</div>
           </div>
           <nav style={{display:"flex",flexWrap:"wrap",flex:1}}>
             {ABAS.map(a=>(
@@ -1215,18 +1257,22 @@ export default function AppEmpresario() {
             ))}
           </nav>
           {/* Info plano */}
-          <div style={{padding:"8px 0",flexShrink:0}}>
-            {EMPRESA.planoGratis
-              ? <Tag label={`🎁 Grátis até ${EMPRESA.dataFimGratis}`} cor="#a78bfa"/>
+          <div style={{padding:"8px 0",flexShrink:0,display:"flex",alignItems:"center",gap:10}}>
+            {(empresa?.planoGratis ?? EMPRESA.planoGratis)
+              ? <Tag label={`🎁 Grátis até ${empresa?.dataFimGratis || EMPRESA.dataFimGratis}`} cor="#a78bfa"/>
               : <Tag label="✅ Plano ativo" cor="#34d399"/>}
+            <button onClick={async()=>{ await supabase.auth.signOut(); window.location.href = "/"; }}
+              style={{background:"transparent",border:"1px solid #374151",color:"#9ca3af",padding:"6px 12px",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700}}>
+              🚪 Sair
+            </button>
           </div>
         </div>
       </div>
 
       {/* Conteúdo */}
       <div style={{maxWidth:900,margin:"0 auto",padding:"24px 20px"}}>
-        {aba==="nova"      && <SolicitarEntrega clientes={clientes} setClientes={setClientes} onPublicar={publicarPedido}/>}
-        {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes}/>}
+        {aba==="nova"      && <SolicitarEntrega clientes={clientes} setClientes={setClientes} onPublicar={publicarPedido} empresa={empresa}/>}
+        {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes} empresa={empresa}/>}
         {aba==="historico" && <HistoricoEmp historico={historico} pedidos={pedidos}/>}
         {aba==="clientes"  && <ClientesSalvos clientes={clientes} setClientes={setClientes} empresaId={empresa.id}/>}
       </div>
