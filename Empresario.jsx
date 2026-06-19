@@ -1196,6 +1196,8 @@ export default function AppEmpresario() {
     );
   }
 
+  const pedidosAtivos = pedidos.filter(p=>p.status==="aguardando"||p.status==="em_rota").length;
+
   const ABAS = [
     {id:"nova",     label:"📦 Nova Entrega"},
     {id:"ativos",   label:"🚦 Pedidos Ativos", badge:pedidosAtivos},
