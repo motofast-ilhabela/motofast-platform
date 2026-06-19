@@ -187,6 +187,7 @@ function CadastroEmpresario({ onVoltar, onSucesso }) {
     }
 
     const { error: dbError } = await supabase.from("empresarios").insert({
+      user_id: authData.user?.id,
       nome: form.nomeEstab,
       cnpj: form.cnpj,
       endereco_estabelecimento: form.enderecoEstab,
@@ -379,6 +380,7 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
     }
 
     const { error: dbError } = await supabase.from("motoboys").insert({
+      user_id: authData.user?.id,
       nome_completo: form.nomeCompleto,
       cpf: form.cpf,
       rg: form.rg,
@@ -518,8 +520,9 @@ function TelaLogin({ tipo, onCadastrar, onEntrar }) {
       return;
     }
 
+    const { data: { user } } = await supabase.auth.getUser();
     const tabela = tipo === "motoboy" ? "motoboys" : "empresarios";
-    const { data: perfil } = await supabase.from(tabela).select("aprovado,rejeitado,motivo_rejeicao").maybeSingle();
+    const { data: perfil } = await supabase.from(tabela).select("aprovado,rejeitado,motivo_rejeicao").eq("user_id", user.id).maybeSingle();
 
     setLoading(false);
 
@@ -645,14 +648,14 @@ export default function AppCadastro() {
           {/* LOGIN EMPRESÁRIO */}
           {tela==="login-emp" && (
             <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,padding:28}}>
-              <TelaLogin tipo="empresario" onCadastrar={()=>setTela("cad-emp")} onEntrar={()=>alert("✅ Login aprovado — redirecionando para o painel do empresário!")}/>
+              <TelaLogin tipo="empresario" onCadastrar={()=>setTela("cad-emp")} onEntrar={()=>{}}/>
             </div>
           )}
 
           {/* LOGIN MOTOBOY */}
           {tela==="login-mb" && (
             <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,padding:28}}>
-              <TelaLogin tipo="motoboy" onCadastrar={()=>setTela("cad-mb")} onEntrar={()=>alert("✅ Login aprovado — redirecionando para o painel do motoboy!")}/>
+              <TelaLogin tipo="motoboy" onCadastrar={()=>setTela("cad-mb")} onEntrar={()=>{}}/>
             </div>
           )}
 
