@@ -666,17 +666,23 @@ export default function AppMotoboy() {
   // Carrega o motoboy logado e busca pedidos reais
   useEffect(()=>{
     async function carregar() {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setCarregando(false); return; }
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { return; }
 
-      const { data: mb } = await supabase
-        .from("motoboys")
-        .select("*")
-        .eq("user_id", user.id)
-        .maybeSingle();
+        const { data: mb, error } = await supabase
+          .from("motoboys")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle();
 
-      if (mb) setMotoboyId(mb.id);
-      setCarregando(false);
+        if (error) console.error("Erro ao buscar motoboy:", error);
+        if (mb) setMotoboyId(mb.id);
+      } catch (e) {
+        console.error("Erro ao carregar motoboy:", e);
+      } finally {
+        setCarregando(false);
+      }
     }
     carregar();
   },[]);

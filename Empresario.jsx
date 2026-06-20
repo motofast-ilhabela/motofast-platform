@@ -1200,76 +1200,87 @@ export default function AppEmpresario() {
 
   // Carrega dados reais do Supabase ao entrar
   useEffect(()=>{
+    let canal = null;
     async function carregar() {
-      // Pega o usuário logado
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { setCarregando(false); return; }
+      try {
+        // Pega o usuário logado
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setCarregando(false); return; }
 
-      // Busca o empresário pelo usuário logado (não só por aprovado, para evitar pegar dados de outra pessoa)
-      const { data: emp } = await supabase
-        .from("empresarios")
-        .select("*")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (emp) {
-        setEmpresa({
-          id: emp.id,
-          nome: emp.nome,
-          bairro: emp.bairro,
-          tel: emp.telefone,
-          planoPagamento: emp.plano_pagamento,
-          planoPagamentoMotoboy: emp.plano_pagamento_motoboy,
-          planoGratis: emp.plano_gratis,
-          dataFimGratis: emp.data_fim_gratis,
-          taxas: emp.taxas || {},
-          mensalidadePaga: emp.mensalidade_paga,
-          bloqueado: emp.bloqueado,
-        });
-
-        // Carrega clientes desse empresário
-        const { data: clientesDB } = await supabase
-          .from("clientes")
+        // Busca o empresário pelo usuário logado (não só por aprovado, para evitar pegar dados de outra pessoa)
+        const { data: emp, error: empError } = await supabase
+          .from("empresarios")
           .select("*")
-          .eq("empresario_id", emp.id)
-          .order("nome");
+          .eq("user_id", user.id)
+          .maybeSingle();
 
-        if (clientesDB) {
-          setClientes(clientesDB.map(c=>({
-            id: c.id,
-            nome: c.nome,
-            tel: c.telefone,
-            rua: c.rua,
-            num: c.numero,
-            bairro: c.bairro,
-            ref: c.referencia,
-          })));
+        if (empError) console.error("Erro ao buscar empresário:", empError);
+
+        if (emp) {
+          setEmpresa({
+            id: emp.id,
+            nome: emp.nome,
+            bairro: emp.bairro,
+            tel: emp.telefone,
+            planoPagamento: emp.plano_pagamento,
+            planoPagamentoMotoboy: emp.plano_pagamento_motoboy,
+            planoGratis: emp.plano_gratis,
+            dataFimGratis: emp.data_fim_gratis,
+            taxas: emp.taxas || {},
+            mensalidadePaga: emp.mensalidade_paga,
+            bloqueado: emp.bloqueado,
+          });
+
+          // Carrega clientes desse empresário
+          const { data: clientesDB, error: clientesError } = await supabase
+            .from("clientes")
+            .select("*")
+            .eq("empresario_id", emp.id)
+            .order("nome");
+
+          if (clientesError) console.error("Erro ao buscar clientes:", clientesError);
+
+          if (clientesDB) {
+            setClientes(clientesDB.map(c=>({
+              id: c.id,
+              nome: c.nome,
+              tel: c.telefone,
+              rua: c.rua,
+              num: c.numero,
+              bairro: c.bairro,
+              ref: c.referencia,
+            })));
+          }
+
+          // Carrega pedidos ativos e recentes desse empresário, já com dados do motoboy
+          await carregarPedidos(emp.id);
+
+          // Escuta mudanças em tempo real (quando o motoboy aceita, sai, entrega, cancela)
+          canal = supabase
+            .channel("pedidos-empresario")
+            .on("postgres_changes", { event: "*", schema: "public", table: "pedidos", filter: `empresario_id=eq.${emp.id}` }, () => {
+              carregarPedidos(emp.id);
+            })
+            .subscribe();
         }
-
-        // Carrega pedidos ativos e recentes desse empresário, já com dados do motoboy
-        await carregarPedidos(emp.id);
-
-        // Escuta mudanças em tempo real (quando o motoboy aceita, sai, entrega, cancela)
-        const canal = supabase
-          .channel("pedidos-empresario")
-          .on("postgres_changes", { event: "*", schema: "public", table: "pedidos", filter: `empresario_id=eq.${emp.id}` }, () => {
-            carregarPedidos(emp.id);
-          })
-          .subscribe();
-
-        return () => { supabase.removeChannel(canal); };
+      } catch (e) {
+        console.error("Erro ao carregar dados do empresário:", e);
+      } finally {
+        setCarregando(false);
       }
-      setCarregando(false);
     }
     carregar();
+    return () => { if (canal) supabase.removeChannel(canal); };
   },[]);
 
   async function carregarPedidos(empresaId) {
-    const { data: pedidosDB } = await supabase
+    const { data: pedidosDB, error } = await supabase
       .from("pedidos")
       .select("*, motoboys(nome_completo, telefone)")
       .eq("empresario_id", empresaId)
       .order("criado_em", { ascending: true });
+
+    if (error) { console.error("Erro ao carregar pedidos:", error); return; }
 
     if (pedidosDB) {
       setPedidos(pedidosDB.map(p=>({
