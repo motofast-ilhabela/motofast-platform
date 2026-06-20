@@ -654,11 +654,12 @@ export default function AppMotoboy() {
   const audioCtxRef = useRef(null);
   const [online, setOnline] = useState(true);
   const [aba, setAba] = useState("home");
-  const [historico, setHistorico] = useState(HIST_INIT);
+  const [historico, setHistorico] = useState([]);
   const [pedidoDisponivel, setPedidoDisponivel] = useState(null);
   const [corridaAtiva, setCorridaAtiva] = useState(null);
   const [tipoSom, setTipoSom] = useState("alerta_forte");
   const [motoboyId, setMotoboyId] = useState(null);
+  const [motoboy, setMotoboy] = useState(MOTOBOY); // começa com demo, substitui pelo real
   const [carregando, setCarregando] = useState(true);
   const tentativas = useRef(0);
   const pedidoRef = useRef(null);
@@ -677,7 +678,43 @@ export default function AppMotoboy() {
           .maybeSingle();
 
         if (error) console.error("Erro ao buscar motoboy:", error);
-        if (mb) setMotoboyId(mb.id);
+        if (mb) {
+          setMotoboyId(mb.id);
+          setMotoboy({
+            id: mb.id,
+            nomeCompleto: mb.nome_completo,
+            tel: mb.telefone,
+            pix: mb.pix,
+            bairroBase: mb.bairro_base,
+          });
+
+          // Carrega histórico real de entregas desse motoboy
+          const { data: pedidosDB } = await supabase
+            .from("pedidos")
+            .select("*, empresarios(nome)")
+            .eq("motoboy_id", mb.id)
+            .in("status", ["entregue", "cancelado"])
+            .order("criado_em", { ascending: false });
+
+          if (pedidosDB) {
+            setHistorico(pedidosDB.map(p=>{
+              const d = new Date(p.criado_em);
+              return {
+                id: p.id,
+                clienteNome: p.cliente_nome,
+                empresaNome: p.empresarios?.nome || "Estabelecimento",
+                bairro: p.bairro,
+                pagamento: p.forma_pagamento,
+                taxa: p.taxa,
+                status: p.status==="entregue" ? "Entregue" : "Cancelada",
+                data: d.toLocaleDateString("pt-BR"),
+                hora: d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
+                semana: 3, mes: d.getMonth()+1,
+                repasePago: false,
+              };
+            }));
+          }
+        }
       } catch (e) {
         console.error("Erro ao carregar motoboy:", e);
       } finally {
@@ -852,7 +889,7 @@ export default function AppMotoboy() {
         <div style={{maxWidth:600,margin:"0 auto",display:"flex",alignItems:"center",gap:0}}>
           <div style={{padding:"12px 16px 12px 0",borderRight:"1px solid #1f2937",marginRight:14,flexShrink:0}}>
             <div style={{color:"#34d399",fontWeight:900,fontSize:16,letterSpacing:-0.5}}>⚡ MotoFast</div>
-            <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>{MOTOBOY.nomeCompleto.split(" ")[0]}</div>
+            <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>{(motoboy?.nomeCompleto || MOTOBOY.nomeCompleto).split(" ")[0]}</div>
           </div>
           <nav style={{display:"flex",flex:1}}>
             {ABAS.map(a=>(
