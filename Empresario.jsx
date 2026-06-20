@@ -406,7 +406,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
 }
 
 // ─── ADICIONAR PEDIDO À CORRIDA (mesmo motoboy, sem escolher) ────────────────
-function ModalAddPedidoCorrida({ clientes, setClientes, motoboyNome, motoboyTel, vagaNum, onSalvar, onFechar, empresa }) {
+function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, motoboyTel, vagaNum, onSalvar, onFechar, empresa }) {
   const [buscaCliente, setBuscaCliente] = useState("");
   const [clienteSel, setClienteSel] = useState(null);
   const [modoEndereco, setModoEndereco] = useState("salvo");
@@ -418,6 +418,8 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyNome, motoboyTel,
   const [pagamento, setPagamento] = useState("pix");
   const [obs, setObs] = useState("");
   const [erro, setErro] = useState("");
+  const [valorPedido, setValorPedido] = useState("");
+  const [valorReceber, setValorReceber] = useState("");
 
   const resultados = buscaCliente.length>=2
     ? clientes.filter(c=>c.nome.toLowerCase().includes(buscaCliente.toLowerCase())||c.tel.includes(buscaCliente))
@@ -472,8 +474,12 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyNome, motoboyTel,
       rua:endEfetivo.rua, num:endEfetivo.num,
       bairro:bairroFinal, ref:endEfetivo.ref,
       pagamento, taxa:taxa?.e||0, obs,
+      valorPedido: valorPedido ? parseFloat(valorPedido) : null,
+      valorReceber: valorReceber ? parseFloat(valorReceber) : null,
+      troco: (valorPedido && valorReceber && parseFloat(valorReceber)>parseFloat(valorPedido))
+        ? parseFloat(valorReceber)-parseFloat(valorPedido) : null,
       status:"em_rota", criadoEm:Date.now(),
-      motoboyNome, motoboyTel,
+      motoboyId, motoboyNome, motoboyTel,
     });
   }
 
@@ -586,20 +592,58 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyNome, motoboyTel,
           <STitle>💳 Forma de Pagamento</STitle>
           <div style={{display:"flex",gap:8,marginBottom:10}}>
             {Object.entries(PG).map(([k,p])=>(
-              <button key={k} onClick={()=>setPagamento(k)} style={{flex:1,padding:"12px 6px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,background:pagamento===k?"#1e293b":"#0f172a",border:pagamento===k?`2px solid ${p.cor}`:"2px solid #1f2937",color:pagamento===k?p.cor:"#6b7280"}}>
+              <button key={k} onClick={()=>{setPagamento(k);setValorPedido("");setValorReceber("");}} style={{flex:1,padding:"12px 6px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,background:pagamento===k?"#1e293b":"#0f172a",border:pagamento===k?`2px solid ${p.cor}`:"2px solid #1f2937",color:pagamento===k?p.cor:"#6b7280"}}>
                 {p.icon}<br/>{p.label}
               </button>
             ))}
           </div>
-          {pagamento==="dinheiro" && <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"10px 14px"}}>
-            <div style={{color:"#fbbf24",fontWeight:700,fontSize:13}}>💵 Motoboy cobrará na entrega e retornará com o dinheiro</div>
-          </div>}
-          {pagamento==="cartao" && <div style={{background:"#1a2f4a",border:"1px solid #60a5fa",borderRadius:8,padding:"10px 14px"}}>
-            <div style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>💳 Disponibilize a maquininha para o motoboy</div>
-          </div>}
-          {pagamento==="pix" && <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px"}}>
-            <div style={{color:"#34d399",fontWeight:700,fontSize:13}}>💠 Pix já foi pago — motoboy só entrega</div>
-          </div>}
+
+          {pagamento==="dinheiro" && (
+            <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"12px 14px",marginBottom:8}}>
+              <div style={{color:"#fbbf24",fontWeight:700,fontSize:13,marginBottom:10}}>💵 Motoboy cobrará na entrega e retornará com o dinheiro</div>
+              <div style={{display:"flex",gap:8}}>
+                <div style={{flex:1}}>
+                  <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>Valor do pedido (R$)</div>
+                  <input type="number" value={valorPedido} onChange={e=>setValorPedido(e.target.value)} placeholder="Ex: 15,00"
+                    style={{background:"#0f172a",border:"1px solid #fbbf24",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>Cliente vai pagar com (R$)</div>
+                  <input type="number" value={valorReceber} onChange={e=>setValorReceber(e.target.value)} placeholder="Ex: 20,00 (se tiver troco)"
+                    style={{background:"#0f172a",border:"1px solid #fbbf24",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+                </div>
+              </div>
+              {valorPedido && valorReceber && parseFloat(valorReceber)>parseFloat(valorPedido) && (
+                <div style={{marginTop:8,background:"#4a2800",borderRadius:6,padding:"6px 10px"}}>
+                  <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>
+                    🪙 Troco: R${(parseFloat(valorReceber)-parseFloat(valorPedido)).toFixed(2)} — motoboy deve ter esse troco
+                  </div>
+                </div>
+              )}
+              {valorPedido && (!valorReceber || parseFloat(valorReceber)===parseFloat(valorPedido)) && (
+                <div style={{marginTop:8,background:"#4a2800",borderRadius:6,padding:"6px 10px"}}>
+                  <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>💵 Sem troco — cliente paga exato R${parseFloat(valorPedido).toFixed(2)}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {pagamento==="cartao" && (
+            <div style={{background:"#1a2f4a",border:"1px solid #60a5fa",borderRadius:8,padding:"12px 14px",marginBottom:8}}>
+              <div style={{color:"#60a5fa",fontWeight:700,fontSize:13,marginBottom:10}}>💳 Disponibilize a maquininha para o motoboy</div>
+              <div>
+                <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,marginBottom:4}}>Valor do pedido (R$)</div>
+                <input type="number" value={valorPedido} onChange={e=>setValorPedido(e.target.value)} placeholder="Ex: 15,00"
+                  style={{background:"#0f172a",border:"1px solid #60a5fa",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+            </div>
+          )}
+
+          {pagamento==="pix" && (
+            <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px",marginBottom:8}}>
+              <div style={{color:"#34d399",fontWeight:700,fontSize:13}}>💠 Pix já foi pago — motoboy só entrega, sem cobrar nada</div>
+            </div>
+          )}
         </Card>
       )}
 
@@ -615,7 +659,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyNome, motoboyTel,
 }
 
 // ─── PEDIDOS EM ANDAMENTO ─────────────────────────────────────────────────────
-function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa }) {
+function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, onRecarregar }) {
   const [tick, setTick] = useState(0);
   const [modalMapa, setModalMapa] = useState(null);
   const [modalAddCorrida, setModalAddCorrida] = useState(null); // {corridaId, motoboyNome, motoboyTel, vagaNum}
@@ -662,8 +706,27 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa }) 
     setPedidos(prev=>prev.map(p=>p.id===id?{...p,status:"cancelado"}:p));
   }
 
-  function adicionarPedidoCorrida(novoPedido) {
-    setPedidos(prev=>[...prev, novoPedido]);
+  async function adicionarPedidoCorrida(novoPedido) {
+    const { data: pedidoDB } = await supabase.from("pedidos").insert({
+      empresario_id: empresa.id,
+      motoboy_id: novoPedido.motoboyId,
+      corrida_id: novoPedido.corridaId,
+      cliente_nome: novoPedido.clienteNome,
+      cliente_telefone: novoPedido.clienteTel,
+      rua: novoPedido.rua,
+      numero: novoPedido.num,
+      bairro: novoPedido.bairro,
+      referencia: novoPedido.ref,
+      observacao: novoPedido.obs,
+      forma_pagamento: novoPedido.pagamento,
+      taxa: novoPedido.taxa,
+      valor_pedido: novoPedido.valorPedido,
+      valor_receber: novoPedido.valorReceber,
+      valor_troco: novoPedido.troco,
+      status: "aceito", // já entra direto na corrida do motoboy, sem precisar aceitar de novo
+    }).select().single();
+
+    await onRecarregar();
     setModalAddCorrida(null);
   }
 
@@ -821,6 +884,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa }) 
             {corrida.pedidos.length<3 ? (
               <Btn small cor="azul" full onClick={()=>setModalAddCorrida({
                 corridaId: corrida.corridaId,
+                motoboyId: primeiro.motoboyId,
                 motoboyNome: primeiro.motoboyNome,
                 motoboyTel: primeiro.motoboyTel,
                 vagaNum: corrida.pedidos.length+1,
@@ -884,6 +948,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa }) 
         <ModalAddPedidoCorrida
           clientes={clientes}
           setClientes={setClientes}
+          motoboyId={modalAddCorrida.motoboyId}
           motoboyNome={modalAddCorrida.motoboyNome}
           motoboyTel={modalAddCorrida.motoboyTel}
           vagaNum={modalAddCorrida.vagaNum}
@@ -1180,11 +1245,50 @@ export default function AppEmpresario() {
             ref: c.referencia,
           })));
         }
+
+        // Carrega pedidos ativos e recentes desse empresário, já com dados do motoboy
+        await carregarPedidos(emp.id);
+
+        // Escuta mudanças em tempo real (quando o motoboy aceita, sai, entrega, cancela)
+        const canal = supabase
+          .channel("pedidos-empresario")
+          .on("postgres_changes", { event: "*", schema: "public", table: "pedidos", filter: `empresario_id=eq.${emp.id}` }, () => {
+            carregarPedidos(emp.id);
+          })
+          .subscribe();
+
+        return () => { supabase.removeChannel(canal); };
       }
       setCarregando(false);
     }
     carregar();
   },[]);
+
+  async function carregarPedidos(empresaId) {
+    const { data: pedidosDB } = await supabase
+      .from("pedidos")
+      .select("*, motoboys(nome_completo, telefone)")
+      .eq("empresario_id", empresaId)
+      .order("criado_em", { ascending: true });
+
+    if (pedidosDB) {
+      setPedidos(pedidosDB.map(p=>({
+        id: p.id,
+        clienteNome: p.cliente_nome,
+        clienteTel: p.cliente_telefone,
+        rua: p.rua, num: p.numero,
+        bairro: p.bairro, ref: p.referencia, obs: p.observacao,
+        pagamento: p.forma_pagamento, taxa: p.taxa,
+        valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
+        status: p.status==="aceito"||p.status==="saiu_estabelecimento" ? "em_rota" : p.status,
+        criadoEm: new Date(p.criado_em).getTime(),
+        motoboyId: p.motoboy_id,
+        motoboyNome: p.motoboys?.nome_completo || null,
+        motoboyTel: p.motoboys?.telefone || null,
+        corridaId: p.corrida_id,
+      })));
+    }
+  }
 
   // Simula 5 minutos sem aceite → aviso ao empresário
   useEffect(()=>{
@@ -1210,12 +1314,14 @@ export default function AppEmpresario() {
       observacao: pedido.obs,
       forma_pagamento: pedido.pagamento,
       taxa: pedido.taxa,
+      valor_pedido: pedido.valorPedido,
+      valor_receber: pedido.valorReceber,
+      valor_troco: pedido.troco,
       status: "aguardando",
     }).select().single();
 
-    // Adiciona ao estado local com o id real do banco
-    const pedidoFinal = pedidoDB ? {...pedido, id: pedidoDB.id} : pedido;
-    setPedidos(prev=>[...prev, pedidoFinal]);
+    // Recarrega a lista do banco, garantindo consistência total
+    await carregarPedidos(empresa.id);
     setAba("ativos");
   }
 
@@ -1272,7 +1378,7 @@ export default function AppEmpresario() {
       {/* Conteúdo */}
       <div style={{maxWidth:900,margin:"0 auto",padding:"24px 20px"}}>
         {aba==="nova"      && <SolicitarEntrega clientes={clientes} setClientes={setClientes} onPublicar={publicarPedido} empresa={empresa}/>}
-        {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes} empresa={empresa}/>}
+        {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes} empresa={empresa} onRecarregar={()=>carregarPedidos(empresa.id)}/>}
         {aba==="historico" && <HistoricoEmp historico={historico} pedidos={pedidos}/>}
         {aba==="clientes"  && <ClientesSalvos clientes={clientes} setClientes={setClientes} empresaId={empresa.id}/>}
       </div>

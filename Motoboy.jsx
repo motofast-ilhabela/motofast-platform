@@ -241,8 +241,31 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
           <div style={{color:"#6b7280",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Forma de pagamento</div>
           <div style={{color:PG[pedido.pagamento]?.cor,fontWeight:900,fontSize:22}}>{PG[pedido.pagamento]?.icon} {PG[pedido.pagamento]?.label}</div>
         </div>
-        {pedido.pagamento==="dinheiro" && <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"8px 12px",marginTop:10}}><div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>💵 Cobrar na entrega e retornar com o dinheiro</div></div>}
-        {pedido.pagamento==="cartao" && <div style={{background:"#1a2f4a",border:"1px solid #60a5fa",borderRadius:8,padding:"8px 12px",marginTop:10}}><div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>💳 Pegar a maquininha no estabelecimento</div></div>}
+        {pedido.pagamento==="dinheiro" && (
+          <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"10px 14px",marginTop:10}}>
+            {pedido.valorPedido ? (
+              <>
+                <div style={{color:"#fbbf24",fontSize:13,fontWeight:900,marginBottom:2}}>💵 Cobrar R${pedido.valorPedido.toFixed(2)}</div>
+                {pedido.troco ? (
+                  <div style={{color:"#fbbf24",fontSize:13,fontWeight:700}}>🪙 Cliente paga com R${pedido.valorReceber.toFixed(2)} — levar troco de R${pedido.troco.toFixed(2)}</div>
+                ) : (
+                  <div style={{color:"#fbbf24",fontSize:12}}>Sem troco — valor exato</div>
+                )}
+              </>
+            ) : (
+              <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>💵 Cobrar na entrega e retornar com o dinheiro</div>
+            )}
+          </div>
+        )}
+        {pedido.pagamento==="cartao" && (
+          <div style={{background:"#1a2f4a",border:"1px solid #60a5fa",borderRadius:8,padding:"10px 14px",marginTop:10}}>
+            {pedido.valorPedido ? (
+              <div style={{color:"#60a5fa",fontSize:13,fontWeight:900}}>💳 Cobrar R${pedido.valorPedido.toFixed(2)} na maquininha</div>
+            ) : (
+              <div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>💳 Pegar a maquininha no estabelecimento</div>
+            )}
+          </div>
+        )}
         {pedido.pagamento==="pix" && <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"8px 12px",marginTop:10}}><div style={{color:"#34d399",fontSize:12,fontWeight:700}}>💠 Pix já pago — só entregar</div></div>}
       </div>
 
@@ -343,8 +366,25 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
                   {p.ref && <div style={{color:"#fbbf24",fontSize:12,marginTop:3}}>📌 Ref: {p.ref}</div>}
                 </div>
 
-                {p.pagamento==="dinheiro" && <div style={{background:"#3d2a00",borderRadius:8,padding:"8px 12px",marginBottom:10}}><div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>💵 Cobrar na entrega e retornar com o dinheiro</div></div>}
-                {p.pagamento==="cartao" && <div style={{background:"#1a2f4a",borderRadius:8,padding:"8px 12px",marginBottom:10}}><div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>💳 Pegar a maquininha no estabelecimento</div></div>}
+                {p.pagamento==="dinheiro" && (
+                  <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+                    {p.valorPedido ? (
+                      <>
+                        <div style={{color:"#fbbf24",fontSize:13,fontWeight:900}}>💵 Cobrar R${p.valorPedido.toFixed(2)}</div>
+                        {p.troco ? (
+                          <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>🪙 Recebe R${p.valorReceber.toFixed(2)} — troco de R${p.troco.toFixed(2)}</div>
+                        ) : <div style={{color:"#fbbf24",fontSize:11}}>Sem troco</div>}
+                      </>
+                    ) : <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>💵 Cobrar na entrega e retornar com o dinheiro</div>}
+                  </div>
+                )}
+                {p.pagamento==="cartao" && (
+                  <div style={{background:"#1a2f4a",border:"1px solid #60a5fa",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+                    {p.valorPedido ? (
+                      <div style={{color:"#60a5fa",fontSize:13,fontWeight:900}}>💳 Cobrar R${p.valorPedido.toFixed(2)} na maquininha</div>
+                    ) : <div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>💳 Pegar a maquininha no estabelecimento</div>}
+                  </div>
+                )}
 
                 {/* BOTÃO OBRIGATÓRIO */}
                 <button onClick={()=>sairEstabelecimento(p.id, p)} style={{width:"100%",padding:"14px",borderRadius:10,background:"#f59e0b",border:"none",color:"#000",fontWeight:900,fontSize:16,cursor:"pointer"}}>
@@ -378,6 +418,32 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
                     🗺️ Abrir rota para o cliente
                   </button>
                 </div>
+
+                {/* Lembrete de cobrança — visível também na hora da entrega */}
+                {p.pagamento==="dinheiro" && (
+                  <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+                    {p.valorPedido ? (
+                      <>
+                        <div style={{color:"#fbbf24",fontSize:13,fontWeight:900}}>💵 Cobrar R${p.valorPedido.toFixed(2)}</div>
+                        {p.troco ? (
+                          <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>🪙 Recebe R${p.valorReceber.toFixed(2)} — troco de R${p.troco.toFixed(2)}</div>
+                        ) : <div style={{color:"#fbbf24",fontSize:11}}>Sem troco</div>}
+                      </>
+                    ) : <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>💵 Cobrar na entrega</div>}
+                  </div>
+                )}
+                {p.pagamento==="cartao" && (
+                  <div style={{background:"#1a2f4a",border:"1px solid #60a5fa",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+                    {p.valorPedido ? (
+                      <div style={{color:"#60a5fa",fontSize:13,fontWeight:900}}>💳 Cobrar R${p.valorPedido.toFixed(2)} na maquininha</div>
+                    ) : <div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>💳 Cobrar na maquininha</div>}
+                  </div>
+                )}
+                {p.pagamento==="pix" && (
+                  <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+                    <div style={{color:"#34d399",fontSize:13,fontWeight:900}}>💠 Pix já pago — sem cobrança</div>
+                  </div>
+                )}
 
                 <div style={{background:"#0f172a",borderRadius:8,padding:"8px 12px",marginBottom:10}}>
                   <div style={{color:"#9ca3af",fontSize:12,fontWeight:700}}>ℹ️ O estabelecimento já avisa o cliente que o pedido saiu.</div>
@@ -639,6 +705,7 @@ export default function AppMotoboy() {
           rua: data.rua, num: data.numero,
           bairro: data.bairro, ref: data.referencia,
           pagamento: data.forma_pagamento, taxa: data.taxa, obs: data.observacao,
+          valorPedido: data.valor_pedido, valorReceber: data.valor_receber, troco: data.valor_troco,
           criadoEm: new Date(data.criado_em).getTime(),
         };
         pedidoRef.current = novoPedido;
@@ -682,10 +749,18 @@ export default function AppMotoboy() {
 
   async function aceitar() {
     if (!pedidoDisponivel || !motoboyId) return;
+
+    // Cria a corrida no banco primeiro
+    const { data: corridaDB } = await supabase
+      .from("corridas")
+      .insert({ motoboy_id: motoboyId, status: "ativa" })
+      .select()
+      .single();
+
     // Tenta aceitar no banco — só funciona se ainda estiver "aguardando" (evita 2 motoboys pegarem o mesmo pedido)
     const { data, error } = await supabase
       .from("pedidos")
-      .update({ status: "aceito", motoboy_id: motoboyId, aceito_em: new Date().toISOString() })
+      .update({ status: "aceito", motoboy_id: motoboyId, corrida_id: corridaDB?.id, aceito_em: new Date().toISOString() })
       .eq("id", pedidoDisponivel.id)
       .eq("status", "aguardando")
       .select()
@@ -699,7 +774,7 @@ export default function AppMotoboy() {
     }
 
     setCorridaAtiva({
-      id: Date.now(),
+      id: corridaDB?.id || Date.now(),
       pedidos: [{...pedidoDisponivel}],
     });
     setPedidoDisponivel(null);
