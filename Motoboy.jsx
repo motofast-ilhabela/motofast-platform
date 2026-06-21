@@ -767,7 +767,10 @@ export default function AppMotoboy() {
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(canal); };
+    // Rede de segurança — verifica a cada 8s, caso o Realtime não esteja ativo no banco
+    const intervalo = setInterval(buscarPedidoReal, 8000);
+
+    return () => { supabase.removeChannel(canal); clearInterval(intervalo); };
   },[online, corridaAtiva, motoboyId, pedidoDisponivel]);
 
   // Repete som a cada 30s se ninguém aceitou, por até 5 minutos (10 tentativas)

@@ -691,17 +691,6 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
     return ()=>clearInterval(t);
   },[]);
 
-  // Simula motoboy aceitando após 5 segundos
-  useEffect(()=>{
-    setPedidos(prev=>prev.map(p=>{
-      if (p.status==="aguardando") {
-        const seg = Math.floor((Date.now()-p.criadoEm)/1000);
-        if (seg>=5 && seg<6) return {...p, status:"em_rota", motoboyNome:"Carlos Silva", motoboyTel:"(12) 99801-2233", corridaId:p.id, aceitoEm:Date.now()};
-      }
-      return p;
-    }));
-  },[tick]);
-
   function cancelar(id) {
     setPedidos(prev=>prev.map(p=>p.id===id?{...p,status:"cancelado"}:p));
   }
@@ -1193,7 +1182,14 @@ export default function AppEmpresario() {
   const [aba, setAba] = useState("nova");
   const [clientes, setClientes] = useState([]);
   const [pedidos, setPedidos] = useState([]);
-  const [historico] = useState(HIST_INIT);
+  const historico = pedidos.filter(p=>p.status==="entregue"||p.status==="cancelado").map(p=>({
+    id: p.id, clienteNome: p.clienteNome, bairro: p.bairro,
+    pagamento: p.pagamento, taxa: p.taxa,
+    status: p.status==="entregue" ? "Entregue" : "Cancelada",
+    motoboyNome: p.motoboyNome || "—",
+    data: new Date(p.criadoEm).toLocaleDateString("pt-BR"),
+    hora: new Date(p.criadoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
+  }));
   const [avisoSemMotoboy, setAvisoSemMotoboy] = useState(null);
   const [empresa, setEmpresa] = useState(EMPRESA); // começa com demo, substitui pelo real
   const [carregando, setCarregando] = useState(true);
@@ -1262,6 +1258,10 @@ export default function AppEmpresario() {
               carregarPedidos(emp.id);
             })
             .subscribe();
+
+          // Rede de segurança — atualiza a cada 8s, caso o Realtime não esteja ativo no banco
+          const intervalo = setInterval(()=>carregarPedidos(emp.id), 8000);
+          window.__motofastIntervalo = intervalo;
         }
       } catch (e) {
         console.error("Erro ao carregar dados do empresário:", e);
@@ -1270,7 +1270,10 @@ export default function AppEmpresario() {
       }
     }
     carregar();
-    return () => { if (canal) supabase.removeChannel(canal); };
+    return () => {
+      if (canal) supabase.removeChannel(canal);
+      if (window.__motofastIntervalo) clearInterval(window.__motofastIntervalo);
+    };
   },[]);
 
   async function carregarPedidos(empresaId) {
@@ -1301,14 +1304,18 @@ export default function AppEmpresario() {
     }
   }
 
-  // Simula 5 minutos sem aceite → aviso ao empresário
+  // Após 5 minutos sem aceite → avisa empresário e cancela no banco
   useEffect(()=>{
     const aguardando = pedidos.filter(p=>p.status==="aguardando");
     if (aguardando.length===0) return;
-    const t = setTimeout(()=>{
-      setAvisoSemMotoboy(aguardando[0]);
-      setPedidos(prev=>prev.map(p=>p.status==="aguardando"?{...p,status:"cancelado"}:p));
-    }, 15000);
+    const pedidoAlvo = aguardando[0];
+    const decorrido = Date.now() - pedidoAlvo.criadoEm;
+    const restante = Math.max(0, 5*60*1000 - decorrido);
+    const t = setTimeout(async ()=>{
+      await supabase.from("pedidos").update({ status: "cancelado", motivo_cancelamento: "Nenhum motoboy aceitou em 5 minutos" }).eq("id", pedidoAlvo.id).eq("status","aguardando");
+      setAvisoSemMotoboy(pedidoAlvo);
+      await carregarPedidos(empresa.id);
+    }, restante);
     return ()=>clearTimeout(t);
   },[pedidos]);
 
