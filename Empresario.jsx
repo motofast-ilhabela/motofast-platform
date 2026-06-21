@@ -3,7 +3,7 @@ import { supabase } from "./supabaseClient.js";
 
 // ─── DADOS DO ESTABELECIMENTO (viriam do login) ───────────────────────────────
 const EMPRESA = {
-  id: 2,
+  id: null,
   nome: "Açaí da Hora",
   bairro: "Perequê",
   tel: "(12) 3894-3344",
@@ -154,13 +154,17 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   }
 
   async function publicar() {
+    if (!empresa?.id) {
+      setErro("Ainda carregando seus dados — aguarde alguns segundos e tente novamente.");
+      return;
+    }
     if (!nomeEfetivo || !endEfetivo.rua || !endEfetivo.num) {
       setErro("Preencha o nome do cliente e o endereço completo."); return;
     }
     // Salva cliente novo automaticamente no Supabase
     if (!clienteSel) {
       const { data, error } = await supabase.from("clientes").insert({
-        empresario_id: empresa?.id,
+        empresario_id: empresa.id,
         nome: clienteNome||buscaCliente,
         telefone: clienteTel || "Não informado",
         rua: novoEndereco.rua,
@@ -207,6 +211,12 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>📦 Nova Entrega</div>
         <div style={{color:"#6b7280",fontSize:13}}>Busque o cliente ou cadastre um novo</div>
       </div>
+
+      {!empresa?.id && (
+        <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#fbbf24",fontSize:13}}>
+          ⏳ Carregando seus dados... aguarde alguns segundos antes de publicar um pedido.
+        </div>
+      )}
 
       {erro && <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#f87171",fontSize:13}}>{erro}</div>}
 
@@ -398,7 +408,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         </div>
       )}
 
-      <Btn onClick={publicar} full disabled={buscaCliente.length<2}>
+      <Btn onClick={publicar} full disabled={buscaCliente.length<2 || !empresa?.id}>
         🚀 Publicar Pedido
       </Btn>
     </div>
@@ -442,12 +452,16 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   }
 
   async function salvar() {
+    if (!empresa?.id) {
+      setErro("Ainda carregando seus dados — aguarde alguns segundos e tente novamente.");
+      return;
+    }
     if (!nomeEfetivo || !endEfetivo.rua || !endEfetivo.num) {
       setErro("Preencha o nome do cliente e o endereço completo."); return;
     }
     if (!clienteSel) {
       const { data, error } = await supabase.from("clientes").insert({
-        empresario_id: empresa?.id,
+        empresario_id: empresa.id,
         nome: clienteNome||buscaCliente,
         telefone: clienteTel || "Não informado",
         rua: novoEndereco.rua,
@@ -651,7 +665,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
       )}
 
-      <Btn onClick={salvar} full disabled={buscaCliente.length<2}>
+      <Btn onClick={salvar} full disabled={buscaCliente.length<2 || !empresa?.id}>
         ➕ Adicionar à Corrida
       </Btn>
     </Overlay>
@@ -1039,6 +1053,7 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
   const [editId, setEditId] = useState(null);
   const [modalCad, setModalCad] = useState(false);
   const [form, setForm] = useState({nome:"",tel:"",endereco:{rua:"",num:"",bairro:"",ref:""}});
+  const [erro, setErro] = useState("");
 
   const filtrados = clientes.filter(c=>!busca||c.nome.toLowerCase().includes(busca.toLowerCase())||c.tel.includes(busca));
   const editCli = editId ? clientes.find(c=>c.id===editId) : null;
@@ -1046,7 +1061,7 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
   function abrirEdicao(c) { setEditId(c.id); setForm({nome:c.nome,tel:c.tel,endereco:{rua:c.rua||"",num:c.num||"",bairro:c.bairro||"",ref:c.ref||""}}); }
 
   async function salvar() {
-    await supabase.from("clientes").update({
+    const { error } = await supabase.from("clientes").update({
       nome: form.nome,
       telefone: form.tel,
       rua: form.endereco.rua,
@@ -1054,8 +1069,10 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
       bairro: form.endereco.bairro,
       referencia: form.endereco.ref,
     }).eq("id", editId);
+    if (error) { setErro("Erro ao salvar: " + error.message); return; }
     setClientes(p=>p.map(c=>c.id===editId?{...c,nome:form.nome,tel:form.tel,rua:form.endereco.rua,num:form.endereco.num,bairro:form.endereco.bairro,ref:form.endereco.ref}:c));
     setEditId(null);
+    setErro("");
   }
 
   async function excluir(id) {
@@ -1065,11 +1082,15 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
 
   const FORM_VAZIO = {nome:"",tel:"",endereco:{rua:"",num:"",bairro:"",ref:""}};
 
-  function abrirCadastro() { setForm(FORM_VAZIO); setModalCad(true); }
+  function abrirCadastro() { setForm(FORM_VAZIO); setErro(""); setModalCad(true); }
 
   async function cadastrar() {
+    if (!empresaId) {
+      setErro("Ainda carregando seus dados — aguarde alguns segundos e tente novamente.");
+      return;
+    }
     if (!form.nome.trim() || !form.endereco.rua.trim() || !form.endereco.num.trim()) return;
-    const { data } = await supabase.from("clientes").insert({
+    const { data, error } = await supabase.from("clientes").insert({
       empresario_id: empresaId,
       nome: form.nome,
       telefone: form.tel,
@@ -1078,10 +1099,14 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
       bairro: form.endereco.bairro,
       referencia: form.endereco.ref,
     }).select().single();
+    if (error) {
+      setErro("Erro ao salvar cliente: " + error.message);
+      return;
+    }
     if (data) {
       setClientes(p=>[...p, {id:data.id, nome:data.nome, tel:data.telefone, rua:data.rua, num:data.numero, bairro:data.bairro, ref:data.referencia}]);
     }
-    setModalCad(false); setForm(FORM_VAZIO);
+    setModalCad(false); setForm(FORM_VAZIO); setErro("");
   }
 
   return (
@@ -1094,9 +1119,15 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
         <div style={{display:"flex",gap:8}}>
           <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="🔍 Buscar..."
             style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"8px 14px",fontSize:13,outline:"none",width:180}}/>
-          <Btn onClick={abrirCadastro}>+ Novo Cliente</Btn>
+          <Btn onClick={abrirCadastro} disabled={!empresaId}>+ Novo Cliente</Btn>
         </div>
       </div>
+
+      {!empresaId && (
+        <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#fbbf24",fontSize:13}}>
+          ⏳ Carregando seus dados... aguarde alguns segundos.
+        </div>
+      )}
 
       {filtrados.map(c=>(
         <Card key={c.id} style={{marginBottom:10,padding:"14px 18px"}}>
@@ -1124,6 +1155,7 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
       {modalCad && (
         <Overlay onClose={()=>setModalCad(false)} maxW={440}>
           <OvHeader titulo="+ Cadastrar Novo Cliente" onClose={()=>setModalCad(false)}/>
+          {erro && <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#f87171",fontSize:13}}>{erro}</div>}
           <Inp label="Nome completo *" value={form.nome} onChange={v=>setForm(f=>({...f,nome:v}))} placeholder="Ex: João da Silva"/>
           <Inp label="Telefone / WhatsApp" value={form.tel} onChange={v=>setForm(f=>({...f,tel:v}))} placeholder="(12) 99999-0000"/>
           <Divider/>
@@ -1146,7 +1178,7 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
             </div>
           )}
           <div style={{display:"flex",gap:8,marginTop:8}}>
-            <Btn onClick={cadastrar} full disabled={!form.nome.trim()||!form.endereco.rua.trim()||!form.endereco.num.trim()}>
+            <Btn onClick={cadastrar} full disabled={!form.nome.trim()||!form.endereco.rua.trim()||!form.endereco.num.trim()||!empresaId}>
               💾 Salvar Cliente
             </Btn>
             <Btn cor="cinza" onClick={()=>setModalCad(false)}>Cancelar</Btn>
@@ -1157,6 +1189,7 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
       {editId && editCli && (
         <Overlay onClose={()=>setEditId(null)} maxW={440}>
           <OvHeader titulo="✏️ Editar Cliente" onClose={()=>setEditId(null)}/>
+          {erro && <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#f87171",fontSize:13}}>{erro}</div>}
           <Inp label="Nome" value={form.nome} onChange={v=>setForm(f=>({...f,nome:v}))}/>
           <Inp label="Telefone" value={form.tel} onChange={v=>setForm(f=>({...f,tel:v}))}/>
           <Divider/>
@@ -1191,7 +1224,7 @@ export default function AppEmpresario() {
     hora: new Date(p.criadoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
   }));
   const [avisoSemMotoboy, setAvisoSemMotoboy] = useState(null);
-  const [empresa, setEmpresa] = useState(EMPRESA); // começa com demo, substitui pelo real
+  const [empresa, setEmpresa] = useState({...EMPRESA, id:null}); // começa SEM id até carregar o real do Supabase
   const [carregando, setCarregando] = useState(true);
 
   // Carrega dados reais do Supabase ao entrar
@@ -1277,6 +1310,7 @@ export default function AppEmpresario() {
   },[]);
 
   async function carregarPedidos(empresaId) {
+    if (!empresaId) return;
     const { data: pedidosDB, error } = await supabase
       .from("pedidos")
       .select("*, motoboys(nome_completo, telefone)")
@@ -1320,6 +1354,7 @@ export default function AppEmpresario() {
   },[pedidos]);
 
   async function publicarPedido(pedido) {
+    if (!empresa?.id) return;
     // Salva o pedido no Supabase
     const { data: pedidoDB } = await supabase.from("pedidos").insert({
       empresario_id: empresa.id,
