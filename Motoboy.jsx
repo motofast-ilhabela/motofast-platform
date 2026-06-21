@@ -164,27 +164,20 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
     return ()=>clearInterval(t);
   },[]);
 
-  // Toca imediatamente e depois a cada 5 segundos — 6 toques nos 30s
+  // Toca o som correspondente ao tempo decorrido — sincronizado com o criadoEm do pedido
+  // Isso garante que sempre toque certinho a cada rodada de 30s, mesmo se o componente não remontar
+  const ultimoToqueRef = useRef(-1);
   useEffect(()=>{
-    let count = 0;
-    const maxToques = Math.floor(TEMPO_PEDIDO / INTERVALO_SOM); // 6 toques
-
-    function tocar() {
-      if (count >= maxToques) return;
-      tocarSomEscolhido(tipoSom);
-      count++;
-    }
-
-    tocar(); // toca na hora (toque 1)
-
-    const t2 = setTimeout(()=>tocar(), 5000);   // toque 2
-    const t3 = setTimeout(()=>tocar(), 10000);  // toque 3
-    const t4 = setTimeout(()=>tocar(), 15000);  // toque 4
-    const t5 = setTimeout(()=>tocar(), 20000);  // toque 5
-    const t6 = setTimeout(()=>tocar(), 25000);  // toque 6
-
-    return ()=>{ clearTimeout(t2); clearTimeout(t3); clearTimeout(t4); clearTimeout(t5); clearTimeout(t6); };
-  },[]);
+    const intervalo = setInterval(()=>{
+      const decorrido = Math.floor((Date.now()-pedido.criadoEm)/1000);
+      const toqueAtual = Math.floor(decorrido / INTERVALO_SOM);
+      if (toqueAtual !== ultimoToqueRef.current && decorrido < TEMPO_PEDIDO) {
+        ultimoToqueRef.current = toqueAtual;
+        tocarSomEscolhido(tipoSom);
+      }
+    }, 500); // checa 2x por segundo pra não perder o momento exato
+    return ()=>clearInterval(intervalo);
+  },[pedido.criadoEm, tipoSom]);
 
   // Pisca borda
   useEffect(()=>{
@@ -726,9 +719,12 @@ export default function AppMotoboy() {
 
   // Busca pedidos reais aguardando aceite + escuta novos em tempo real
   useEffect(()=>{
-    if (!online || corridaAtiva || pedidoDisponivel || !motoboyId) return;
+    if (!online || corridaAtiva || !motoboyId) return;
+    // Se já tem um pedido na tela esperando resposta, não busca de novo (evita sobrescrever / piscar)
+    if (pedidoRef.current) return;
 
     async function buscarPedidoReal() {
+      if (pedidoRef.current) return; // checagem dupla de segurança contra duplicidade
       const { data } = await supabase
         .from("pedidos")
         .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
@@ -737,7 +733,7 @@ export default function AppMotoboy() {
         .limit(1)
         .maybeSingle();
 
-      if (data) {
+      if (data && !pedidoRef.current) {
         const novoPedido = {
           id: data.id,
           empresaNome: data.empresarios?.nome || "Estabelecimento",
@@ -753,7 +749,6 @@ export default function AppMotoboy() {
         };
         pedidoRef.current = novoPedido;
         setPedidoDisponivel(novoPedido);
-        tocarSomEscolhido(tipoSom);
       }
     }
 
@@ -771,7 +766,7 @@ export default function AppMotoboy() {
     const intervalo = setInterval(buscarPedidoReal, 8000);
 
     return () => { supabase.removeChannel(canal); clearInterval(intervalo); };
-  },[online, corridaAtiva, motoboyId, pedidoDisponivel]);
+  },[online, corridaAtiva, motoboyId]);
 
   // Repete som a cada 30s se ninguém aceitou, por até 5 minutos (10 tentativas)
   useEffect(()=>{
@@ -785,13 +780,58 @@ export default function AppMotoboy() {
         tentativas.current = 0;
         // Aviso ao empresário é tratado na interface do empresário
       } else {
-        // Nova rodada — recria o pedido com criadoEm atualizado pra resetar o timer visual
+        // Nova rodada — recria o pedido com criadoEm atualizado pra resetar o timer visual e o som
         setPedidoDisponivel(p=>p ? {...p, criadoEm:Date.now()} : null);
-        tocarSomEscolhido(tipoSom);
       }
     }, TEMPO_PEDIDO * 1000);
     return ()=>clearTimeout(t);
   },[pedidoDisponivel]);
+
+  // Mantém a corrida sempre sincronizada com o banco — versão simplificada,
+  // só com polling direto (sem Realtime/canal, que mostrou instabilidade)
+  async function recarregarCorrida(corridaId) {
+    if (!corridaId || !motoboyId) return;
+    const { data, error } = await supabase
+      .from("pedidos")
+      .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
+      .eq("corrida_id", corridaId)
+      .in("status", ["aceito","saiu_estabelecimento"])
+      .order("criado_em", { ascending: true });
+
+    if (error || !data || data.length === 0) return;
+
+    setCorridaAtiva(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        pedidos: data.map(p=>({
+          id: p.id,
+          empresaNome: p.empresarios?.nome || "Estabelecimento",
+          empresaTel: p.empresarios?.telefone || "",
+          empresaEndereco: p.empresarios?.endereco_estabelecimento || "",
+          clienteNome: p.cliente_nome,
+          clienteTel: p.cliente_telefone,
+          rua: p.rua, num: p.numero,
+          bairro: p.bairro, ref: p.referencia, obs: p.observacao,
+          pagamento: p.forma_pagamento, taxa: p.taxa,
+          valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
+          criadoEm: new Date(p.criado_em).getTime(),
+          statusBanco: p.status,
+        })),
+      };
+    });
+  }
+
+  const corridaIdRef = useRef(null);
+  useEffect(()=>{ corridaIdRef.current = corridaAtiva?.id || null; },[corridaAtiva?.id]);
+
+  useEffect(()=>{
+    if (!motoboyId) return;
+    const intervalo = setInterval(()=>{
+      if (corridaIdRef.current) recarregarCorrida(corridaIdRef.current);
+    }, 3000);
+    return () => clearInterval(intervalo);
+  },[motoboyId]);
 
   async function aceitar() {
     if (!pedidoDisponivel || !motoboyId) return;
@@ -815,6 +855,7 @@ export default function AppMotoboy() {
     if (!data) {
       // Outro motoboy já aceitou primeiro
       setPedidoDisponivel(null);
+      pedidoRef.current = null;
       tentativas.current = 0;
       return;
     }
@@ -824,11 +865,12 @@ export default function AppMotoboy() {
       pedidos: [{...pedidoDisponivel}],
     });
     setPedidoDisponivel(null);
+    pedidoRef.current = null;
     tentativas.current = 0;
     setAba("corrida");
   }
 
-  function recusar() { setPedidoDisponivel(null); tentativas.current = 0; }
+  function recusar() { setPedidoDisponivel(null); pedidoRef.current = null; tentativas.current = 0; }
 
   async function finalizarCorrida() {
     if (!corridaAtiva) return;
