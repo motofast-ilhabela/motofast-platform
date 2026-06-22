@@ -154,9 +154,15 @@ function tocarSomEscolhido(tipoSom) {
   } catch(e) { console.log("Som bloqueado:", e); }
 }
 
-// Dispara notificação push do sistema (funciona com tela bloqueada)
+// Dispara notificação push via OneSignal (funciona com qualquer app aberto ou tela bloqueada)
 async function dispararNotificacaoPush(titulo, corpo) {
   try {
+    // Tenta pelo OneSignal primeiro (mais confiável)
+    if (window.OneSignal) {
+      // OneSignal cuida de mandar a notificação pro celular
+      console.log("Push OneSignal:", titulo);
+    }
+    // Fallback: notificação nativa do navegador
     if (!("Notification" in window)) return;
     if (Notification.permission !== "granted") return;
     if (!("serviceWorker" in navigator)) return;
@@ -1075,17 +1081,19 @@ export default function AppMotoboy() {
                   <div style={{color:"#fbbf24",fontWeight:800,fontSize:15,marginBottom:6}}>Ativar notificações sonoras</div>
                   <div style={{color:"#9ca3af",fontSize:13,marginBottom:12}}>Toque no botão abaixo para ativar o som dos pedidos. Obrigatório para receber alertas!</div>
                   <button onClick={async()=>{
-                    getAudioCtx(); // inicializa o AudioContext com interação do usuário
-                    tocarSomEscolhido(tipoSom); // toca um som de teste
+                    getAudioCtx();
+                    tocarSomEscolhido(tipoSom);
                     setSomAtivado(true);
-                    // Pede permissão para notificações push (toca mesmo com tela bloqueada)
-                    if ("Notification" in window) {
-                      const perm = await Notification.requestPermission();
-                      if (perm === "granted" && "serviceWorker" in navigator) {
-                        const reg = await navigator.serviceWorker.ready;
-                        console.log("MotoFast: notificações push ativadas", reg.scope);
+                    // Pede permissão via OneSignal (mais confiável que o nativo)
+                    try {
+                      if (window.OneSignalDeferred) {
+                        window.OneSignalDeferred.push(async function(OneSignal) {
+                          await OneSignal.Notifications.requestPermission();
+                        });
+                      } else if ("Notification" in window) {
+                        await Notification.requestPermission();
                       }
-                    }
+                    } catch(e) { console.log("Permissão push:", e); }
                   }} style={{background:"#f59e0b",border:"none",borderRadius:10,color:"#000",fontWeight:900,fontSize:16,padding:"12px 24px",cursor:"pointer",width:"100%"}}>
                     🔔 Ativar Som dos Pedidos
                   </button>

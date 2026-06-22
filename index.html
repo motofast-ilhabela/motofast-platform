@@ -5,13 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MotoFast — Plataforma de Entregas</title>
 
-    <!-- PWA: manifesto e tema -->
+    <!-- PWA -->
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#10b981" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="MotoFast" />
     <link rel="apple-touch-icon" href="/favicon.svg" />
+
+    <!-- OneSignal SDK -->
+    <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+    <script>
+      window.OneSignalDeferred = window.OneSignalDeferred || [];
+      OneSignalDeferred.push(async function(OneSignal) {
+        await OneSignal.init({
+          appId: "df32f4f0-4280-4127-9d84-ec8a0a05328c",
+          safari_web_id: "",
+          notifyButton: { enable: false },
+          allowLocalhostAsSecureOrigin: false,
+        });
+      });
+    </script>
 
     <style>
       body { background: #0a0f1a; margin: 0; }
@@ -20,19 +34,5 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/main.jsx"></script>
-
-    <!-- Registra o Service Worker para notificações push -->
-    <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then(reg => {
-              console.log('MotoFast SW registrado:', reg.scope);
-              reg.update();
-            })
-            .catch(err => console.log('SW erro:', err));
-        });
-      }
-    </script>
   </body>
 </html>
