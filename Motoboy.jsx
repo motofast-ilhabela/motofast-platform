@@ -689,6 +689,36 @@ export default function AppMotoboy() {
             .in("status", ["entregue", "cancelado"])
             .order("criado_em", { ascending: false });
 
+          // Verifica se já existe uma corrida ativa (aceita ou em rota) para este motoboy —
+          // isso recupera a tela após um recarregamento acidental da página, sem perder a corrida em andamento
+          const { data: pedidosAtivosDB } = await supabase
+            .from("pedidos")
+            .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
+            .eq("motoboy_id", mb.id)
+            .in("status", ["aceito", "saiu_estabelecimento"])
+            .order("criado_em", { ascending: true });
+
+          if (pedidosAtivosDB && pedidosAtivosDB.length > 0) {
+            const corridaIdAtiva = pedidosAtivosDB[0].corrida_id;
+            setCorridaAtiva({
+              id: corridaIdAtiva,
+              pedidos: pedidosAtivosDB.map(p=>({
+                id: p.id,
+                empresaNome: p.empresarios?.nome || "Estabelecimento",
+                empresaTel: p.empresarios?.telefone || "",
+                empresaEndereco: p.empresarios?.endereco_estabelecimento || "",
+                clienteNome: p.cliente_nome,
+                clienteTel: p.cliente_telefone,
+                rua: p.rua, num: p.numero,
+                bairro: p.bairro, ref: p.referencia, obs: p.observacao,
+                pagamento: p.forma_pagamento, taxa: p.taxa,
+                valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
+                criadoEm: new Date(p.criado_em).getTime(),
+                statusBanco: p.status,
+              })),
+            });
+          }
+
           if (pedidosDB) {
             setHistorico(pedidosDB.map(p=>{
               const d = new Date(p.criado_em);
