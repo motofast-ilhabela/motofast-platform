@@ -19,7 +19,7 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <script type="module" src="/main.jsx"></script>
 
     <!-- Registra o Service Worker para notificações push -->
     <script>
@@ -28,7 +28,6 @@
           navigator.serviceWorker.register('/sw.js')
             .then(reg => {
               console.log('MotoFast SW registrado:', reg.scope);
-              // Verifica atualizações ao abrir o app
               reg.update();
             })
             .catch(err => console.log('SW erro:', err));
