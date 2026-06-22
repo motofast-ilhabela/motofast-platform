@@ -778,7 +778,23 @@ export default function AppMotoboy() {
     if (pedidoRef.current) return;
 
     async function buscarPedidoReal() {
-      if (pedidoRef.current) return; // checagem dupla de segurança contra duplicidade
+      // Se já tem pedido na tela, verifica se ele ainda está "aguardando" no banco
+      // Se foi cancelado pelo empresário, limpa a tela do motoboy
+      if (pedidoRef.current) {
+        const { data: verificacao } = await supabase
+          .from("pedidos")
+          .select("status")
+          .eq("id", pedidoRef.current.id)
+          .maybeSingle();
+        if (!verificacao || verificacao.status !== "aguardando") {
+          // Pedido foi cancelado ou aceito por outro motoboy — limpa tela
+          setPedidoDisponivel(null);
+          pedidoRef.current = null;
+          tentativas.current = 0;
+        }
+        return;
+      }
+
       const { data } = await supabase
         .from("pedidos")
         .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
