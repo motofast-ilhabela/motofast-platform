@@ -2,17 +2,38 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <meta name="theme-color" content="#0a0f1a" />
-    <title>MotoFast — Entregas Rápidas em Ilhabela</title>
-    <meta name="description" content="MotoFast conecta empresários e motoboys para entregas rápidas em Ilhabela e região." />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MotoFast — Plataforma de Entregas</title>
+
+    <!-- PWA: manifesto e tema -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#10b981" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="MotoFast" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+
     <style>
-      html, body { background: #0a0f1a; margin: 0; padding: 0; }
+      body { background: #0a0f1a; margin: 0; }
     </style>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/main.jsx"></script>
+    <script type="module" src="/src/main.jsx"></script>
+
+    <!-- Registra o Service Worker para notificações push -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then(reg => {
+              console.log('MotoFast SW registrado:', reg.scope);
+              // Verifica atualizações ao abrir o app
+              reg.update();
+            })
+            .catch(err => console.log('SW erro:', err));
+        });
+      }
+    </script>
   </body>
 </html>

@@ -154,6 +154,24 @@ function tocarSomEscolhido(tipoSom) {
   } catch(e) { console.log("Som bloqueado:", e); }
 }
 
+// Dispara notificação push do sistema (funciona com tela bloqueada)
+async function dispararNotificacaoPush(titulo, corpo) {
+  try {
+    if (!("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+    if (!("serviceWorker" in navigator)) return;
+    const reg = await navigator.serviceWorker.ready;
+    reg.showNotification(titulo, {
+      body: corpo,
+      icon: "/favicon.svg",
+      badge: "/favicon.svg",
+      vibrate: [200, 100, 200, 100, 200],
+      requireInteraction: true,
+      data: { url: "/motoboy" },
+    });
+  } catch(e) { console.log("Push bloqueado:", e); }
+}
+
 // ─── PEDIDO DISPONÍVEL (modal que aparece com som) ────────────────────────────
 function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
   const [tick, setTick] = useState(0);
@@ -779,6 +797,11 @@ export default function AppMotoboy() {
         };
         pedidoRef.current = novoPedido;
         setPedidoDisponivel(novoPedido);
+        // Dispara notificação push (funciona com tela bloqueada)
+        dispararNotificacaoPush(
+          "🏍️ Novo Pedido MotoFast!",
+          `Entrega para ${novoPedido.clienteNome} em ${novoPedido.bairro} — R$${novoPedido.taxa}. Você tem 30 segundos para aceitar!`
+        );
       }
     }
 
@@ -1051,10 +1074,18 @@ export default function AppMotoboy() {
                   <div style={{fontSize:32,marginBottom:8}}>🔔</div>
                   <div style={{color:"#fbbf24",fontWeight:800,fontSize:15,marginBottom:6}}>Ativar notificações sonoras</div>
                   <div style={{color:"#9ca3af",fontSize:13,marginBottom:12}}>Toque no botão abaixo para ativar o som dos pedidos. Obrigatório para receber alertas!</div>
-                  <button onClick={()=>{
+                  <button onClick={async()=>{
                     getAudioCtx(); // inicializa o AudioContext com interação do usuário
                     tocarSomEscolhido(tipoSom); // toca um som de teste
                     setSomAtivado(true);
+                    // Pede permissão para notificações push (toca mesmo com tela bloqueada)
+                    if ("Notification" in window) {
+                      const perm = await Notification.requestPermission();
+                      if (perm === "granted" && "serviceWorker" in navigator) {
+                        const reg = await navigator.serviceWorker.ready;
+                        console.log("MotoFast: notificações push ativadas", reg.scope);
+                      }
+                    }
                   }} style={{background:"#f59e0b",border:"none",borderRadius:10,color:"#000",fontWeight:900,fontSize:16,padding:"12px 24px",cursor:"pointer",width:"100%"}}>
                     🔔 Ativar Som dos Pedidos
                   </button>
