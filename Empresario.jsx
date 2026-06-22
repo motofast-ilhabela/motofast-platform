@@ -1324,15 +1324,22 @@ export default function AppEmpresario() {
   useEffect(()=>{
     const aguardando = pedidos.filter(p=>p.status==="aguardando");
     if (aguardando.length===0) return;
-    const pedidoAlvo = aguardando[0];
-    const decorrido = Date.now() - pedidoAlvo.criadoEm;
-    const restante = Math.max(0, 5*60*1000 - decorrido);
-    const t = setTimeout(async ()=>{
-      await supabase.from("pedidos").update({ status: "cancelado", motivo_cancelamento: "Nenhum motoboy aceitou em 5 minutos" }).eq("id", pedidoAlvo.id).eq("status","aguardando");
-      setAvisoSemMotoboy(pedidoAlvo);
-      await carregarPedidos(empresa.id);
-    }, restante);
-    return ()=>clearTimeout(t);
+
+    // Cria um timer separado para CADA pedido aguardando, baseado no criadoEm de cada um
+    const timers = aguardando.map(pedidoAlvo => {
+      const decorrido = Date.now() - pedidoAlvo.criadoEm;
+      const restante = Math.max(1000, 5*60*1000 - decorrido); // mínimo 1s para não cancelar na hora
+      return setTimeout(async ()=>{
+        await supabase.from("pedidos")
+          .update({ status: "cancelado", motivo_cancelamento: "Nenhum motoboy aceitou em 5 minutos" })
+          .eq("id", pedidoAlvo.id)
+          .eq("status","aguardando");
+        setAvisoSemMotoboy(pedidoAlvo);
+        await carregarPedidos(empresa.id);
+      }, restante);
+    });
+
+    return ()=>timers.forEach(t=>clearTimeout(t));
   },[pedidos]);
 
   async function publicarPedido(pedido) {
