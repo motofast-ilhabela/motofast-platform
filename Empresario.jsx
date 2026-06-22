@@ -705,8 +705,12 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
     return ()=>clearInterval(t);
   },[]);
 
-  function cancelar(id) {
-    setPedidos(prev=>prev.map(p=>p.id===id?{...p,status:"cancelado"}:p));
+  async function cancelar(id) {
+    await supabase.from("pedidos").update({
+      status: "cancelado",
+      motivo_cancelamento: "Cancelado pelo empresário",
+    }).eq("id", id);
+    await onRecarregar();
   }
 
   async function adicionarPedidoCorrida(novoPedido) {
