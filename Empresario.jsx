@@ -944,27 +944,12 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
 }
 
 // ─── HISTÓRICO DO ESTABELECIMENTO ─────────────────────────────────────────────
-function HistoricoEmp({ historico, pedidos }) {
+function HistoricoEmp({ historico }) {
   const [filtro, setFiltro] = useState("Todos");
 
-  function normalizarStatus(s) {
-    if (!s) return "Cancelada";
-    const sl = s.toLowerCase();
-    if (sl === "entregue") return "Entregue";
-    if (sl === "cancelado" || sl === "cancelada") return "Cancelada";
-    return s;
-  }
-
-  const todos = [
-    ...historico.map(e=>({...e, status: normalizarStatus(e.status)})),
-    ...pedidos.filter(p=>p.status==="entregue"||p.status==="cancelado").map(p=>({
-      id:p.id, clienteNome:p.clienteNome, bairro:p.bairro, pagamento:p.pagamento,
-      taxa:p.taxa, status: normalizarStatus(p.status),
-      motoboyNome:p.motoboyNome||"—", data:"Hoje", hora:"agora"
-    }))
-  ];
-
-  const lista = todos.filter(e=>filtro==="Todos"||e.status===filtro);
+  // historico ja vem com status normalizado (Entregue / Cancelada) do App principal
+  const todos = historico;
+  const lista = filtro==="Todos" ? todos : todos.filter(e=>e.status===filtro);
   const totalTaxas = todos.filter(e=>e.status==="Entregue").reduce((s,e)=>s+e.taxa,0);
   const semana = todos.filter(e=>e.status==="Entregue").slice(0,5).reduce((s,e)=>s+e.taxa,0);
 
@@ -1003,7 +988,7 @@ function HistoricoEmp({ historico, pedidos }) {
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead>
             <tr style={{background:"#0f172a",borderBottom:"1px solid #1f2937"}}>
-              {["Data","Hora","Cliente","Bairro","Pgto","Taxa","Motoboy","Status"].map(h=>(
+              {["Data","Saiu Est.","Entregue","Cliente","Bairro","Pgto","Taxa","Motoboy","Status"].map(h=>(
                 <th key={h} style={{padding:"10px 12px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"}}>{h}</th>
               ))}
             </tr>
@@ -1017,7 +1002,8 @@ function HistoricoEmp({ historico, pedidos }) {
                   onMouseOver={ev=>ev.currentTarget.style.background="#0f172a"}
                   onMouseOut={ev=>ev.currentTarget.style.background="transparent"}>
                   <td style={{padding:"9px 12px",color:"#9ca3af",fontSize:12}}>{e.data}</td>
-                  <td style={{padding:"9px 12px",color:"#9ca3af",fontSize:12}}>{e.hora}</td>
+                  <td style={{padding:"9px 12px",color:"#fbbf24",fontSize:12}}>{e.horaSaida||"—"}</td>
+                  <td style={{padding:"9px 12px",color:"#34d399",fontSize:12}}>{e.horaEntrega||"—"}</td>
                   <td style={{padding:"9px 12px",color:"#f9fafb",fontWeight:600}}>{e.clienteNome}</td>
                   <td style={{padding:"9px 12px",color:"#34d399",fontSize:12}}>{e.bairro}</td>
                   <td style={{padding:"9px 12px"}}><span style={{color:pg.cor,fontWeight:700}}>{pg.icon}</span></td>
@@ -1214,6 +1200,8 @@ export default function AppEmpresario() {
     motoboyNome: p.motoboyNome || "—",
     data: new Date(p.criadoEm).toLocaleDateString("pt-BR"),
     hora: new Date(p.criadoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
+    horaSaida: p.saiuEstabelecimentoEm ? new Date(p.saiuEstabelecimentoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
+    horaEntrega: p.entregueEm ? new Date(p.entregueEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
   }));
   const [avisoSemMotoboy, setAvisoSemMotoboy] = useState(null);
   const [empresa, setEmpresa] = useState({...EMPRESA, id:null}); // começa SEM id até carregar o real do Supabase
@@ -1326,6 +1314,8 @@ export default function AppEmpresario() {
         motoboyNome: p.motoboys?.nome_completo || null,
         motoboyTel: p.motoboys?.telefone || null,
         corridaId: p.corrida_id,
+        saiuEstabelecimentoEm: p.saiu_estabelecimento_em || null,
+        entregueEm: p.entregue_em || null,
       })));
     }
   }
@@ -1424,7 +1414,7 @@ export default function AppEmpresario() {
       <div style={{maxWidth:900,margin:"0 auto",padding:"24px 20px"}}>
         {aba==="nova"      && <SolicitarEntrega clientes={clientes} setClientes={setClientes} onPublicar={publicarPedido} empresa={empresa}/>}
         {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes} empresa={empresa} onRecarregar={()=>carregarPedidos(empresa.id)}/>}
-        {aba==="historico" && <HistoricoEmp historico={historico} pedidos={pedidos}/>}
+        {aba==="historico" && <HistoricoEmp historico={historico}/>}
         {aba==="clientes"  && <ClientesSalvos clientes={clientes} setClientes={setClientes} empresaId={empresa.id}/>}
       </div>
 
