@@ -1448,10 +1448,27 @@ export default function AppEmpresario() {
               {" "}Os motoboys serão notificados assim que você reenviar o pedido. Continue tentando — alguém vai aceitar!
             </div>
             <button
-              onClick={()=>{
-                // Reenvia o pedido direto, sem precisar preencher nada
-                const pedidoReenviado = {...avisoSemMotoboy, id:Date.now(), status:"aguardando", criadoEm:Date.now()};
-                setPedidos(prev=>[...prev, pedidoReenviado]);
+              onClick={async()=>{
+                // Reenvia o pedido salvando no Supabase de verdade
+                if (!empresa?.id) return;
+                const { error } = await supabase.from("pedidos").insert({
+                  empresario_id: empresa.id,
+                  cliente_nome: avisoSemMotoboy.clienteNome,
+                  cliente_telefone: avisoSemMotoboy.clienteTel,
+                  rua: avisoSemMotoboy.rua,
+                  numero: avisoSemMotoboy.num,
+                  bairro: avisoSemMotoboy.bairro,
+                  referencia: avisoSemMotoboy.ref,
+                  observacao: avisoSemMotoboy.obs,
+                  forma_pagamento: avisoSemMotoboy.pagamento,
+                  taxa: avisoSemMotoboy.taxa,
+                  valor_pedido: avisoSemMotoboy.valorPedido,
+                  valor_receber: avisoSemMotoboy.valorReceber,
+                  valor_troco: avisoSemMotoboy.troco,
+                  status: "aguardando",
+                });
+                if (error) { console.error("Erro ao reenviar pedido:", error); return; }
+                await carregarPedidos(empresa.id);
                 setAvisoSemMotoboy(null);
                 setAba("ativos");
               }}
