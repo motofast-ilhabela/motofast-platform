@@ -757,7 +757,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
     return m>0?`${m}m ${r}s`:`${r}s`;
   }
 
-  if (ativos.length===0 && recentes.length===0) {
+  if (ativos.length===0) {
     return (
       <Card style={{textAlign:"center",padding:40}}>
         <div style={{fontSize:48,marginBottom:12}}>🏍️</div>
@@ -903,27 +903,6 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
         );
       })}
 
-      {/* Recentes */}
-      {recentes.length>0 && (
-        <div>
-          <div style={{color:"#6b7280",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8,marginTop:20}}>Concluídos recentemente</div>
-          {recentes.map(p=>(
-            <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0f172a",borderRadius:8,padding:"10px 14px",marginBottom:6}}>
-              <div>
-                <span style={{color:"#f9fafb",fontWeight:600,fontSize:13}}>{p.clienteNome}</span>
-                <span style={{color:"#6b7280",fontSize:12,marginLeft:8}}>· {p.bairro}</span>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <span style={{color:"#34d399",fontWeight:700}}>R${p.taxa}</span>
-                <span style={{background:p.status==="entregue"?"#0d3d2e":"#3d1010",color:p.status==="entregue"?"#34d399":"#f87171",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>
-                  {p.status==="entregue"?"✅ Entregue":"❌ Cancelado"}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
       {/* Modal mapa */}
       {modalMapa && (
         <Overlay onClose={()=>setModalMapa(null)} maxW={620}>
@@ -967,11 +946,24 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
 // ─── HISTÓRICO DO ESTABELECIMENTO ─────────────────────────────────────────────
 function HistoricoEmp({ historico, pedidos }) {
   const [filtro, setFiltro] = useState("Todos");
-  const todos = [...historico, ...pedidos.filter(p=>p.status==="entregue"||p.status==="cancelado").map(p=>({
-    id:p.id, clienteNome:p.clienteNome, bairro:p.bairro, pagamento:p.pagamento,
-    taxa:p.taxa, status:p.status==="entregue"?"Entregue":"Cancelada",
-    motoboyNome:p.motoboyNome||"—", data:"Hoje", hora:"agora"
-  }))];
+
+  function normalizarStatus(s) {
+    if (!s) return "Cancelada";
+    const sl = s.toLowerCase();
+    if (sl === "entregue") return "Entregue";
+    if (sl === "cancelado" || sl === "cancelada") return "Cancelada";
+    return s;
+  }
+
+  const todos = [
+    ...historico.map(e=>({...e, status: normalizarStatus(e.status)})),
+    ...pedidos.filter(p=>p.status==="entregue"||p.status==="cancelado").map(p=>({
+      id:p.id, clienteNome:p.clienteNome, bairro:p.bairro, pagamento:p.pagamento,
+      taxa:p.taxa, status: normalizarStatus(p.status),
+      motoboyNome:p.motoboyNome||"—", data:"Hoje", hora:"agora"
+    }))
+  ];
+
   const lista = todos.filter(e=>filtro==="Todos"||e.status===filtro);
   const totalTaxas = todos.filter(e=>e.status==="Entregue").reduce((s,e)=>s+e.taxa,0);
   const semana = todos.filter(e=>e.status==="Entregue").slice(0,5).reduce((s,e)=>s+e.taxa,0);
