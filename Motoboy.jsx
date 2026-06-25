@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient.js";
 
-// ─── DADOS DO MOTOBOY (viriam do login) ──────────────────────────────────────
-const MOTOBOY = {
-  id: 1,
-  nomeCompleto: "Carlos Eduardo Silva",
-  tel: "(12) 99801-2233",
-  pix: "11999012233",
-  bairroBase: "Perequê",
+// ─── DADOS DO MOTOBOY (carregados do banco) ──────────────────────────────────
+const MOTOBOY_VAZIO = {
+  id: null,
+  nomeCompleto: "Carregando...",
+  tel: "",
+  pix: "",
+  bairroBase: "",
 };
 
 const PG = {
@@ -16,21 +16,6 @@ const PG = {
   cartao:   { label:"Cartão",   icon:"💳", cor:"#60a5fa" },
 };
 
-// Histórico de entregas do motoboy
-const HIST_INIT = [
-  {id:1,clienteNome:"João da Silva",empresaNome:"Açaí da Hora",bairro:"Perequê",pagamento:"pix",taxa:5,status:"Entregue",data:"2026-06-09",hora:"19:32",semana:3,mes:6,repasePago:false},
-  {id:2,clienteNome:"Maria Santos",empresaNome:"Pizzaria Dom João",bairro:"Vila",pagamento:"dinheiro",taxa:6,status:"Entregue",data:"2026-06-09",hora:"20:15",semana:3,mes:6,repasePago:false},
-  {id:3,clienteNome:"Ana Costa",empresaNome:"Açaí da Hora",bairro:"Centro",pagamento:"pix",taxa:7,status:"Entregue",data:"2026-06-08",hora:"18:45",semana:3,mes:6,repasePago:false},
-  {id:4,clienteNome:"Pedro Almeida",empresaNome:"Farmácia Central",bairro:"Barra Velha",pagamento:"cartao",taxa:9,status:"Entregue",data:"2026-06-08",hora:"20:00",semana:3,mes:6,repasePago:false},
-  {id:5,clienteNome:"Lucas Ferreira",empresaNome:"Supermercado Norte",bairro:"Sul",pagamento:"pix",taxa:11,status:"Cancelada",data:"2026-06-07",hora:"19:10",semana:3,mes:6,repasePago:false},
-  {id:6,clienteNome:"Fernanda Rocha",empresaNome:"Açaí da Hora",bairro:"Perequê",pagamento:"pix",taxa:5,status:"Entregue",data:"2026-06-07",hora:"21:00",semana:3,mes:6,repasePago:false},
-  {id:7,clienteNome:"João da Silva",empresaNome:"Pizzaria Dom João",bairro:"Vila",pagamento:"pix",taxa:6,status:"Entregue",data:"2026-06-05",hora:"19:00",semana:2,mes:6,repasePago:true},
-  {id:8,clienteNome:"Ana Costa",empresaNome:"Açaí da Hora",bairro:"Perequê",pagamento:"dinheiro",taxa:5,status:"Entregue",data:"2026-06-04",hora:"20:30",semana:2,mes:6,repasePago:true},
-  {id:9,clienteNome:"Maria Santos",empresaNome:"Farmácia Central",bairro:"Centro",pagamento:"pix",taxa:7,status:"Entregue",data:"2026-06-03",hora:"17:00",semana:2,mes:6,repasePago:true},
-  {id:10,clienteNome:"Pedro Almeida",empresaNome:"Supermercado Norte",bairro:"Barra Velha",pagamento:"pix",taxa:9,status:"Entregue",data:"2026-05-28",hora:"19:45",semana:4,mes:5,repasePago:true},
-  {id:11,clienteNome:"Lucas Ferreira",empresaNome:"Açaí da Hora",bairro:"Sul",pagamento:"cartao",taxa:12,status:"Entregue",data:"2026-05-27",hora:"20:00",semana:4,mes:5,repasePago:true},
-  {id:12,clienteNome:"Fernanda Rocha",empresaNome:"Pizzaria Dom João",bairro:"Armação",pagamento:"pix",taxa:11,status:"Entregue",data:"2026-05-26",hora:"21:15",semana:4,mes:5,repasePago:true},
-];
 
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
 function Card({ children, style={} }) {
@@ -669,14 +654,14 @@ function Ganhos({ historico }) {
 export default function AppMotoboy() {
   const [somAtivado, setSomAtivado] = useState(false);
   const audioCtxRef = useRef(null);
-  const [online, setOnline] = useState(true);
+  const [online, setOnline] = useState(false);
   const [aba, setAba] = useState("home");
   const [historico, setHistorico] = useState([]);
   const [pedidoDisponivel, setPedidoDisponivel] = useState(null);
   const [corridaAtiva, setCorridaAtiva] = useState(null);
   const [tipoSom, setTipoSom] = useState("alerta_forte");
   const [motoboyId, setMotoboyId] = useState(null);
-  const [motoboy, setMotoboy] = useState(MOTOBOY); // começa com demo, substitui pelo real
+  const [motoboy, setMotoboy] = useState(MOTOBOY_VAZIO);
   const [carregando, setCarregando] = useState(true);
   const tentativas = useRef(0);
   const pedidoRef = useRef(null);
@@ -704,6 +689,8 @@ export default function AppMotoboy() {
             pix: mb.pix,
             bairroBase: mb.bairro_base,
           });
+          // Carrega o status online/offline real do banco
+          setOnline(mb.online || false);
 
           // Carrega histórico real de entregas desse motoboy
           const { data: pedidosDB } = await supabase
@@ -978,7 +965,10 @@ export default function AppMotoboy() {
       }
     }
     setCorridaAtiva(null);
-    setOnline(false); // fica offline automaticamente
+    setOnline(false);
+    if (motoboyId) {
+      await supabase.from("motoboys").update({online: false}).eq("id", motoboyId);
+    }
     setAba("home");
     // No sistema real: notifica admin e empresário com o motivo
   }
@@ -1009,7 +999,7 @@ export default function AppMotoboy() {
         <div style={{maxWidth:600,margin:"0 auto",display:"flex",alignItems:"center",gap:0}}>
           <div style={{padding:"12px 16px 12px 0",borderRight:"1px solid #1f2937",marginRight:14,flexShrink:0}}>
             <div style={{color:"#34d399",fontWeight:900,fontSize:16,letterSpacing:-0.5}}>⚡ MotoFast</div>
-            <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>{(motoboy?.nomeCompleto || MOTOBOY.nomeCompleto).split(" ")[0]}</div>
+            <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>{(motoboy?.nomeCompleto || "MotoFast").split(" ")[0]}</div>
           </div>
           <nav style={{display:"flex",flex:1}}>
             {ABAS.map(a=>(
@@ -1020,7 +1010,13 @@ export default function AppMotoboy() {
             ))}
           </nav>
           {/* Toggle online/offline */}
-          <button onClick={()=>setOnline(x=>!x)} style={{flexShrink:0,margin:"0 0 0 8px",padding:"6px 14px",borderRadius:20,cursor:"pointer",fontWeight:700,fontSize:12,border:"none",background:online?"#0d3d2e":"#1f2937",color:online?"#34d399":"#6b7280",transition:"all 0.2s"}}>
+          <button onClick={async()=>{
+            const novoStatus = !online;
+            setOnline(novoStatus);
+            if (motoboyId) {
+              await supabase.from("motoboys").update({online: novoStatus}).eq("id", motoboyId);
+            }
+          }} style={{flexShrink:0,margin:"0 0 0 8px",padding:"6px 14px",borderRadius:20,cursor:"pointer",fontWeight:700,fontSize:12,border:"none",background:online?"#0d3d2e":"#1f2937",color:online?"#34d399":"#6b7280",transition:"all 0.2s"}}>
             {online?"🟢 Online":"⚫ Offline"}
           </button>
           <button onClick={async()=>{ await supabase.auth.signOut(); window.location.href = "/"; }}
@@ -1047,7 +1043,13 @@ export default function AppMotoboy() {
                     {online?"Aguardando pedidos... fique de olho no som!":"Ative o modo online para receber pedidos"}
                   </div>
                 </div>
-                <button onClick={()=>setOnline(x=>!x)} style={{padding:"10px 18px",borderRadius:10,cursor:"pointer",fontWeight:800,fontSize:14,border:"none",background:online?"#ef4444":"#10b981",color:"#fff"}}>
+                <button onClick={async()=>{
+                  const novoStatus = !online;
+                  setOnline(novoStatus);
+                  if (motoboyId) {
+                    await supabase.from("motoboys").update({online: novoStatus}).eq("id", motoboyId);
+                  }
+                }} style={{padding:"10px 18px",borderRadius:10,cursor:"pointer",fontWeight:800,fontSize:14,border:"none",background:online?"#ef4444":"#10b981",color:"#fff"}}>
                   {online?"Sair":"Entrar"}
                 </button>
               </div>
