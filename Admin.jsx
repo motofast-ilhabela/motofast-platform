@@ -6,58 +6,6 @@ const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov"
 const MENSALIDADE = 95;
 const PG = { pix:{label:"Pix",icon:"💠",cor:"#34d399"}, dinheiro:{label:"Dinheiro",icon:"💵",cor:"#fbbf24"}, cartao:{label:"Cartão",icon:"💳",cor:"#60a5fa"} };
 
-// ─── DADOS ────────────────────────────────────────────────────────────────────
-const MB_INIT = [
-  {id:1,nomeCompleto:"Carlos Eduardo Silva",tel:"(12) 99801-2233",pix:"11999012233",bairroBase:"Perequê",cpf:"123.456.789-01",rg:"12.345.678-9",nascimento:"15/03/1995",nomePai:"José Antônio Silva",nomeMae:"Maria das Graças Silva",endereco:"Rua das Flores, 45, Perequê, Ilhabela/SP",online:true,ativo:true,banido:false,motivoBanimento:null,dataBanimento:null},
-  {id:2,nomeCompleto:"Marcos Antônio Souza",tel:"(12) 99712-4455",pix:"marcos@pix",bairroBase:"Vila",cpf:"234.567.890-12",rg:"23.456.789-0",nascimento:"22/07/1998",nomePai:"Paulo Roberto Souza",nomeMae:"Ana Claudia Souza",endereco:"Av. Princesa Isabel, 230, Vila, Ilhabela/SP",online:true,ativo:true,banido:false,motivoBanimento:null,dataBanimento:null},
-  {id:3,nomeCompleto:"Diego Ferreira Santos",tel:"(12) 99623-6677",pix:"diego@pix",bairroBase:"Barra Velha",cpf:"345.678.901-23",rg:"34.567.890-1",nascimento:"08/11/1992",nomePai:"Roberto Carlos Santos",nomeMae:"Lucia Helena Santos",endereco:"Rua do Sol, 88, Barra Velha, Ilhabela/SP",online:false,ativo:true,banido:false,motivoBanimento:null,dataBanimento:null},
-  {id:4,nomeCompleto:"Rafael Henrique Lima",tel:"(12) 99534-8899",pix:"rafael@pix",bairroBase:"Centro",cpf:"456.789.012-34",rg:"45.678.901-2",nascimento:"30/01/2000",nomePai:"Fernando José Lima",nomeMae:"Sandra Maria Lima",endereco:"Rua Central, 12, Centro, Ilhabela/SP",online:true,ativo:true,banido:false,motivoBanimento:null,dataBanimento:null},
-  {id:5,nomeCompleto:"Thiago Rodrigues Costa",tel:"(12) 99445-0011",pix:"thiago@pix",bairroBase:"Itaquanduba",cpf:"567.890.123-45",rg:"56.789.012-3",nascimento:"14/06/1990",nomePai:"Antônio Carlos Costa",nomeMae:"Vera Lúcia Costa",endereco:"Estrada da Ilha, 310, Itaquanduba, Ilhabela/SP",online:false,ativo:false,banido:true,motivoBanimento:"Sumiu com dinheiro do cliente — ocorrência registrada",dataBanimento:"2026-05-20"},
-];
-
-const EMP_INIT = [
-  {id:1,nome:"Pizzaria Dom João",tel:"(12) 3894-1122",bairro:"Vila",cnpj:"12.345.678/0001-90",nomeDono:"João Carlos Pereira",telDono:"(12) 99901-1111",nomeSocio:"",telSocio:"",enderecoEstab:"Rua da Padroeira, 45, Vila, Ilhabela/SP",planoPagamento:"semanal",planoPagamentoMotoboy:"semanal",planoGratis:false,dataFimGratis:null,bloqueado:false,mensalidadePaga:true,pagamentosDiarios:{"2026-06-09":true,"2026-06-08":true,"2026-06-07":true,"2026-06-06":true,"2026-06-05":true,"2026-06-04":true,"2026-06-03":true},taxas:{"Perequê":{e:12,m:9},"Vila":{e:8,m:6},"Barra Velha":{e:14,m:10},"Itaquanduba":{e:11,m:8},"Água Branca":{e:13,m:9},"Zabumba":{e:10,m:7},"Sul":{e:18,m:13},"Centro":{e:9,m:7},"Armação":{e:15,m:11},"Curral":{e:12,m:9}}},
-  {id:2,nome:"Açaí da Hora",tel:"(12) 3894-3344",bairro:"Perequê",cnpj:"23.456.789/0001-01",nomeDono:"Alessandro Santos",telDono:"(12) 99902-2222",nomeSocio:"",telSocio:"",enderecoEstab:"Av. Princesa Isabel, 230, Perequê, Ilhabela/SP",planoPagamento:"semanal",planoPagamentoMotoboy:"diario",planoGratis:true,dataFimGratis:"2026-07-10",bloqueado:false,mensalidadePaga:true,pagamentosDiarios:{"2026-06-09":true,"2026-06-08":false,"2026-06-07":true,"2026-06-06":true,"2026-06-05":false,"2026-06-04":true,"2026-06-03":true},taxas:{"Perequê":{e:7,m:5},"Vila":{e:11,m:8},"Barra Velha":{e:12,m:9},"Itaquanduba":{e:9,m:7},"Água Branca":{e:8,m:6},"Zabumba":{e:9,m:6},"Sul":{e:16,m:12},"Centro":{e:10,m:7},"Armação":{e:14,m:10},"Curral":{e:10,m:7}}},
-  {id:3,nome:"Farmácia Central",tel:"(12) 3894-5566",bairro:"Centro",cnpj:"34.567.890/0001-12",nomeDono:"Maria Aparecida Lima",telDono:"(12) 99903-3333",nomeSocio:"Carlos Lima",telSocio:"(12) 99903-4444",enderecoEstab:"Rua do Comércio, 12, Centro, Ilhabela/SP",planoPagamento:"semanal",planoPagamentoMotoboy:"semanal",planoGratis:false,dataFimGratis:null,bloqueado:true,mensalidadePaga:false,pagamentosDiarios:{},taxas:{"Perequê":{e:11,m:8},"Vila":{e:10,m:7},"Barra Velha":{e:13,m:9},"Itaquanduba":{e:10,m:7},"Água Branca":{e:11,m:8},"Zabumba":{e:9,m:6},"Sul":{e:17,m:12},"Centro":{e:6,m:4},"Armação":{e:14,m:10},"Curral":{e:11,m:8}}},
-  {id:4,nome:"Supermercado Norte",tel:"(12) 3894-7788",bairro:"Barra Velha",cnpj:"45.678.901/0001-23",nomeDono:"Roberto Alves Costa",telDono:"(12) 99904-5555",nomeSocio:"Ana Paula Costa",telSocio:"(12) 99904-6666",enderecoEstab:"Estrada do Sul, 800, Barra Velha, Ilhabela/SP",planoPagamento:"semanal",planoPagamentoMotoboy:"diario",planoGratis:false,dataFimGratis:null,bloqueado:false,mensalidadePaga:true,pagamentosDiarios:{"2026-06-09":true,"2026-06-08":true,"2026-06-07":true,"2026-06-06":true,"2026-06-05":true,"2026-06-04":true,"2026-06-03":true},taxas:{"Perequê":{e:13,m:9},"Vila":{e:12,m:9},"Barra Velha":{e:7,m:5},"Itaquanduba":{e:10,m:7},"Água Branca":{e:12,m:9},"Zabumba":{e:9,m:6},"Sul":{e:15,m:11},"Centro":{e:11,m:8},"Armação":{e:16,m:11},"Curral":{e:11,m:8}}},
-];
-
-const CLI_INIT = [
-  {id:1,nome:"João da Silva",tel:"(12) 99801-1111",endereco:{rua:"Rua das Flores",num:"45",bairro:"Perequê",ref:"Casa verde, portão de ferro"}},
-  {id:2,nome:"Maria Santos",tel:"(12) 99802-2222",endereco:{rua:"Rua do Sol",num:"120",bairro:"Vila",ref:"Prédio azul, apto 3B"}},
-  {id:3,nome:"Pedro Almeida",tel:"(12) 99803-3333",endereco:{rua:"Av. Beira Mar",num:"300",bairro:"Barra Velha",ref:"Em frente ao quiosque"}},
-  {id:4,nome:"Ana Costa",tel:"(12) 99804-4444",endereco:{rua:"Rua Central",num:"88",bairro:"Centro",ref:"Casa amarela"}},
-  {id:5,nome:"Lucas Ferreira",tel:"(12) 99805-5555",endereco:{rua:"Estrada da Ilha",num:"210",bairro:"Sul",ref:"Sítio depois da curva"}},
-];
-
-function gerarHist(mbs, emps) {
-  const h = []; let id = 1;
-  const nomes = ["João da Silva","Maria Santos","Pedro Almeida","Ana Costa","Lucas Ferreira"];
-  for (let mes = 4; mes <= 6; mes++) {
-    mbs.filter(m=>!m.banido).forEach(mb => {
-      const qtd = Math.floor(Math.random()*16)+8;
-      for (let i = 0; i < qtd; i++) {
-        const emp = emps[Math.floor(Math.random()*emps.length)];
-        const bKeys = Object.keys(emp.taxas);
-        const bairro = bKeys[Math.floor(Math.random()*bKeys.length)];
-        const t = emp.taxas[bairro] || {e:10,m:7};
-        const pgs = ["pix","pix","dinheiro","cartao"];
-        const pg = pgs[Math.floor(Math.random()*pgs.length)];
-        const dia = Math.floor(Math.random()*27)+1;
-        const sem = dia<=7?1:dia<=14?2:dia<=21?3:4;
-        const hSaidaH = Math.floor(Math.random()*12)+10; // 10h-22h
-        const hSaidaM = Math.floor(Math.random()*60);
-        const horaSaida = `${String(hSaidaH).padStart(2,"0")}:${String(hSaidaM).padStart(2,"0")}`;
-        const minEntrega = Math.floor(Math.random()*20)+8; // 8 a 28 min de entrega
-        const dEntrega = new Date(2026,0,1,hSaidaH,hSaidaM+minEntrega);
-        const horaEntrega = `${String(dEntrega.getHours()).padStart(2,"0")}:${String(dEntrega.getMinutes()).padStart(2,"0")}`;
-        h.push({id:id++,motoboyId:mb.id,empresarioId:emp.id,clienteNome:nomes[Math.floor(Math.random()*nomes.length)],bairro,pagamento:pg,taxaEmpresario:t.e,taxaMotoboy:t.m,lucro:t.e-t.m,status:Math.random()>0.08?"Entregue":"Cancelada",data:`2026-${String(mes).padStart(2,"0")}-${String(dia).padStart(2,"0")}`,horaSaida,horaEntrega,mes,semana:sem,repasePago:mes<6||(mes===6&&sem<3)});
-      }
-    });
-  }
-  return h;
-}
-
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
 function Card({ children, style={} }) {
   return <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"18px 22px",...style}}>{children}</div>;
@@ -136,41 +84,45 @@ function SectionTitle({ children }) { return <div style={{color:"#9ca3af",fontSi
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
 function Dashboard({ historico, motoboys, empresarios }) {
   const ent = historico.filter(e=>e.status==="Entregue");
-  const m6  = ent.filter(e=>e.mes===6);
+  const agora = new Date();
+  const mesAtual = agora.getMonth()+1;
+  const anoAtual = agora.getFullYear();
+  const mAtu = ent.filter(e=>e.mes===mesAtual);
   const lucroTotal = ent.reduce((s,e)=>s+e.lucro,0).toFixed(2);
-  const lucroMes   = m6.reduce((s,e)=>s+e.lucro,0).toFixed(2);
-  const taxasMes   = m6.reduce((s,e)=>s+e.taxaEmpresario,0).toFixed(2);
+  const lucroMes   = mAtu.reduce((s,e)=>s+e.lucro,0).toFixed(2);
+  const taxasMes   = mAtu.reduce((s,e)=>s+e.taxaEmpresario,0).toFixed(2);
   const empAtivos  = empresarios.filter(e=>!e.planoGratis&&!e.bloqueado).length;
   const mensMes    = (empAtivos*MENSALIDADE*4).toFixed(2);
   const fatMes     = (parseFloat(taxasMes)+parseFloat(mensMes)).toFixed(2);
-  const pagoMb     = m6.reduce((s,e)=>s+e.taxaMotoboy,0).toFixed(2);
+  const pagoMb     = mAtu.reduce((s,e)=>s+e.taxaMotoboy,0).toFixed(2);
 
   const ranking = motoboys.filter(m=>!m.banido).map(mb=>{
-    const mine = m6.filter(e=>e.motoboyId===mb.id);
+    const mine = mAtu.filter(e=>e.motoboyId===mb.id);
     return {...mb, qtd:mine.length, ganhos:mine.reduce((s,e)=>s+e.taxaMotoboy,0).toFixed(2)};
   }).sort((a,b)=>b.qtd-a.qtd);
   const maxQ = ranking[0]?.qtd || 1;
 
-  const porMes = MESES.slice(0,6).map((mes,i)=>{
+  const porMes = MESES.slice(0,mesAtual).map((mes,i)=>{
     const e = ent.filter(x=>x.mes===i+1);
     return {mes, qtd:e.length, lucro:e.reduce((s,x)=>s+x.lucro,0).toFixed(2)};
   });
   const maxMes = Math.max(...porMes.map(p=>p.qtd), 1);
 
   const porEmp = empresarios.map(emp=>{
-    const e = m6.filter(x=>x.empresarioId===emp.id);
+    const e = mAtu.filter(x=>x.empresarioId===emp.id);
     return {...emp, qtd:e.length, fat:e.reduce((s,x)=>s+x.taxaEmpresario,0).toFixed(2)};
   }).sort((a,b)=>b.qtd-a.qtd);
   const maxEmp = Math.max(...porEmp.map(p=>p.qtd), 1);
+  const nomeMes = MESES[mesAtual-1];
 
   return (
     <div>
       <div style={{marginBottom:20}}>
         <div style={{color:"#34d399",fontWeight:800,fontSize:22}}>📊 Dashboard</div>
-        <div style={{color:"#6b7280",fontSize:13}}>Visão geral — Jun 2026</div>
+        <div style={{color:"#6b7280",fontSize:13}}>Visão geral — {nomeMes} {anoAtual}</div>
       </div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
-        <Stat icon="✅" label="Entregas este mês" value={m6.length} sub={`${ent.length} total histórico`} cor="#34d399"/>
+        <Stat icon="✅" label="Entregas este mês" value={mAtu.length} sub={`${ent.length} total histórico`} cor="#34d399"/>
         <Stat icon="💰" label="Faturado este mês" value={`R$${fatMes}`} sub={`Taxas R$${taxasMes} + Mensalidades R$${mensMes}`} cor="#60a5fa"/>
         <Stat icon="🏍️" label="Pago motoboys" value={`R$${pagoMb}`} sub="taxas repassadas este mês" cor="#fbbf24"/>
         <Stat icon="💵" label="Seu lucro mês" value={`R$${lucroMes}`} sub={`R$${lucroTotal} total acumulado`} cor="#a78bfa"/>
@@ -180,6 +132,7 @@ function Dashboard({ historico, motoboys, empresarios }) {
       <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
         <Card style={{flex:2,minWidth:240}}>
           <SectionTitle>Entregas por mês</SectionTitle>
+          {porMes.length===0 && <div style={{color:"#4b5563",fontSize:13}}>Nenhuma entrega registrada ainda.</div>}
           {porMes.map(p=>(
             <div key={p.mes} style={{marginBottom:10}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
@@ -191,8 +144,9 @@ function Dashboard({ historico, motoboys, empresarios }) {
           ))}
         </Card>
         <Card style={{flex:2,minWidth:240}}>
-          <SectionTitle>📦 Entregas por Estabelecimento — Jun</SectionTitle>
-          {porEmp.map(emp=>(
+          <SectionTitle>📦 Entregas por Estabelecimento — {nomeMes}</SectionTitle>
+          {porEmp.filter(e=>e.qtd>0).length===0 && <div style={{color:"#4b5563",fontSize:13}}>Nenhuma entrega este mês.</div>}
+          {porEmp.filter(e=>e.qtd>0).map(emp=>(
             <div key={emp.id} style={{marginBottom:10}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
                 <span style={{color:"#d1d5db",fontSize:13,fontWeight:600}}>{emp.nome.split(" ").slice(0,2).join(" ")}</span>
@@ -203,7 +157,8 @@ function Dashboard({ historico, motoboys, empresarios }) {
           ))}
         </Card>
         <Card style={{flex:2,minWidth:240}}>
-          <SectionTitle>🏆 Ranking Motoboys — Jun</SectionTitle>
+          <SectionTitle>🏆 Ranking Motoboys — {nomeMes}</SectionTitle>
+          {ranking.filter(m=>m.qtd>0).length===0 && <div style={{color:"#4b5563",fontSize:13}}>Nenhuma entrega este mês.</div>}
           {ranking.map((mb,i)=>(
             <div key={mb.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
               <div style={{width:28,height:28,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13,background:i===0?"#f59e0b":i===1?"#9ca3af":i===2?"#b45309":"#1f2937",color:i<3?"#000":"#6b7280"}}>{i+1}</div>
@@ -234,7 +189,17 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   const [bonusValor, setBonusValor] = useState("");
   const [bonusDesc, setBonusDesc] = useState("");
 
-  const sems = { atual:{mes:6,s:3,label:"10–16 Jun 2026"}, anterior:{mes:6,s:2,label:"03–09 Jun 2026"} };
+  const agora = new Date();
+  const mesAtual = agora.getMonth()+1;
+  const dia = agora.getDate();
+  const semAtual = dia<=7?1:dia<=14?2:dia<=21?3:4;
+  const semAnterior = semAtual>1?semAtual-1:4;
+  const mesAnterior = semAtual>1?mesAtual:(mesAtual>1?mesAtual-1:12);
+
+  const sems = {
+    atual:{mes:mesAtual,s:semAtual,label:`Semana ${semAtual} — ${MESES[mesAtual-1]} ${agora.getFullYear()}`},
+    anterior:{mes:mesAnterior,s:semAnterior,label:`Semana ${semAnterior} — ${MESES[mesAnterior-1]} ${agora.getFullYear()}`}
+  };
   const sem = sems[semana];
   const fonte = historico.filter(e=>e.status==="Entregue"&&e.mes===sem.mes&&e.semana===sem.s&&(semana==="atual"?!e.repasePago:e.repasePago));
 
@@ -287,6 +252,11 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
         <Stat icon="💵" label="Seu lucro semana" value={`R$${lucro}`} cor="#34d399"/>
         <Stat icon="📦" label="Total entregas" value={fonte.length} cor="#9ca3af"/>
       </div>
+      {dadosMb.length===0&&dadosEmp.length===0 && (
+        <Card style={{textAlign:"center",padding:30}}>
+          <div style={{color:"#4b5563",fontSize:14}}>Nenhuma entrega nesta semana ainda.</div>
+        </Card>
+      )}
       <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:300}}>
           <div style={{color:"#fbbf24",fontWeight:800,fontSize:14,marginBottom:10}}>🏍️ Pagar aos Motoboys</div>
@@ -360,7 +330,7 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{background:"#0f172a"}}>
-                {["Data","Saiu às","Cliente","Bairro","Pgto","Valor"].map(h=>(
+                {["Data","Saiu às","Entregue às","Cliente","Bairro","Pgto","Valor"].map(h=>(
                   <th key={h} style={{padding:"8px 12px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"}}>{h}</th>
                 ))}
               </tr>
@@ -370,6 +340,7 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
                 <tr key={e.id} style={{borderBottom:"1px solid #1a2035"}}>
                   <td style={{padding:"8px 12px",color:"#9ca3af",fontSize:12}}>{e.data}</td>
                   <td style={{padding:"8px 12px",color:"#fbbf24",fontSize:12,fontWeight:700}}>🏍️ {e.horaSaida||"—"}</td>
+                  <td style={{padding:"8px 12px",color:"#34d399",fontSize:12,fontWeight:700}}>✅ {e.horaEntrega||"—"}</td>
                   <td style={{padding:"8px 12px",color:"#f9fafb"}}>{e.clienteNome}</td>
                   <td style={{padding:"8px 12px",color:"#34d399"}}>{e.bairro}</td>
                   <td style={{padding:"8px 12px"}}><span style={{color:PG[e.pagamento]?.cor,fontWeight:700}}>{PG[e.pagamento]?.icon}</span></td>
@@ -413,22 +384,56 @@ function Motoboys({ motoboys, setMotoboys, historico }) {
   const ativos  = motoboys.filter(m=>!m.banido);
   const banidos = motoboys.filter(m=>m.banido);
 
-  function cadastrar() {
+  async function cadastrar() {
     if (!form.nomeCompleto.trim()) return;
-    setMotoboys(p=>[...p,{id:Date.now(),...form,online:false,ativo:true,banido:false,motivoBanimento:null,dataBanimento:null}]);
+    const { data, error } = await supabase.from("motoboys").insert({
+      nome_completo: form.nomeCompleto,
+      telefone: form.tel,
+      pix: form.pix,
+      bairro_base: form.bairroBase,
+      cpf: form.cpf,
+      rg: form.rg,
+      nascimento: form.nascimento,
+      nome_pai: form.nomePai,
+      nome_mae: form.nomeMae,
+      endereco: form.endereco,
+      aprovado: true,
+      online: false,
+      banido: false,
+    }).select().single();
+    if (!error && data) {
+      setMotoboys(p=>[...p,{
+        id:data.id, nomeCompleto:form.nomeCompleto, tel:form.tel, pix:form.pix,
+        bairroBase:form.bairroBase, cpf:form.cpf, rg:form.rg, nascimento:form.nascimento,
+        nomePai:form.nomePai, nomeMae:form.nomeMae, endereco:form.endereco,
+        online:false, ativo:true, banido:false, motivoBanimento:null, dataBanimento:null,
+      }]);
+    }
     setModalCad(false); setForm(FVAZIO);
   }
-  function bloquear(id) { setMotoboys(p=>p.map(m=>m.id===id?{...m,ativo:!m.ativo}:m)); }
-  function banir(id) {
+
+  async function bloquear(id) {
+    const mb = motoboys.find(m=>m.id===id);
+    await supabase.from("motoboys").update({bloqueado: mb.ativo}).eq("id", id);
+    setMotoboys(p=>p.map(m=>m.id===id?{...m,ativo:!m.ativo}:m));
+  }
+
+  async function banir(id) {
     if (!motivo.trim()) return;
-    setMotoboys(p=>p.map(m=>m.id===id?{...m,banido:true,ativo:false,online:false,motivoBanimento:motivo,dataBanimento:"2026-06-10"}:m));
+    await supabase.from("motoboys").update({banido:true, bloqueado:true, motivo_banimento:motivo, data_banimento:new Date().toISOString().split("T")[0]}).eq("id", id);
+    setMotoboys(p=>p.map(m=>m.id===id?{...m,banido:true,ativo:false,online:false,motivoBanimento:motivo,dataBanimento:new Date().toISOString().split("T")[0]}:m));
     setModalBanir(null); setMotivo(""); setDetalhe(null);
   }
-  function desbanir(id) { setMotoboys(p=>p.map(m=>m.id===id?{...m,banido:false,ativo:true,motivoBanimento:null,dataBanimento:null}:m)); }
 
+  async function desbanir(id) {
+    await supabase.from("motoboys").update({banido:false, bloqueado:false, motivo_banimento:null, data_banimento:null}).eq("id", id);
+    setMotoboys(p=>p.map(m=>m.id===id?{...m,banido:false,ativo:true,motivoBanimento:null,dataBanimento:null}:m));
+  }
+
+  const mesAtual = new Date().getMonth()+1;
   const mbDet = detalhe ? motoboys.find(m=>m.id===detalhe) : null;
   const histDet = detalhe ? historico.filter(e=>e.motoboyId===detalhe&&e.status==="Entregue") : [];
-  const histMensal = MESES.slice(0,6).map((mes,i)=>{
+  const histMensal = MESES.slice(0,mesAtual).map((mes,i)=>{
     const e = histDet.filter(x=>x.mes===i+1);
     return {mes, qtd:e.length, ganhos:e.reduce((s,x)=>s+x.taxaMotoboy,0).toFixed(2)};
   });
@@ -455,9 +460,15 @@ function Motoboys({ motoboys, setMotoboys, historico }) {
         </div>
       </div>
 
+      {aba==="ativos" && ativos.length===0 && (
+        <Card style={{textAlign:"center",padding:30}}>
+          <div style={{color:"#4b5563",fontSize:14}}>Nenhum motoboy aprovado ainda.</div>
+        </Card>
+      )}
+
       {aba==="ativos" && ativos.map(mb=>{
         const ents = historico.filter(e=>e.motoboyId===mb.id&&e.status==="Entregue");
-        const entsMes = ents.filter(e=>e.mes===6);
+        const entsMes = ents.filter(e=>e.mes===mesAtual);
         const saldo = ents.filter(e=>!e.repasePago).reduce((s,e)=>s+e.taxaMotoboy,0).toFixed(2);
         const totalHist = ents.reduce((s,e)=>s+e.taxaMotoboy,0).toFixed(2);
         const borda = !mb.ativo?"1px solid #f59e0b":"1px solid #1f2937";
@@ -537,7 +548,7 @@ function Motoboys({ motoboys, setMotoboys, historico }) {
           <SectionTitle>Histórico Mensal</SectionTitle>
           <div style={{display:"flex",border:"1px solid #1f2937",borderRadius:10,overflow:"hidden",marginBottom:14}}>
             {histMensal.map((h,i)=>(
-              <div key={h.mes} style={{flex:1,textAlign:"center",padding:"10px 4px",borderRight:i<5?"1px solid #1f2937":"none",background:h.qtd>0?"#0f172a":"transparent"}}>
+              <div key={h.mes} style={{flex:1,textAlign:"center",padding:"10px 4px",borderRight:i<histMensal.length-1?"1px solid #1f2937":"none",background:h.qtd>0?"#0f172a":"transparent"}}>
                 <div style={{color:"#6b7280",fontSize:11}}>{h.mes}</div>
                 <div style={{color:"#60a5fa",fontWeight:800,fontSize:18,marginTop:3}}>{h.qtd}</div>
                 <div style={{color:"#34d399",fontSize:11}}>R${h.ganhos}</div>
@@ -615,13 +626,24 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
   const FVAZIO = {nome:"",tel:"",bairro:"",planoPagamento:"semanal",planoPagamentoMotoboy:"diario",cnpj:"",nomeDono:"",telDono:"",nomeSocio:"",telSocio:"",enderecoEstab:""};
   const [form, setForm] = useState(FVAZIO);
 
-  const DIAS = ["2026-06-09","2026-06-08","2026-06-07","2026-06-06","2026-06-05","2026-06-04","2026-06-03"];
-  const DNOMES = {"2026-06-09":"Seg","2026-06-08":"Dom","2026-06-07":"Sáb","2026-06-06":"Sex","2026-06-05":"Qui","2026-06-04":"Qua","2026-06-03":"Ter"};
+  const agora = new Date();
+  const mesAtual = agora.getMonth()+1;
+  const DIAS = Array.from({length:7},(_,i)=>{
+    const d = new Date(agora); d.setDate(agora.getDate()-i);
+    return d.toISOString().split("T")[0];
+  });
+  const DNOMES = {};
+  DIAS.forEach(d=>{
+    const dia = new Date(d);
+    DNOMES[d] = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][dia.getDay()];
+  });
+
   const empSel = empresarios.find(e=>e.id===sel);
 
   function abrirEmp(emp) { setSel(emp.id); setAbaEmp("geral"); setTaxasEdit(JSON.parse(JSON.stringify(emp.taxas||{}))); setTaxaSalva(false); }
 
-  function salvarTaxas() {
+  async function salvarTaxas() {
+    await supabase.from("empresarios").update({taxas: taxasEdit}).eq("id", sel);
     setEmpresarios(p=>p.map(e=>e.id===sel?{...e,taxas:taxasEdit}:e));
     setTaxaSalva(true);
     setTimeout(()=>setTaxaSalva(false),3000);
@@ -647,32 +669,78 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
     setBairroEditando(null);
   }
 
-  function ativarGratis(id, meses) {
+  async function ativarGratis(id, meses) {
+    let update = {};
+    if (meses===0) update = {plano_gratis:false, data_fim_gratis:null};
+    else if (meses===-1) update = {plano_gratis:true, data_fim_gratis:null, mensalidade_paga:true, bloqueado:false};
+    else {
+      const fim = new Date(); fim.setMonth(fim.getMonth()+meses);
+      update = {plano_gratis:true, data_fim_gratis:fim.toISOString().split("T")[0], mensalidade_paga:true, bloqueado:false};
+    }
+    await supabase.from("empresarios").update(update).eq("id", id);
     setEmpresarios(p=>p.map(e=>{
       if (e.id!==id) return e;
       if (meses===0) return {...e,planoGratis:false,dataFimGratis:null};
       if (meses===-1) return {...e,planoGratis:true,dataFimGratis:"∞",mensalidadePaga:true,bloqueado:false};
-      const fim = new Date("2026-06-10"); fim.setMonth(fim.getMonth()+meses);
+      const fim = new Date(); fim.setMonth(fim.getMonth()+meses);
       return {...e,planoGratis:true,dataFimGratis:fim.toISOString().split("T")[0],mensalidadePaga:true,bloqueado:false};
     }));
   }
 
-  function toggleBloqueio(id) { setEmpresarios(p=>p.map(e=>e.id===id?{...e,bloqueado:!e.bloqueado}:e)); }
-  function marcarMensalidade(id) { setEmpresarios(p=>p.map(e=>e.id===id?{...e,mensalidadePaga:true,bloqueado:false}:e)); }
-  function toggleDia(id, dia) { setEmpresarios(p=>p.map(e=>e.id===id?{...e,pagamentosDiarios:{...e.pagamentosDiarios,[dia]:!e.pagamentosDiarios?.[dia]}}:e)); }
+  async function toggleBloqueio(id) {
+    const emp = empresarios.find(e=>e.id===id);
+    await supabase.from("empresarios").update({bloqueado: !emp.bloqueado}).eq("id", id);
+    setEmpresarios(p=>p.map(e=>e.id===id?{...e,bloqueado:!e.bloqueado}:e));
+  }
 
-  function cadastrar() {
+  async function marcarMensalidade(id) {
+    await supabase.from("empresarios").update({mensalidade_paga:true, bloqueado:false}).eq("id", id);
+    setEmpresarios(p=>p.map(e=>e.id===id?{...e,mensalidadePaga:true,bloqueado:false}:e));
+  }
+
+  async function toggleDia(id, dia) {
+    const emp = empresarios.find(e=>e.id===id);
+    const novoPag = {...(emp.pagamentosDiarios||{}),[dia]:!emp.pagamentosDiarios?.[dia]};
+    await supabase.from("empresarios").update({pagamentos_diarios: novoPag}).eq("id", id);
+    setEmpresarios(p=>p.map(e=>e.id===id?{...e,pagamentosDiarios:novoPag}:e));
+  }
+
+  async function cadastrar() {
     if (!form.nome.trim()) return;
     const t = {}; BAIRROS.forEach(b=>{t[b]={e:0,m:0};});
     const mg = parseInt(mesesGratis);
     let dataFim = null;
-    if (mg>0) { const d=new Date("2026-06-10"); d.setMonth(d.getMonth()+mg); dataFim=d.toISOString().split("T")[0]; }
-    setEmpresarios(p=>[...p,{id:Date.now(),...form,taxas:t,planoGratis:mg!==0,dataFimGratis:mg===-1?"∞":dataFim,bloqueado:false,mensalidadePaga:mg!==0,pagamentosDiarios:{}}]);
+    if (mg>0) { const d=new Date(); d.setMonth(d.getMonth()+mg); dataFim=d.toISOString().split("T")[0]; }
+    const { data, error } = await supabase.from("empresarios").insert({
+      nome: form.nome, telefone: form.tel, bairro: form.bairro,
+      cnpj: form.cnpj, nome_dono: form.nomeDono, tel_dono: form.telDono,
+      nome_socio: form.nomeSocio, tel_socio: form.telSocio,
+      endereco_estabelecimento: form.enderecoEstab,
+      plano_pagamento: form.planoPagamento,
+      plano_pagamento_motoboy: form.planoPagamentoMotoboy,
+      plano_gratis: mg!==0, data_fim_gratis: mg===-1?null:dataFim,
+      bloqueado: false, mensalidade_paga: mg!==0, pagamentos_diarios: {}, taxas: t,
+      aprovado: true,
+    }).select().single();
+    if (!error && data) {
+      setEmpresarios(p=>[...p,{
+        id:data.id, nome:form.nome, tel:form.tel, bairro:form.bairro,
+        cnpj:form.cnpj, nomeDono:form.nomeDono, telDono:form.telDono,
+        nomeSocio:form.nomeSocio, telSocio:form.telSocio, enderecoEstab:form.enderecoEstab,
+        planoPagamento:form.planoPagamento, planoPagamentoMotoboy:form.planoPagamentoMotoboy,
+        planoGratis:mg!==0, dataFimGratis:mg===-1?"∞":dataFim,
+        bloqueado:false, mensalidadePaga:mg!==0, pagamentosDiarios:{}, taxas:t,
+      }]);
+    }
     setModalCad(false); setForm(FVAZIO); setMesesGratis("0");
   }
 
   function totalSemana(emp) {
-    const ents = historico.filter(e=>e.empresarioId===emp.id&&e.status==="Entregue"&&e.mes===6&&e.semana===3&&!e.repasePago);
+    const agora2 = new Date();
+    const mes = agora2.getMonth()+1;
+    const dia2 = agora2.getDate();
+    const sem = dia2<=7?1:dia2<=14?2:dia2<=21?3:4;
+    const ents = historico.filter(e=>e.empresarioId===emp.id&&e.status==="Entregue"&&e.mes===mes&&e.semana===sem&&!e.repasePago);
     const taxas = ents.reduce((s,e)=>s+e.taxaEmpresario,0);
     const valorPlano = emp.planoPagamento==="mensal" ? MENSALIDADE*4 : MENSALIDADE;
     const mens = emp.planoGratis||emp.mensalidadePaga?0:valorPlano;
@@ -710,6 +778,12 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
       <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:10,padding:"11px 16px",marginBottom:14}}>
         <span style={{color:"#fbbf24",fontWeight:700,fontSize:13}}>🔒 Bloqueio automático toda segunda às 09h00 · Mensalidade R${MENSALIDADE}/semana</span>
       </div>
+
+      {empresarios.length===0 && (
+        <Card style={{textAlign:"center",padding:30}}>
+          <div style={{color:"#4b5563",fontSize:14}}>Nenhum estabelecimento aprovado ainda.</div>
+        </Card>
+      )}
 
       {empresarios.map(emp=>{
         const ts = totalSemana(emp);
@@ -852,7 +926,6 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
                     const editando = bairroEditando===b;
                     return (
                       <tr key={b} style={{borderBottom:"1px solid #1f2937"}}>
-                        {/* Nome do bairro — editável */}
                         <td style={{padding:"7px 12px"}}>
                           {editando
                             ? <input value={novoNomeBairro} onChange={e=>setNovoNomeBairro(e.target.value)}
@@ -860,19 +933,15 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
                                 autoFocus style={{background:"#0f172a",border:"1px solid #60a5fa",borderRadius:6,color:"#f9fafb",padding:"5px 9px",fontSize:13,outline:"none",width:120}}/>
                             : <span style={{color:"#f9fafb",fontWeight:600,fontSize:13}}>{b}</span>}
                         </td>
-                        {/* Taxa cliente */}
                         <td style={{padding:"7px 12px"}}>
                           <input type="number" value={t.e} min="0" step="0.5" onChange={e=>setTaxasEdit(p=>({...p,[b]:{...p[b],e:+e.target.value}}))}
                             style={{background:"#0f172a",border:"1px solid #374151",borderRadius:6,color:"#60a5fa",padding:"5px 9px",width:70,fontSize:14,fontWeight:700,outline:"none"}}/>
                         </td>
-                        {/* Taxa motoboy */}
                         <td style={{padding:"7px 12px"}}>
                           <input type="number" value={t.m} min="0" step="0.5" onChange={e=>setTaxasEdit(p=>({...p,[b]:{...p[b],m:+e.target.value}}))}
                             style={{background:"#0f172a",border:"1px solid #374151",borderRadius:6,color:"#fbbf24",padding:"5px 9px",width:70,fontSize:14,fontWeight:700,outline:"none"}}/>
                         </td>
-                        {/* Lucro */}
                         <td style={{padding:"9px 12px",color:+lucro>0?"#a78bfa":"#f87171",fontWeight:700,fontSize:14}}>R${lucro}</td>
-                        {/* Ações: editar nome e excluir */}
                         <td style={{padding:"7px 12px"}}>
                           <div style={{display:"flex",gap:6}}>
                             {editando
@@ -963,7 +1032,16 @@ function Clientes({ clientes, setClientes, historico, empresarios }) {
   const detCli  = detalheId ? clientes.find(c=>c.id===detalheId) : null;
 
   function abrirEdicao(c) { setEditId(c.id); setForm({nome:c.nome,tel:c.tel,endereco:{...c.endereco}}); }
-  function salvar() { setClientes(p=>p.map(c=>c.id===editId?{...c,...form}:c)); setEditId(null); }
+
+  async function salvar() {
+    await supabase.from("clientes").update({
+      nome: form.nome, telefone: form.tel,
+      rua: form.endereco.rua, numero: form.endereco.num,
+      bairro: form.endereco.bairro, referencia: form.endereco.ref,
+    }).eq("id", editId);
+    setClientes(p=>p.map(c=>c.id===editId?{...c,...form}:c));
+    setEditId(null);
+  }
 
   function histPorEmp(clienteNome) {
     return empresarios.map(emp=>{
@@ -982,33 +1060,36 @@ function Clientes({ clientes, setClientes, historico, empresarios }) {
         <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="🔍 Nome ou telefone..."
           style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"8px 14px",fontSize:13,outline:"none",width:240}}/>
       </div>
-      <Card style={{padding:0,overflow:"hidden"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead>
-            <tr style={{background:"#0f172a",borderBottom:"1px solid #1f2937"}}>
-              {["Nome","Telefone","Endereço","Referência","Pedidos",""].map(h=>(
-                <th key={h} style={{padding:"10px 14px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"}}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtrados.map(c=>{
-              const pedidos = historico.filter(e=>e.clienteNome===c.nome&&e.status==="Entregue").length;
-              return (
-                <tr key={c.id} style={{borderBottom:"1px solid #1a2035"}} onMouseOver={e=>e.currentTarget.style.background="#0f172a"} onMouseOut={e=>e.currentTarget.style.background="transparent"}>
-                  <td style={{padding:"10px 14px",color:"#f9fafb",fontWeight:600}}>{c.nome}</td>
-                  <td style={{padding:"10px 14px"}}><a href={`https://wa.me/55${c.tel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer" style={{color:"#34d399",textDecoration:"none",fontWeight:600}}>💬 {c.tel}</a></td>
-                  <td style={{padding:"10px 14px",color:"#d1d5db",fontSize:12}}>{c.endereco?.rua}, {c.endereco?.num} — <span style={{color:"#34d399"}}>{c.endereco?.bairro}</span></td>
-                  <td style={{padding:"10px 14px",color:"#fbbf24",fontSize:12}}>{c.endereco?.ref||"—"}</td>
-                  <td style={{padding:"10px 14px",color:"#60a5fa",fontWeight:700,cursor:"pointer",textDecoration:"underline"}} onClick={()=>setDetalheId(c.id)}>{pedidos}</td>
-                  <td style={{padding:"10px 14px"}}><Btn small cor="cinza" onClick={()=>abrirEdicao(c)}>✏️ Editar</Btn></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {filtrados.length===0 && <div style={{textAlign:"center",padding:30,color:"#4b5563"}}>Nenhum cliente encontrado.</div>}
-      </Card>
+      {clientes.length===0 && <Card style={{textAlign:"center",padding:30}}><div style={{color:"#4b5563"}}>Nenhum cliente cadastrado ainda.</div></Card>}
+      {clientes.length>0 && (
+        <Card style={{padding:0,overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead>
+              <tr style={{background:"#0f172a",borderBottom:"1px solid #1f2937"}}>
+                {["Nome","Telefone","Endereço","Referência","Pedidos",""].map(h=>(
+                  <th key={h} style={{padding:"10px 14px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtrados.map(c=>{
+                const pedidos = historico.filter(e=>e.clienteNome===c.nome&&e.status==="Entregue").length;
+                return (
+                  <tr key={c.id} style={{borderBottom:"1px solid #1a2035"}} onMouseOver={e=>e.currentTarget.style.background="#0f172a"} onMouseOut={e=>e.currentTarget.style.background="transparent"}>
+                    <td style={{padding:"10px 14px",color:"#f9fafb",fontWeight:600}}>{c.nome}</td>
+                    <td style={{padding:"10px 14px"}}><a href={`https://wa.me/55${c.tel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer" style={{color:"#34d399",textDecoration:"none",fontWeight:600}}>💬 {c.tel}</a></td>
+                    <td style={{padding:"10px 14px",color:"#d1d5db",fontSize:12}}>{c.endereco?.rua}, {c.endereco?.num} — <span style={{color:"#34d399"}}>{c.endereco?.bairro}</span></td>
+                    <td style={{padding:"10px 14px",color:"#fbbf24",fontSize:12}}>{c.endereco?.ref||"—"}</td>
+                    <td style={{padding:"10px 14px",color:"#60a5fa",fontWeight:700,cursor:"pointer",textDecoration:"underline"}} onClick={()=>setDetalheId(c.id)}>{pedidos}</td>
+                    <td style={{padding:"10px 14px"}}><Btn small cor="cinza" onClick={()=>abrirEdicao(c)}>✏️ Editar</Btn></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {filtrados.length===0 && <div style={{textAlign:"center",padding:30,color:"#4b5563"}}>Nenhum cliente encontrado.</div>}
+        </Card>
+      )}
 
       {detalheId && detCli && (
         <Overlay onClose={()=>setDetalheId(null)} maxW={500}>
@@ -1064,6 +1145,8 @@ function Historico({ historico, motoboys, empresarios }) {
   const [filtroMb, setFiltroMb] = useState("Todos");
   const ss = {background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"7px 10px",fontSize:13};
 
+  const mesesDisponiveis = [...new Set(historico.map(e=>MESES[e.mes-1]))];
+
   const lista = historico.filter(e=>{
     if (filtroStatus!=="Todos"&&e.status!==filtroStatus) return false;
     if (filtroMes!=="Todos"&&MESES[e.mes-1]!==filtroMes) return false;
@@ -1084,68 +1167,190 @@ function Historico({ historico, motoboys, empresarios }) {
         </div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
           <select value={filtroStatus} onChange={e=>setFiltroStatus(e.target.value)} style={ss}>{["Todos","Entregue","Cancelada"].map(o=><option key={o}>{o}</option>)}</select>
-          <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} style={ss}>{["Todos",...MESES.slice(0,6)].map(o=><option key={o}>{o}</option>)}</select>
+          <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} style={ss}>
+            <option value="Todos">Todos os meses</option>
+            {mesesDisponiveis.map(o=><option key={o}>{o}</option>)}
+          </select>
           <select value={filtroMb} onChange={e=>setFiltroMb(e.target.value)} style={ss}>
             <option value="Todos">Todos motoboys</option>
             {motoboys.filter(m=>!m.banido).map(m=><option key={m.id} value={String(m.id)}>{m.nomeCompleto.split(" ")[0]}</option>)}
           </select>
         </div>
       </div>
-      <Card style={{padding:0,overflow:"hidden"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
-          <thead>
-            <tr style={{background:"#0f172a",borderBottom:"1px solid #1f2937"}}>
-              {["Data","Saiu às","Cliente","Bairro","Motoboy","Estabelecimento","Pgto","Cobrado","Motoboy","Lucro","Status"].map(h=>(
-                <th key={h} style={{padding:"10px 12px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {lista.slice(0,80).map(e=>{
-              const mb  = motoboys.find(m=>m.id===e.motoboyId);
-              const emp = empresarios.find(x=>x.id===e.empresarioId);
-              const pg  = PG[e.pagamento] || {icon:"•",cor:"#9ca3af"};
-              const entregue = e.status==="Entregue";
-              return (
-                <tr key={e.id} style={{borderBottom:"1px solid #1a2035"}} onMouseOver={ev=>ev.currentTarget.style.background="#0f172a"} onMouseOut={ev=>ev.currentTarget.style.background="transparent"}>
-                  <td style={{padding:"8px 12px",color:"#9ca3af",whiteSpace:"nowrap"}}>{e.data}</td>
-                  <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700,whiteSpace:"nowrap"}}>🏍️ {e.horaSaida||"—"}</td>
-                  <td style={{padding:"8px 12px",color:"#f9fafb",fontWeight:600}}>{e.clienteNome}</td>
-                  <td style={{padding:"8px 12px",color:"#34d399"}}>{e.bairro}</td>
-                  <td style={{padding:"8px 12px",color:"#d1d5db"}}>{mb?.nomeCompleto?.split(" ")[0]||"—"}</td>
-                  <td style={{padding:"8px 12px",color:"#d1d5db",fontSize:11}}>{emp?.nome?.split(" ").slice(0,2).join(" ")||"—"}</td>
-                  <td style={{padding:"8px 12px"}}><span style={{color:pg.cor,fontWeight:700}}>{pg.icon}</span></td>
-                  <td style={{padding:"8px 12px",color:"#60a5fa",fontWeight:700}}>R${e.taxaEmpresario}</td>
-                  <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700}}>R${e.taxaMotoboy}</td>
-                  <td style={{padding:"8px 12px",color:"#a78bfa",fontWeight:700}}>R${e.lucro}</td>
-                  <td style={{padding:"8px 12px"}}>
-                    <span style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>
-                      {entregue?"✅":"❌"} {e.status}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {lista.length===0 && <div style={{textAlign:"center",padding:30,color:"#4b5563"}}>Nenhum registro.</div>}
-      </Card>
+      {historico.length===0 && <Card style={{textAlign:"center",padding:30}}><div style={{color:"#4b5563"}}>Nenhuma entrega registrada ainda.</div></Card>}
+      {historico.length>0 && (
+        <Card style={{padding:0,overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead>
+              <tr style={{background:"#0f172a",borderBottom:"1px solid #1f2937"}}>
+                {["Data","Saiu às","Entregue às","Cliente","Bairro","Motoboy","Estabelecimento","Pgto","Cobrado","Motoboy","Lucro","Status"].map(h=>(
+                  <th key={h} style={{padding:"10px 12px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {lista.slice(0,100).map(e=>{
+                const mb  = motoboys.find(m=>m.id===e.motoboyId);
+                const emp = empresarios.find(x=>x.id===e.empresarioId);
+                const pg  = PG[e.pagamento] || {icon:"•",cor:"#9ca3af"};
+                const entregue = e.status==="Entregue";
+                return (
+                  <tr key={e.id} style={{borderBottom:"1px solid #1a2035"}} onMouseOver={ev=>ev.currentTarget.style.background="#0f172a"} onMouseOut={ev=>ev.currentTarget.style.background="transparent"}>
+                    <td style={{padding:"8px 12px",color:"#9ca3af",whiteSpace:"nowrap"}}>{e.data}</td>
+                    <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700,whiteSpace:"nowrap"}}>🏍️ {e.horaSaida||"—"}</td>
+                    <td style={{padding:"8px 12px",color:"#34d399",fontWeight:700,whiteSpace:"nowrap"}}>✅ {e.horaEntrega||"—"}</td>
+                    <td style={{padding:"8px 12px",color:"#f9fafb",fontWeight:600}}>{e.clienteNome}</td>
+                    <td style={{padding:"8px 12px",color:"#34d399"}}>{e.bairro}</td>
+                    <td style={{padding:"8px 12px",color:"#d1d5db"}}>{mb?.nomeCompleto?.split(" ")[0]||"—"}</td>
+                    <td style={{padding:"8px 12px",color:"#d1d5db",fontSize:11}}>{emp?.nome?.split(" ").slice(0,2).join(" ")||"—"}</td>
+                    <td style={{padding:"8px 12px"}}><span style={{color:pg.cor,fontWeight:700}}>{pg.icon}</span></td>
+                    <td style={{padding:"8px 12px",color:"#60a5fa",fontWeight:700}}>R${e.taxaEmpresario}</td>
+                    <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700}}>R${e.taxaMotoboy}</td>
+                    <td style={{padding:"8px 12px",color:"#a78bfa",fontWeight:700}}>R${e.lucro}</td>
+                    <td style={{padding:"8px 12px"}}>
+                      <span style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>
+                        {entregue?"✅":"❌"} {e.status}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {lista.length===0 && <div style={{textAlign:"center",padding:30,color:"#4b5563"}}>Nenhum registro encontrado.</div>}
+        </Card>
+      )}
     </div>
   );
 }
-
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [aba, setAba] = useState("dashboard");
-  const [motoboys, setMotoboys]       = useState(MB_INIT);
-  const [empresarios, setEmpresarios] = useState(EMP_INIT);
-  const [clientes, setClientes]       = useState(CLI_INIT);
-  const [historico, setHistorico]     = useState(()=>gerarHist(MB_INIT, EMP_INIT));
+  const [motoboys, setMotoboys]       = useState([]);
+  const [empresarios, setEmpresarios] = useState([]);
+  const [clientes, setClientes]       = useState([]);
+  const [historico, setHistorico]     = useState([]);
+  const [carregando, setCarregando]   = useState(true);
 
   const [pendentes, setPendentes] = useState({motoboys:[], empresarios:[]});
   const [loadingPendentes, setLoadingPendentes] = useState(false);
-  const [modalRejeitar, setModalRejeitar] = useState(null); // {tipo, id, nome}
+  const [modalRejeitar, setModalRejeitar] = useState(null);
   const [motivoRejeicao, setMotivoRejeicao] = useState("");
+
+  // ── Carrega dados reais do Supabase ao iniciar ──
+  useEffect(()=>{ carregarTudo(); },[]);
+
+  async function carregarTudo() {
+    setCarregando(true);
+    try {
+      const [mbRes, empRes, cliRes, pedRes] = await Promise.all([
+        supabase.from("motoboys").select("*").eq("aprovado", true),
+        supabase.from("empresarios").select("*").eq("aprovado", true),
+        supabase.from("clientes").select("*"),
+        supabase.from("pedidos").select("*").order("criado_em", {ascending: false}),
+      ]);
+
+      const mbs = (mbRes.data || []).map(m => ({
+        id: m.id,
+        nomeCompleto: m.nome_completo || "",
+        tel: m.telefone || "",
+        pix: m.pix || "",
+        bairroBase: m.bairro_base || "",
+        cpf: m.cpf || "",
+        rg: m.rg || "",
+        nascimento: m.nascimento || "",
+        nomePai: m.nome_pai || "",
+        nomeMae: m.nome_mae || "",
+        endereco: m.endereco || "",
+        online: m.online || false,
+        ativo: !m.bloqueado,
+        banido: m.banido || false,
+        motivoBanimento: m.motivo_banimento || null,
+        dataBanimento: m.data_banimento || null,
+      }));
+
+      const emps = (empRes.data || []).map(e => ({
+        id: e.id,
+        nome: e.nome || "",
+        tel: e.telefone || "",
+        bairro: e.bairro || "",
+        cnpj: e.cnpj || "",
+        nomeDono: e.nome_dono || "",
+        telDono: e.tel_dono || "",
+        nomeSocio: e.nome_socio || "",
+        telSocio: e.tel_socio || "",
+        enderecoEstab: e.endereco_estabelecimento || "",
+        planoPagamento: e.plano_pagamento || "semanal",
+        planoPagamentoMotoboy: e.plano_pagamento_motoboy || "diario",
+        planoGratis: e.plano_gratis || false,
+        dataFimGratis: e.data_fim_gratis || null,
+        bloqueado: e.bloqueado || false,
+        mensalidadePaga: e.mensalidade_paga !== false,
+        pagamentosDiarios: e.pagamentos_diarios || {},
+        taxas: e.taxas || {},
+      }));
+
+      const clis = (cliRes.data || []).map(c => ({
+        id: c.id,
+        nome: c.nome || "",
+        tel: c.telefone || "",
+        endereco: {
+          rua: c.rua || "",
+          num: c.numero || "",
+          bairro: c.bairro || "",
+          ref: c.referencia || "",
+        }
+      }));
+
+      const hist = (pedRes.data || [])
+        .filter(p => p.status === "entregue" || p.status === "cancelado")
+        .map(p => {
+          const criadoEm = new Date(p.criado_em);
+          const mes = criadoEm.getMonth() + 1;
+          const dia = criadoEm.getDate();
+          const sem = dia<=7?1:dia<=14?2:dia<=21?3:4;
+          const dataStr = criadoEm.toISOString().split("T")[0];
+          let horaSaida = "—";
+          if (p.saiu_estabelecimento_em) {
+            const d = new Date(p.saiu_estabelecimento_em);
+            horaSaida = `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+          }
+          let horaEntrega = "—";
+          if (p.entregue_em) {
+            const d = new Date(p.entregue_em);
+            horaEntrega = `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
+          }
+          const taxaEmp = p.taxa_empresario || 0;
+          const taxaMb  = p.taxa_motoboy || 0;
+          return {
+            id: p.id,
+            motoboyId: p.motoboy_id,
+            empresarioId: p.empresario_id,
+            clienteNome: p.cliente_nome || "",
+            bairro: p.bairro || "",
+            pagamento: p.forma_pagamento || "pix",
+            taxaEmpresario: taxaEmp,
+            taxaMotoboy: taxaMb,
+            lucro: taxaEmp - taxaMb,
+            status: p.status === "entregue" ? "Entregue" : "Cancelada",
+            data: dataStr,
+            horaSaida,
+            horaEntrega,
+            mes,
+            semana: sem,
+            repasePago: p.repasse_pago || false,
+          };
+        });
+
+      setMotoboys(mbs);
+      setEmpresarios(emps);
+      setClientes(clis);
+      setHistorico(hist);
+    } catch(err) {
+      console.error("Erro ao carregar dados:", err);
+    }
+    setCarregando(false);
+  }
 
   useEffect(()=>{
     if (aba==="pendentes") carregarPendentes();
@@ -1167,6 +1372,7 @@ export default function App() {
   async function aprovar(tipo, id) {
     await supabase.from(tipo).update({aprovado:true, aprovado_em: new Date().toISOString()}).eq("id", id);
     carregarPendentes();
+    carregarTudo();
   }
 
   async function rejeitar() {
@@ -1178,7 +1384,6 @@ export default function App() {
   }
 
   const totalPendentes = pendentes.motoboys.length + pendentes.empresarios.length;
-
   const saldo     = historico.filter(e=>e.status==="Entregue"&&!e.repasePago).reduce((s,e)=>s+e.lucro,0).toFixed(2);
   const bloqueados = empresarios.filter(e=>e.bloqueado).length;
   const banidos   = motoboys.filter(m=>m.banido).length;
@@ -1192,6 +1397,16 @@ export default function App() {
     {id:"clientes",label:"👤 Clientes"},
     {id:"historico",label:"📋 Histórico"},
   ];
+
+  if (carregando) return (
+    <div style={{minHeight:"100vh",background:"#0a0f1a",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"Inter,sans-serif"}}>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontSize:48,marginBottom:16}}>⚡</div>
+        <div style={{color:"#34d399",fontWeight:700,fontSize:20}}>Carregando dados...</div>
+        <div style={{color:"#6b7280",fontSize:13,marginTop:8}}>Buscando informações do banco de dados</div>
+      </div>
+    </div>
+  );
 
   return (
     <div style={{minHeight:"100vh",background:"#0a0f1a",fontFamily:"'Inter','Segoe UI',sans-serif",color:"#f9fafb"}}>
@@ -1215,9 +1430,12 @@ export default function App() {
             {+saldo>0 && <button onClick={()=>setAba("repasse")} style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#34d399",fontWeight:700,cursor:"pointer"}}>💵 R${saldo} a repassar</button>}
             {bloqueados>0 && <button onClick={()=>setAba("estabelecimentos")} style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#f87171",fontWeight:700,cursor:"pointer"}}>⛔ {bloqueados} bloqueado(s)</button>}
             {banidos>0 && <button onClick={()=>setAba("motoboys")} style={{background:"#1f2937",border:"1px solid #6b7280",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#9ca3af",fontWeight:700,cursor:"pointer"}}>⛔ {banidos} banido(s)</button>}
-          <button onClick={async()=>{ await supabase.auth.signOut(); window.location.href = "/"; }}
+            <button onClick={async()=>{ await supabase.auth.signOut(); window.location.href = "/"; }}
               style={{background:"transparent",border:"1px solid #374151",color:"#9ca3af",padding:"6px 12px",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700}}>
               🚪 Sair
+            </button>
+            <button onClick={carregarTudo} style={{background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",padding:"6px 12px",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700}}>
+              🔄
             </button>
           </div>
         </div>
