@@ -825,7 +825,7 @@ export default function AppMotoboy() {
       .subscribe();
 
     // Rede de segurança — verifica a cada 8s, caso o Realtime não esteja ativo no banco
-    const intervalo = setInterval(buscarPedidoReal, 8000);
+    const intervalo = setInterval(buscarPedidoReal, 2000);
 
     return () => { supabase.removeChannel(canal); clearInterval(intervalo); };
   },[online, corridaAtiva, motoboyId]);

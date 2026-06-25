@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
+import { supabase } from "./supabaseClient.js";
 
 // ─── ETAPAS DO RASTREIO ─────────────────────────────────────────────────────
 const ETAPAS = [
@@ -25,30 +26,91 @@ function Etapa({ etapa, atual }) {
   );
 }
 
+// Estrelas de avaliação
+function Estrelas({ valor, onChange }) {
+  const [hover, setHover] = useState(0);
+  return (
+    <div style={{display:"flex",gap:8,justifyContent:"center",margin:"10px 0"}}>
+      {[1,2,3,4,5].map(n=>(
+        <span key={n}
+          onMouseEnter={()=>setHover(n)}
+          onMouseLeave={()=>setHover(0)}
+          onClick={()=>onChange(n)}
+          style={{fontSize:36,cursor:"pointer",filter:(hover||valor)>=n?"none":"grayscale(1)",transition:"transform 0.1s",transform:(hover||valor)>=n?"scale(1.15)":"scale(1)"}}>
+          ⭐
+        </span>
+      ))}
+    </div>
+  );
+}
+
 // ─── PÁGINA DE RASTREIO ──────────────────────────────────────────────────────
 export default function Rastreio() {
   const [params] = useSearchParams();
 
-  const cliente = params.get("cliente") || "";
-  const empresa = params.get("empresa") || "";
-  const empresaTel = params.get("empresaTel") || "";
-  const motoboy = params.get("motoboy") || "Nosso motoboy";
-  const bairro  = params.get("bairro")  || "";
-  const rua     = params.get("rua")     || "";
-  const num     = params.get("num")     || "";
-  const ref     = params.get("ref")     || "";
+  const pedidoId  = params.get("pedido")    || "";
+  const cliente   = params.get("cliente")   || "";
+  const empresa   = params.get("empresa")   || "";
+  const empresaTel= params.get("empresaTel")|| "";
+  const motoboy   = params.get("motoboy")   || "Nosso motoboy";
+  const bairro    = params.get("bairro")    || "";
+  const rua       = params.get("rua")       || "";
+  const num       = params.get("num")       || "";
+  const ref       = params.get("ref")       || "";
 
-  const [etapa, setEtapa] = useState(1); // o link já é enviado quando o motoboy sai para entrega
+  const [etapa, setEtapa] = useState(1);
 
-  // Demonstração: avança para "Entregue" depois de um tempo
-  useEffect(() => {
-    if (etapa >= 2) return;
-    const t = setTimeout(() => setEtapa(2), 35000);
-    return () => clearTimeout(t);
-  }, [etapa]);
+  // Avaliação
+  const [avaliacaoEnviada, setAvaliacaoEnviada] = useState(false);
+  const [notaMotoboy, setNotaMotoboy] = useState(0);
+  const [notaMotofast, setNotaMotofast] = useState(0);
+  const [enviandoAvaliacao, setEnviandoAvaliacao] = useState(false);
+
+  // Busca status real do pedido no banco a cada 5s
+  useEffect(()=>{
+    if (!pedidoId) return;
+
+    async function verificarStatus() {
+      const { data } = await supabase
+        .from("pedidos")
+        .select("status")
+        .eq("id", pedidoId)
+        .maybeSingle();
+
+      if (!data) return;
+
+      if (data.status === "entregue") setEtapa(2);
+      else if (data.status === "saiu_estabelecimento" || data.status === "aceito") setEtapa(1);
+      else if (data.status === "aguardando") setEtapa(0);
+    }
+
+    verificarStatus();
+    const intervalo = setInterval(verificarStatus, 5000);
+    return () => clearInterval(intervalo);
+  },[pedidoId]);
+
+  async function enviarAvaliacao() {
+    if (notaMotoboy === 0 || notaMotofast === 0) return;
+    setEnviandoAvaliacao(true);
+    try {
+      await supabase.from("avaliacoes").insert({
+        pedido_id: pedidoId || null,
+        empresa_nome: empresa || null,
+        motoboy_nome: motoboy || null,
+        nota_motoboy: notaMotoboy,
+        nota_motofast: notaMotofast,
+        criado_em: new Date().toISOString(),
+      });
+      setAvaliacaoEnviada(true);
+    } catch(e) {
+      console.error("Erro ao salvar avaliação:", e);
+      setAvaliacaoEnviada(true); // mesmo com erro, não bloqueia o usuário
+    }
+    setEnviandoAvaliacao(false);
+  }
 
   // Link inválido / sem dados
-  if (!cliente && !bairro) {
+  if (!cliente && !bairro && !pedidoId) {
     return (
       <div style={{minHeight:"100vh",background:"#0a0f1a",display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Inter','Segoe UI',sans-serif"}}>
         <div style={{textAlign:"center",maxWidth:340}}>
@@ -85,8 +147,8 @@ export default function Rastreio() {
           <div style={{color:"#f9fafb",fontWeight:800,fontSize:20}}>{cliente ? `Olá, ${cliente}! 👋` : "Olá! 👋"}</div>
           <div style={{color:"#9ca3af",fontSize:14,marginTop:4,lineHeight:1.5}}>
             {etapa < 2
-              ? <>Seu pedido{empresa && <> na <strong style={{color:"#34d399"}}>{empresa}</strong></>} está a caminho!</>
-              : <>Seu pedido{empresa && <> da <strong style={{color:"#34d399"}}>{empresa}</strong></>} foi entregue. 🎉</>}
+              ? <>Seu pedido{empresa && <> em <strong style={{color:"#34d399"}}>{empresa}</strong></>} está a caminho!</>
+              : <>Seu pedido{empresa && <> em <strong style={{color:"#34d399"}}>{empresa}</strong></>} foi entregue. 🎉</>}
           </div>
         </div>
 
@@ -116,8 +178,44 @@ export default function Rastreio() {
             <div style={{fontSize:40,marginBottom:6}}>✅</div>
             <div style={{color:"#34d399",fontWeight:800,fontSize:16}}>Pedido entregue com sucesso!</div>
             <div style={{color:"#9ca3af",fontSize:13,marginTop:4}}>
-              Obrigado por escolher{empresa ? <> a <strong style={{color:"#f9fafb"}}>{empresa}</strong></> : "a gente"}. Volte sempre! 💚
+              Obrigado por utilizar{empresa ? <> <strong style={{color:"#f9fafb"}}>{empresa}</strong></> : " nosso serviço"}. Volte sempre! 💚
             </div>
+          </div>
+        )}
+
+        {/* Avaliação — aparece só após entrega */}
+        {etapa >= 2 && !avaliacaoEnviada && (
+          <div style={{background:"#111827",border:"1px solid #f59e0b",borderRadius:12,padding:"18px 16px",marginBottom:16}}>
+            <div style={{color:"#fbbf24",fontWeight:800,fontSize:14,marginBottom:4,textAlign:"center"}}>⭐ Avalie sua experiência</div>
+            <div style={{color:"#9ca3af",fontSize:12,textAlign:"center",marginBottom:14}}>Sua opinião é muito importante para nós!</div>
+
+            <div style={{marginBottom:14}}>
+              <div style={{color:"#d1d5db",fontSize:13,fontWeight:700,textAlign:"center",marginBottom:4}}>🏍️ Como foi a entrega?</div>
+              <div style={{color:"#6b7280",fontSize:11,textAlign:"center",marginBottom:4}}>O motoboy foi pontual e educado?</div>
+              <Estrelas valor={notaMotoboy} onChange={setNotaMotoboy}/>
+            </div>
+
+            <div style={{marginBottom:16}}>
+              <div style={{color:"#d1d5db",fontSize:13,fontWeight:700,textAlign:"center",marginBottom:4}}>⚡ O que achou do MotoFast?</div>
+              <div style={{color:"#6b7280",fontSize:11,textAlign:"center",marginBottom:4}}>Recomendaria nosso serviço de entregas?</div>
+              <Estrelas valor={notaMotofast} onChange={setNotaMotofast}/>
+            </div>
+
+            <button
+              onClick={enviarAvaliacao}
+              disabled={notaMotoboy===0||notaMotofast===0||enviandoAvaliacao}
+              style={{width:"100%",padding:"12px",borderRadius:10,background:notaMotoboy>0&&notaMotofast>0?"#10b981":"#1f2937",border:"none",color:"#fff",fontWeight:700,fontSize:14,cursor:notaMotoboy>0&&notaMotofast>0?"pointer":"not-allowed",opacity:notaMotoboy>0&&notaMotofast>0?1:0.5}}>
+              {enviandoAvaliacao?"Enviando...":"✅ Enviar avaliação"}
+            </button>
+          </div>
+        )}
+
+        {/* Avaliação enviada */}
+        {etapa >= 2 && avaliacaoEnviada && (
+          <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:12,padding:"16px",marginBottom:16,textAlign:"center"}}>
+            <div style={{fontSize:32,marginBottom:6}}>🙏</div>
+            <div style={{color:"#34d399",fontWeight:700,fontSize:14}}>Obrigado pela avaliação!</div>
+            <div style={{color:"#9ca3af",fontSize:12,marginTop:4}}>Seu feedback nos ajuda a melhorar cada vez mais.</div>
           </div>
         )}
 
@@ -135,24 +233,27 @@ export default function Rastreio() {
           </div>
         )}
 
-        {/* Aviso importante */}
-        <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:12,padding:"14px 16px",marginBottom:16}}>
-          <div style={{color:"#fbbf24",fontWeight:700,fontSize:13,marginBottom:6}}>⚠️ Importante</div>
-          <div style={{color:"#d1d5db",fontSize:13,lineHeight:1.6,marginBottom:empresaTel?12:0}}>
-            Esta mensagem serve <strong>apenas para você acompanhar sua entrega</strong>. Este número não realiza atendimento — não responda por aqui.
-          </div>
-          {empresaTel && (
+        {/* Falar com estabelecimento */}
+        {empresaTel && (
+          <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+            <div style={{color:"#9ca3af",fontSize:12,marginBottom:10}}>
+              Dúvidas sobre seu pedido? Fale diretamente com {empresa || "o estabelecimento"}:
+            </div>
             <a href={`https://wa.me/55${empresaTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
               style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,width:"100%",padding:"12px",borderRadius:8,background:"#0d3d2e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,fontSize:14,textDecoration:"none",boxSizing:"border-box"}}>
               💬 Falar com {empresa || "o estabelecimento"}
             </a>
-          )}
-          {!empresaTel && (
-            <div style={{color:"#d1d5db",fontSize:13,lineHeight:1.6}}>
-              Para falar sobre o seu pedido — trocas, problemas ou dúvidas — entre em contato diretamente com{" "}
-              {empresa ? <strong style={{color:"#f9fafb"}}>{empresa}</strong> : "o estabelecimento"}.
-            </div>
-          )}
+          </div>
+        )}
+
+        {/* Captação MotoFast */}
+        <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:12,padding:"14px 16px",marginBottom:16,textAlign:"center"}}>
+          <div style={{color:"#6b7280",fontSize:12,lineHeight:1.7}}>
+            🏍️ <strong style={{color:"#9ca3af"}}>Quer trabalhar como entregador</strong> ou <strong style={{color:"#9ca3af"}}>cadastrar seu estabelecimento</strong>?{" "}
+            <a href="https://motofastentregas.com.br" target="_blank" rel="noreferrer" style={{color:"#34d399",fontWeight:700,textDecoration:"none"}}>
+              Acesse motofastentregas.com.br
+            </a>
+          </div>
         </div>
 
         <div style={{textAlign:"center",color:"#374151",fontSize:11}}>
