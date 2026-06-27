@@ -59,6 +59,9 @@ export default function Rastreio() {
   const ref       = params.get("ref")       || "";
 
   const [etapa, setEtapa] = useState(1);
+  const [motoboyLat, setMotoboyLat] = useState(null);
+  const [motoboyLng, setMotoboyLng] = useState(null);
+  const [motoboyIdRastreio, setMotoboyIdRastreio] = useState(null);
 
   // Avaliação
   const [avaliacaoEnviada, setAvaliacaoEnviada] = useState(false);
@@ -73,7 +76,7 @@ export default function Rastreio() {
     async function verificarStatus() {
       const { data } = await supabase
         .from("pedidos")
-        .select("status")
+        .select("status, motoboy_id")
         .eq("id", pedidoId)
         .maybeSingle();
 
@@ -82,12 +85,37 @@ export default function Rastreio() {
       if (data.status === "entregue") setEtapa(2);
       else if (data.status === "saiu_estabelecimento" || data.status === "aceito") setEtapa(1);
       else if (data.status === "aguardando") setEtapa(0);
+
+      // Guarda o ID do motoboy para buscar localização
+      if (data.motoboy_id) setMotoboyIdRastreio(data.motoboy_id);
     }
 
     verificarStatus();
     const intervalo = setInterval(verificarStatus, 5000);
     return () => clearInterval(intervalo);
   },[pedidoId]);
+
+  // Busca localização do motoboy a cada 5s enquanto pedido está em andamento
+  useEffect(()=>{
+    if (!motoboyIdRastreio || etapa >= 2) return;
+
+    async function buscarLocalizacao() {
+      const { data } = await supabase
+        .from("motoboys")
+        .select("latitude, longitude, ultima_localizacao")
+        .eq("id", motoboyIdRastreio)
+        .maybeSingle();
+
+      if (data && data.latitude && data.longitude) {
+        setMotoboyLat(data.latitude);
+        setMotoboyLng(data.longitude);
+      }
+    }
+
+    buscarLocalizacao();
+    const intervalo = setInterval(buscarLocalizacao, 5000);
+    return () => clearInterval(intervalo);
+  },[motoboyIdRastreio, etapa]);
 
   async function enviarAvaliacao() {
     if (notaMotoboy === 0 || notaMotofast === 0) return;
@@ -227,16 +255,42 @@ export default function Rastreio() {
               <div style={{color:"#f9fafb",fontSize:14,fontWeight:600}}>{enderecoLinha}</div>
               {ref && <div style={{color:"#fbbf24",fontSize:12,marginTop:3}}>📌 {ref}</div>}
             </div>
-            <div style={{position:"relative",height:200,background:"#0f172a",display:"flex",alignItems:"center",justifyContent:"center"}}>
-              <iframe
-                src={`https://maps.google.com/maps?q=${mapaQuery}&output=embed&hl=pt-BR&z=16&iwloc=&zoom=16`}
-                width="100%" height="200" 
-                style={{border:"none",display:"block",pointerEvents:"none"}} 
-                title="mapa" loading="lazy"
-                scrolling="no"
-              />
-              <div style={{position:"absolute",inset:0,background:"transparent",cursor:"default"}}/>
-            </div>
+            {/* Mapa com localização do motoboy em tempo real */}
+            {motoboyLat && motoboyLng && etapa < 2 ? (
+              <div style={{position:"relative",overflow:"hidden"}}>
+                <iframe
+                  src={`https://maps.google.com/maps?q=${motoboyLat},${motoboyLng}&output=embed&hl=pt-BR&z=15`}
+                  width="100%" height="220"
+                  style={{border:"none",display:"block",pointerEvents:"none"}}
+                  title="motoboy-localizacao" loading="lazy"
+                  scrolling="no"
+                />
+                <div style={{position:"absolute",inset:0,background:"transparent",cursor:"default"}}/>
+                <div style={{position:"absolute",bottom:8,left:0,right:0,textAlign:"center"}}>
+                  <span style={{background:"rgba(0,0,0,0.75)",color:"#34d399",fontSize:11,fontWeight:700,padding:"4px 12px",borderRadius:20}}>
+                    🏍️ Localização atual do motoboy
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div style={{position:"relative",overflow:"hidden"}}>
+                <iframe
+                  src={`https://maps.google.com/maps?q=${mapaQuery}&output=embed&hl=pt-BR&z=16`}
+                  width="100%" height="220"
+                  style={{border:"none",display:"block",pointerEvents:"none"}}
+                  title="mapa-entrega" loading="lazy"
+                  scrolling="no"
+                />
+                <div style={{position:"absolute",inset:0,background:"transparent",cursor:"default"}}/>
+                {etapa < 2 && (
+                  <div style={{position:"absolute",bottom:8,left:0,right:0,textAlign:"center"}}>
+                    <span style={{background:"rgba(0,0,0,0.75)",color:"#fbbf24",fontSize:11,fontWeight:700,padding:"4px 12px",borderRadius:20}}>
+                      📍 Endereço de entrega
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 

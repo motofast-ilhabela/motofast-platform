@@ -895,6 +895,31 @@ export default function AppMotoboy() {
     return () => clearInterval(intervalo);
   },[motoboyId]);
 
+  // ─── GPS EM TEMPO REAL ────────────────────────────────────────────────────
+  // Envia localização do motoboy ao banco a cada 5s enquanto há corrida ativa
+  useEffect(()=>{
+    if (!motoboyId || !corridaAtiva) return;
+
+    function enviarLocalizacao() {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          await supabase.from("motoboys").update({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            ultima_localizacao: new Date().toISOString(),
+          }).eq("id", motoboyId);
+        },
+        (err) => console.log("GPS erro:", err.message),
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
+    }
+
+    enviarLocalizacao();
+    const intervalo = setInterval(enviarLocalizacao, 5000);
+    return () => clearInterval(intervalo);
+  },[motoboyId, corridaAtiva?.id]);
+
   async function aceitar() {
     if (!pedidoDisponivel || !motoboyId) return;
 
