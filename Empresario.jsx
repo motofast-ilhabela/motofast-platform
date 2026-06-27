@@ -32,25 +32,6 @@ const PG = {
   cartao:   { label:"Cartão",   icon:"💳", cor:"#60a5fa" },
 };
 
-// Clientes salvos deste estabelecimento
-const CLIENTES_INIT = [
-  {id:1, nome:"João da Silva",   tel:"(12) 99801-1111", endereco:{rua:"Rua das Flores",num:"45",bairro:"Perequê",ref:"Casa verde, portão de ferro"}},
-  {id:2, nome:"Maria Santos",    tel:"(12) 99802-2222", endereco:{rua:"Rua do Sol",num:"120",bairro:"Vila",ref:"Prédio azul, apto 3B"}},
-  {id:3, nome:"Pedro Almeida",   tel:"(12) 99803-3333", endereco:{rua:"Av. Beira Mar",num:"300",bairro:"Barra Velha",ref:"Em frente ao quiosque"}},
-  {id:4, nome:"Ana Costa",       tel:"(12) 99804-4444", endereco:{rua:"Rua Central",num:"88",bairro:"Centro",ref:"Casa amarela"}},
-  {id:5, nome:"Lucas Ferreira",  tel:"(12) 99805-5555", endereco:{rua:"Estrada da Ilha",num:"210",bairro:"Sul",ref:"Sítio depois da curva"}},
-  {id:6, nome:"Fernanda Rocha",  tel:"(12) 99806-6666", endereco:{rua:"Rua Nova",num:"33",bairro:"Perequê",ref:"Em frente à padaria"}},
-];
-
-// Histórico de entregas deste estabelecimento
-const HIST_INIT = [
-  {id:1,clienteNome:"João da Silva",bairro:"Perequê",pagamento:"pix",taxa:7,status:"Entregue",motoboyNome:"Carlos Silva",data:"2026-06-09",hora:"19:32"},
-  {id:2,clienteNome:"Maria Santos",bairro:"Vila",pagamento:"dinheiro",taxa:11,status:"Entregue",motoboyNome:"Marcos Souza",data:"2026-06-09",hora:"20:15"},
-  {id:3,clienteNome:"Ana Costa",bairro:"Centro",pagamento:"pix",taxa:10,status:"Entregue",motoboyNome:"Carlos Silva",data:"2026-06-08",hora:"18:45"},
-  {id:4,clienteNome:"Pedro Almeida",bairro:"Barra Velha",pagamento:"cartao",taxa:12,status:"Entregue",motoboyNome:"Diego Santos",data:"2026-06-08",hora:"20:00"},
-  {id:5,clienteNome:"Lucas Ferreira",bairro:"Sul",pagamento:"pix",taxa:16,status:"Cancelada",motoboyNome:"—",data:"2026-06-07",hora:"19:10"},
-  {id:6,clienteNome:"Fernanda Rocha",bairro:"Perequê",pagamento:"pix",taxa:7,status:"Entregue",motoboyNome:"Rafael Lima",data:"2026-06-07",hora:"21:00"},
-];
 
 const SUPORTE_TEL = "5512999999999";
 const SUPORTE_HORARIO = "Seg-Sex 9h-22h • Sáb 9h-19h • Dom/feriados: fechado";
@@ -681,6 +662,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
   // Link de rastreio público + mensagem pronta pro empresário enviar ao cliente
   function linkRastreio(p) {
     const params = new URLSearchParams({
+      pedido: p.id || "",
       cliente: p.clienteNome || "",
       empresa: (empresa && empresa.nome) || EMPRESA.nome || "",
       empresaTel: (empresa && empresa.tel) || EMPRESA.tel || "",
@@ -695,7 +677,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
   function abrirWhatsCliente(p) {
     const link = linkRastreio(p);
     const nomeEmp = (empresa && empresa.nome) || EMPRESA.nome;
-    const msg = `${p.clienteNome}, seu pedido está a caminho! 🛵\n\nSeu pedido na *${nomeEmp}* já saiu para entrega!\n\n📍 Acompanhe em tempo real:\n${link}`;
+    const msg = `${p.clienteNome}, seu pedido está a caminho! 🛵\n\nSeu pedido — *${nomeEmp}* — já saiu para entrega!\n\n📍 Acompanhe em tempo real:\n${link}`;
     const tel = (p.clienteTel || "").replace(/\D/g,"");
     window.open(`https://wa.me/55${tel}?text=${encodeURIComponent(msg)}`, "_blank");
   }
