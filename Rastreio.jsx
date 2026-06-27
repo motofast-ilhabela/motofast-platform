@@ -227,9 +227,16 @@ export default function Rastreio() {
               <div style={{color:"#f9fafb",fontSize:14,fontWeight:600}}>{enderecoLinha}</div>
               {ref && <div style={{color:"#fbbf24",fontSize:12,marginTop:3}}>📌 {ref}</div>}
             </div>
-            <iframe
-              src={`https://maps.google.com/maps?q=${mapaQuery}&output=embed&hl=pt-BR`}
-              width="100%" height="200" style={{border:"none",display:"block"}} title="mapa" loading="lazy"/>
+            <div style={{position:"relative",height:200,background:"#0f172a",display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <iframe
+                src={`https://maps.google.com/maps?q=${mapaQuery}&output=embed&hl=pt-BR&z=16&iwloc=&zoom=16`}
+                width="100%" height="200" 
+                style={{border:"none",display:"block",pointerEvents:"none"}} 
+                title="mapa" loading="lazy"
+                scrolling="no"
+              />
+              <div style={{position:"absolute",inset:0,background:"transparent",cursor:"default"}}/>
+            </div>
           </div>
         )}
 
