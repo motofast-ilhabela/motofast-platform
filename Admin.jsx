@@ -811,7 +811,16 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
                 <div style={{textAlign:"center"}}><div style={{color:"#a78bfa",fontWeight:900,fontSize:20}}>R${ts.total}</div><div style={{color:"#6b7280",fontSize:10}}>total a cobrar</div></div>
               </div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {emp.planoGratis ? <Btn small cor="amarelo" onClick={()=>ativarGratis(emp.id,0)}>💰 Ativar cobrança</Btn> : <Btn small cor="roxo" onClick={()=>ativarGratis(emp.id,1)}>🎁 1 mês grátis</Btn>}
+                {emp.planoGratis ? (
+                  <Btn small cor="amarelo" onClick={()=>ativarGratis(emp.id,0)}>💰 Ativar cobrança</Btn>
+                ) : (
+                  <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                    <Btn small cor="roxo" onClick={()=>ativarGratis(emp.id,1)}>🎁 1 mês</Btn>
+                    <Btn small cor="roxo" onClick={()=>ativarGratis(emp.id,2)}>🎁 2 meses</Btn>
+                    <Btn small cor="roxo" onClick={()=>ativarGratis(emp.id,3)}>🎁 3 meses</Btn>
+                    <Btn small cor="roxo" onClick={()=>ativarGratis(emp.id,-1)}>♾️ Sempre</Btn>
+                  </div>
+                )}
                 {!emp.mensalidadePaga&&!emp.planoGratis && <Btn small cor="amarelo" onClick={()=>marcarMensalidade(emp.id)}>💰 Mensalidade paga</Btn>}
                 <Btn small cor={emp.bloqueado?"verde":"perigo"} onClick={()=>toggleBloqueio(emp.id)}>{emp.bloqueado?"🔓 Desbloquear":"⛔ Bloquear"}</Btn>
                 <Btn small cor="cinza" onClick={()=>abrirEmp(emp)}>⚙️ Gerenciar</Btn>
@@ -851,6 +860,22 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
                   <Btn small cor={empSel.bloqueado?"verde":"perigo"} onClick={()=>toggleBloqueio(empSel.id)}>{empSel.bloqueado?"🔓 Desbloquear":"⛔ Bloquear"}</Btn>
                 </div>
                 {!empSel.mensalidadePaga&&!empSel.planoGratis && <Btn cor="amarelo" full onClick={()=>marcarMensalidade(empSel.id)}>💰 Confirmar pagamento R${empSel.planoPagamento==="mensal"?MENSALIDADE*4:MENSALIDADE}</Btn>}
+                {!empSel.planoGratis && (
+                  <div style={{marginTop:10}}>
+                    <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:8}}>🎁 Conceder período grátis:</div>
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                      <Btn small cor="roxo" onClick={()=>{ativarGratis(empSel.id,1);setSel(null);}}>🎁 1 mês</Btn>
+                      <Btn small cor="roxo" onClick={()=>{ativarGratis(empSel.id,2);setSel(null);}}>🎁 2 meses</Btn>
+                      <Btn small cor="roxo" onClick={()=>{ativarGratis(empSel.id,3);setSel(null);}}>🎁 3 meses</Btn>
+                      <Btn small cor="roxo" onClick={()=>{ativarGratis(empSel.id,-1);setSel(null);}}>♾️ Sempre grátis</Btn>
+                    </div>
+                  </div>
+                )}
+                {empSel.planoGratis && (
+                  <div style={{marginTop:10}}>
+                    <Btn cor="amarelo" full onClick={()=>{ativarGratis(empSel.id,0);setSel(null);}}>💰 Encerrar período grátis — ativar cobrança</Btn>
+                  </div>
+                )}
               </Card>
             </div>
           )}

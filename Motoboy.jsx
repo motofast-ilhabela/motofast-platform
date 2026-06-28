@@ -309,11 +309,17 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
   }
 
   function abrirGPSEstab(p) {
-    const end = encodeURIComponent(`${p.empresaEndereco||p.empresaNome}, Ilhabela, SP`);
+    // Usa o endereço completo do estabelecimento se disponível, senão busca pelo nome
+    const destino = p.empresaEndereco
+      ? `${p.empresaEndereco}, Ilhabela, SP`
+      : `${p.empresaNome}, Ilhabela, SP, Brasil`;
+    const end = encodeURIComponent(destino);
     window.open(`https://www.google.com/maps/dir/?api=1&destination=${end}&travelmode=driving`,"_blank");
   }
   function abrirGPSCliente(p) {
-    const end = encodeURIComponent(`${p.rua}, ${p.num}, ${p.bairro}, Ilhabela, SP`);
+    // Monta o endereço completo do cliente para navegação precisa
+    const destino = `${p.rua}, ${p.num}, ${p.bairro}, Ilhabela, SP, Brasil`;
+    const end = encodeURIComponent(destino);
     window.open(`https://www.google.com/maps/dir/?api=1&destination=${end}&travelmode=driving`,"_blank");
   }
 
