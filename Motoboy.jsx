@@ -530,25 +530,46 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
 }
 
 // ─── GANHOS ───────────────────────────────────────────────────────────────────
-function Ganhos({ historico }) {
+function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy }) {
   const [verTudo, setVerTudo] = useState(false);
+
+  const agora = new Date();
+  const mesAtual = agora.getMonth() + 1;
+  const diaAtual = agora.getDate();
+  const semAtual = diaAtual<=7?1:diaAtual<=14?2:diaAtual<=21?3:4;
+  const nomesMes = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  const nomeMesAtual = nomesMes[mesAtual-1];
+  const hojeStr = agora.toLocaleDateString("pt-BR");
 
   const entregues = historico.filter(e=>e.status==="Entregue");
 
-  // Semana atual (não pago ainda)
-  const semanaAtual = entregues.filter(e=>e.mes===6&&e.semana===3&&!e.repasePago);
+  // Semana atual (não pago ainda) — usa mês e semana dinâmicos
+  const semanaAtual = entregues.filter(e=>e.mes===mesAtual&&e.semana===semAtual&&!e.repasePago);
   const saldoSemana = semanaAtual.reduce((s,e)=>s+e.taxa,0).toFixed(2);
 
-  // Total histórico (tudo que já recebeu)
+  // Total histórico
   const totalHistorico = entregues.reduce((s,e)=>s+e.taxa,0).toFixed(2);
   const totalEntregas  = entregues.length;
 
-  // Este mês
-  const mesMes = entregues.filter(e=>e.mes===6);
+  // Este mês — dinâmico
+  const mesMes = entregues.filter(e=>e.mes===mesAtual);
   const ganhosMes = mesMes.reduce((s,e)=>s+e.taxa,0).toFixed(2);
 
-  // Ranking do mês (posição simulada)
-  const ranking = 1;
+  // Entregas hoje — data dinâmica
+  const entregasHoje = entregues.filter(e=>e.data===hojeStr).length;
+
+  // Ranking real — compara com todos os motoboys
+  const ranking = (() => {
+    if (!todosHistorico || todosHistorico.length === 0) return null;
+    // Agrupa por motoboyId e conta entregas do mês atual
+    const contagem = {};
+    todosHistorico.filter(e=>e.status==="Entregue"&&e.mes===mesAtual).forEach(e=>{
+      contagem[e.motoboyId] = (contagem[e.motoboyId]||0) + 1;
+    });
+    const minhas = contagem[motoboyId] || 0;
+    const posicao = Object.values(contagem).filter(v=>v>minhas).length + 1;
+    return posicao;
+  })();
 
   const lista = verTudo ? entregues.slice().reverse() : semanaAtual.slice().reverse();
 
@@ -564,7 +585,7 @@ function Ganhos({ historico }) {
         <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"16px 18px",flex:1,minWidth:130}}>
           <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>A receber esta semana</div>
           <div style={{color:"#fbbf24",fontSize:28,fontWeight:900,lineHeight:1}}>R${saldoSemana}</div>
-          <div style={{color:"#6b7280",fontSize:11,marginTop:4}}>{semanaAtual.length} entrega{semanaAtual.length!==1?"s":""} esta semana</div>
+          <div style={{color:"#6b7280",fontSize:11,marginTop:4}}>{semanaAtual.length} entrega{semanaAtual.length!==1?"s":""} — semana {semAtual}</div>
           <div style={{background:"#1f2937",borderRadius:4,height:4,marginTop:8}}>
             <div style={{background:"#fbbf24",borderRadius:4,height:4,width:"60%"}}/>
           </div>
@@ -573,7 +594,7 @@ function Ganhos({ historico }) {
         <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"16px 18px",flex:1,minWidth:130}}>
           <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Ganhos este mês</div>
           <div style={{color:"#60a5fa",fontSize:24,fontWeight:800,lineHeight:1}}>R${ganhosMes}</div>
-          <div style={{color:"#6b7280",fontSize:11,marginTop:4}}>{mesMes.length} entregas em junho</div>
+          <div style={{color:"#6b7280",fontSize:11,marginTop:4}}>{mesMes.length} entregas em {nomeMesAtual}</div>
         </div>
         <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"16px 18px",flex:1,minWidth:130}}>
           <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Total histórico</div>
@@ -582,14 +603,113 @@ function Ganhos({ historico }) {
         </div>
       </div>
 
-      {/* Ranking */}
-      <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:12}}>
-        <div style={{fontSize:32}}>🏆</div>
-        <div>
-          <div style={{color:"#f59e0b",fontWeight:800,fontSize:14}}>#{ranking}º lugar no ranking de junho!</div>
-          <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>Continue assim para ganhar o bônus do mês 🚀</div>
+      {/* Ranking completo */}
+      {rankingGeral && rankingGeral.length > 0 && (
+        <div style={{marginBottom:16}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>
+            🏆 Ranking de {nomeMesAtual} — {rankingGeral.length} motoboy{rankingGeral.length!==1?"s":""}
+          </div>
+
+          {/* Minha posição em destaque */}
+          {(()=>{
+            const minhaPosicao = rankingGeral.findIndex(m=>m.id===motoboyId);
+            const minhasEntregas = minhaPosicao>=0 ? rankingGeral[minhaPosicao].qtd : mesMes.length;
+            const pos = minhaPosicao+1;
+            const proximo = minhaPosicao>0 ? rankingGeral[minhaPosicao-1] : null;
+            const faltam = proximo ? proximo.qtd - minhasEntregas + 1 : 0;
+
+            return (
+              <div style={{background:"#1a1000",border:"2px solid #f59e0b",borderRadius:12,padding:"14px 16px",marginBottom:12}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{fontSize:36}}>{pos===1?"🥇":pos===2?"🥈":pos===3?"🥉":"🏆"}</div>
+                  <div style={{flex:1}}>
+                    <div style={{color:"#f59e0b",fontWeight:900,fontSize:16}}>Você está em #{pos}º lugar!</div>
+                    <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>
+                      {minhasEntregas} entrega{minhasEntregas!==1?"s":""} este mês
+                    </div>
+                    {proximo && (
+                      <div style={{color:"#34d399",fontSize:12,marginTop:4,fontWeight:700}}>
+                        ⬆️ Faltam {faltam} entrega{faltam!==1?"s":""} para passar {proximo.nome.split(" ")[0]}
+                      </div>
+                    )}
+                    {pos===1 && <div style={{color:"#34d399",fontSize:12,marginTop:4,fontWeight:700}}>🚀 Você é o líder! Continue assim!</div>}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Lista completa do ranking */}
+          <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,overflow:"hidden"}}>
+            {rankingGeral.map((mb, i)=>{
+              const isEu = mb.id === motoboyId;
+              const medal = i===0?"🥇":i===1?"🥈":i===2?"🥉":null;
+              const corBg = isEu?"#0d2a1e":i<3?"#0f172a":"transparent";
+              const corBorda = isEu?"#34d399":i<3?"#f59e0b33":"#1f2937";
+              const maxQtd = rankingGeral[0]?.qtd || 1;
+
+              return (
+                <div key={mb.id} style={{
+                  background:corBg,
+                  borderBottom:"1px solid #1f2937",
+                  borderLeft:`3px solid ${isEu?"#34d399":"transparent"}`,
+                  padding:"10px 14px",
+                }}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    {/* Posição */}
+                    <div style={{
+                      width:28,height:28,borderRadius:"50%",flexShrink:0,
+                      display:"flex",alignItems:"center",justifyContent:"center",
+                      fontWeight:900,fontSize:i<3?16:12,
+                      background:i===0?"#f59e0b":i===1?"#9ca3af":i===2?"#b45309":"#1f2937",
+                      color:i<3?"#000":"#6b7280",
+                    }}>
+                      {medal || i+1}
+                    </div>
+
+                    {/* Info */}
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                        <span style={{
+                          color:isEu?"#34d399":"#f9fafb",
+                          fontWeight:isEu?900:600,
+                          fontSize:13,
+                        }}>
+                          {mb.nome.split(" ").slice(0,2).join(" ")}
+                          {isEu && <span style={{color:"#34d399",fontSize:10,fontWeight:700,marginLeft:6,background:"#0d3d2e",padding:"1px 6px",borderRadius:8}}>VOCÊ</span>}
+                        </span>
+                        <div style={{textAlign:"right",flexShrink:0}}>
+                          <span style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>{mb.qtd} entrega{mb.qtd!==1?"s":""}</span>
+                        </div>
+                      </div>
+                      {/* Barra de progresso */}
+                      <div style={{background:"#1f2937",borderRadius:4,height:4}}>
+                        <div style={{
+                          background:isEu?"#34d399":i===0?"#f59e0b":"#374151",
+                          borderRadius:4,height:4,
+                          width:`${Math.round((mb.qtd/maxQtd)*100)}%`,
+                          transition:"width 0.5s",
+                        }}/>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Se não tem ranking ainda */}
+      {(!rankingGeral || rankingGeral.length === 0) && mesMes.length > 0 && (
+        <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:12}}>
+          <div style={{fontSize:32}}>🏆</div>
+          <div>
+            <div style={{color:"#f59e0b",fontWeight:800,fontSize:14}}>{mesMes.length} entrega{mesMes.length!==1?"s":""} em {nomeMesAtual}</div>
+            <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>Ranking carregando... 🚀</div>
+          </div>
+        </div>
+      )}
 
       {/* Extrato */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
@@ -662,6 +782,7 @@ export default function AppMotoboy() {
   const [tipoSom, setTipoSom] = useState("alerta_forte");
   const [motoboyId, setMotoboyId] = useState(null);
   const [motoboy, setMotoboy] = useState(MOTOBOY_VAZIO);
+  const [rankingGeral, setRankingGeral] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const tentativas = useRef(0);
   const pedidoRef = useRef(null);
@@ -743,10 +864,39 @@ export default function AppMotoboy() {
                 status: p.status==="entregue" ? "Entregue" : "Cancelada",
                 data: d.toLocaleDateString("pt-BR"),
                 hora: d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
-                semana: 3, mes: d.getMonth()+1,
+                semana: Math.ceil(d.getDate()/7), mes: d.getMonth()+1,
                 repasePago: false,
               };
             }));
+          }
+
+          // Busca ranking de todos os motoboys do mês atual
+          const mesAtualRank = new Date().getMonth()+1;
+          const anoAtualRank = new Date().getFullYear();
+          const inicioMes = new Date(anoAtualRank, mesAtualRank-1, 1).toISOString();
+          const { data: pedidosMes } = await supabase
+            .from("pedidos")
+            .select("motoboy_id, taxa, motoboys(nome_completo)")
+            .eq("status", "entregue")
+            .gte("criado_em", inicioMes);
+
+          if (pedidosMes) {
+            const contagem = {};
+            pedidosMes.forEach(p=>{
+              if (!p.motoboy_id) return;
+              if (!contagem[p.motoboy_id]) {
+                contagem[p.motoboy_id] = {
+                  id: p.motoboy_id,
+                  nome: p.motoboys?.nome_completo || "Motoboy",
+                  qtd: 0,
+                  ganhos: 0,
+                };
+              }
+              contagem[p.motoboy_id].qtd++;
+              contagem[p.motoboy_id].ganhos += p.taxa || 0;
+            });
+            const rank = Object.values(contagem).sort((a,b)=>b.qtd-a.qtd);
+            setRankingGeral(rank);
           }
         }
       } catch (e) {
@@ -998,7 +1148,11 @@ export default function AppMotoboy() {
     // No sistema real: notifica admin e empresário com o motivo
   }
 
-  const saldoSemana = historico.filter(e=>e.status==="Entregue"&&e.mes===6&&e.semana===3&&!e.repasePago).reduce((s,e)=>s+e.taxa,0).toFixed(2);
+  const _agora = new Date();
+  const _mesAtual = _agora.getMonth()+1;
+  const _diaAtual = _agora.getDate();
+  const _semAtual = _diaAtual<=7?1:_diaAtual<=14?2:_diaAtual<=21?3:4;
+  const saldoSemana = historico.filter(e=>e.status==="Entregue"&&e.mes===_mesAtual&&e.semana===_semAtual&&!e.repasePago).reduce((s,e)=>s+e.taxa,0).toFixed(2);
 
   const ABAS = [
     {id:"home",   label:"🏠 Início"},
@@ -1094,12 +1248,14 @@ export default function AppMotoboy() {
               <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"14px 16px",flex:1,textAlign:"center"}}>
                 <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Entregas hoje</div>
                 <div style={{color:"#60a5fa",fontWeight:900,fontSize:24}}>
-                  {historico.filter(e=>e.data==="2026-06-09"&&e.status==="Entregue").length}
+                  {historico.filter(e=>e.data===new Date().toLocaleDateString("pt-BR")&&e.status==="Entregue").length}
                 </div>
               </div>
               <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"14px 16px",flex:1,textAlign:"center"}}>
                 <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Ranking</div>
-                <div style={{color:"#f59e0b",fontWeight:900,fontSize:24}}>🥇 1º</div>
+                <div style={{color:"#f59e0b",fontWeight:900,fontSize:24}}>
+                  {(()=>{const ag=new Date();const m=ag.getMonth()+1;const contagem={};historico.filter(e=>e.status==="Entregue"&&e.mes===m).forEach(e=>{contagem[e.motoboyId||-1]=(contagem[e.motoboyId||-1]||0)+1;});const minhas=historico.filter(e=>e.status==="Entregue"&&e.mes===m).length;const pos=Object.values(contagem).filter(v=>v>minhas).length+1;return pos===1?"🥇 1º":pos===2?"🥈 2º":pos===3?"🥉 3º":`#${pos}º`;})()}
+                </div>
               </div>
             </div>
 
@@ -1209,7 +1365,7 @@ export default function AppMotoboy() {
         )}
 
         {/* GANHOS */}
-        {aba==="ganhos" && <Ganhos historico={historico}/>}
+        {aba==="ganhos" && <Ganhos historico={historico} motoboyId={motoboyId} todosHistorico={historico} rankingGeral={rankingGeral} motoboy={motoboy}/>}
       </div>
 
       {/* Botão suporte fixo */}
