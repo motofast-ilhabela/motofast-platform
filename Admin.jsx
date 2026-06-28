@@ -800,8 +800,17 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
                 </div>
                 <div style={{color:"#6b7280",fontSize:12}}>📍 {emp.bairro} · 📞 {emp.tel}</div>
                 {emp.cnpj && <div style={{color:"#4b5563",fontSize:11,marginTop:1}}>CNPJ: {emp.cnpj} · Dono: {emp.nomeDono}</div>}
-                {emp.planoGratis && emp.dataFimGratis && emp.dataFimGratis !== "∞" && <div style={{color:"#a78bfa",fontSize:12,marginTop:2}}>🎁 Grátis até {emp.dataFimGratis}</div>}
-                {emp.planoGratis && emp.dataFimGratis === "∞" && <div style={{color:"#a78bfa",fontSize:12,marginTop:2}}>🎁 Sempre grátis</div>}
+                {emp.planoGratis && emp.dataFimGratis && emp.dataFimGratis !== "∞" && (()=>{
+                  const d = new Date(emp.dataFimGratis+"T12:00:00");
+                  const hoje = new Date();
+                  const diffMs = d - hoje;
+                  const diffDias = Math.ceil(diffMs/(1000*60*60*24));
+                  const meses = Math.round(diffDias/30);
+                  const dataFmt = d.toLocaleDateString("pt-BR");
+                  const label = meses>=3?"3 meses grátis":meses>=2?"2 meses grátis":meses>=1?"1 mês grátis":"período grátis";
+                  return <div style={{color:"#a78bfa",fontSize:12,marginTop:2}}>🎁 {label} — até {dataFmt}</div>;
+                })()}
+                {emp.planoGratis && emp.dataFimGratis === "∞" && <div style={{color:"#a78bfa",fontSize:12,marginTop:2}}>♾️ Sempre grátis</div>}
                 {!emp.planoGratis && !emp.mensalidadePaga && <div style={{color:"#ef4444",fontSize:12,marginTop:2,fontWeight:700}}>🔴 Período grátis encerrado — cobrar mensalidade!</div>}
                 {motInad && emp.mensalidadePaga !== false && <div style={{color:"#fbbf24",fontSize:12,marginTop:2}}>⚠️ Inadimplente: {motInad}</div>}
               </div>
@@ -1304,6 +1313,19 @@ function Avaliacoes({ avaliacoes, motoboys }) {
       </div>
 
       {/* Ranking por motoboy */}
+      {/* Legenda das estrelas */}
+      <Card style={{marginBottom:16,background:"#0f172a"}}>
+        <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📖 Significado das estrelas</div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {[["⭐","1 — Muito ruim","#ef4444"],["⭐⭐","2 — Ruim","#f97316"],["⭐⭐⭐","3 — Regular","#fbbf24"],["⭐⭐⭐⭐","4 — Bom","#84cc16"],["⭐⭐⭐⭐⭐","5 — Excelente","#34d399"]].map(([s,l,c])=>(
+            <div key={l} style={{background:"#111827",borderRadius:8,padding:"8px 12px",flex:1,minWidth:100,textAlign:"center"}}>
+              <div style={{fontSize:14}}>{s}</div>
+              <div style={{color:c,fontSize:11,fontWeight:700,marginTop:3}}>{l}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
       <div style={{marginBottom:20}}>
         <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>🏆 Ranking por Motoboy</div>
         {medias.filter(m=>m.qtdAval>0).length === 0 && (
@@ -1361,7 +1383,7 @@ function Avaliacoes({ avaliacoes, motoboys }) {
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{background:"#0f172a",borderBottom:"1px solid #1f2937"}}>
-                {["Data","Estabelecimento","Motoboy","🏍️ Entrega","⚡ MotoFast"].map(h=>(
+                {["Data","Cliente","Estabelecimento","Motoboy","🏍️ Entrega","⚡ MotoFast"].map(h=>(
                   <th key={h} style={{padding:"10px 14px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"}}>{h}</th>
                 ))}
               </tr>
@@ -1374,6 +1396,7 @@ function Avaliacoes({ avaliacoes, motoboys }) {
                   <td style={{padding:"10px 14px",color:"#9ca3af",fontSize:12}}>
                     {new Date(a.criado_em).toLocaleDateString("pt-BR")}
                   </td>
+                  <td style={{padding:"10px 14px",color:"#f9fafb",fontSize:12,fontWeight:600}}>{a.cliente_nome||"—"}</td>
                   <td style={{padding:"10px 14px",color:"#d1d5db",fontSize:12}}>{a.empresa_nome||"—"}</td>
                   <td style={{padding:"10px 14px",color:"#f9fafb",fontWeight:600,fontSize:12}}>{a.motoboy_nome?.split(" ")[0]||"—"}</td>
                   <td style={{padding:"10px 14px"}}>

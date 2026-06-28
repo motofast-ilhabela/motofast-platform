@@ -264,6 +264,7 @@ export default function Rastreio() {
         pedido_id: pedidoId || null,
         empresa_nome: empresa || null,
         motoboy_nome: motoboy || null,
+        cliente_nome: cliente || null,
         nota_motoboy: notaMotoboy,
         nota_motofast: notaMotofast,
         criado_em: new Date().toISOString(),
