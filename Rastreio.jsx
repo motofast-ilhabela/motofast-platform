@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "react-router-dom";
 import { supabase } from "./supabaseClient.js";
 
@@ -44,19 +44,159 @@ function Estrelas({ valor, onChange }) {
   );
 }
 
+// ─── MAPA LEAFLET COM MOTINHA ────────────────────────────────────────────────
+function MapaMotoboy({ lat, lng, enderecoLinha }) {
+  const mapRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const markerRef = useRef(null);
+  const leafletLoadedRef = useRef(false);
+
+  useEffect(() => {
+    // Carrega Leaflet dinamicamente
+    if (!leafletLoadedRef.current) {
+      leafletLoadedRef.current = true;
+
+      // CSS do Leaflet
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+      document.head.appendChild(link);
+
+      // JS do Leaflet
+      const script = document.createElement("script");
+      script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+      script.onload = () => iniciarMapa();
+      document.head.appendChild(script);
+    } else if (window.L) {
+      iniciarMapa();
+    }
+
+    function iniciarMapa() {
+      if (!mapRef.current || mapInstanceRef.current) return;
+
+      const L = window.L;
+
+      // Cria o mapa centrado na localização do motoboy
+      const mapa = L.map(mapRef.current, {
+        center: [lat, lng],
+        zoom: 15,
+        zoomControl: false,
+        attributionControl: false,
+        dragging: false,
+        touchZoom: false,
+        scrollWheelZoom: false,
+        doubleClickZoom: false,
+        boxZoom: false,
+      });
+
+      // Tile do OpenStreetMap
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+      }).addTo(mapa);
+
+      // Ícone personalizado da motinha
+      const iconeMotinha = L.divIcon({
+        html: `
+          <div style="
+            display:flex;
+            flex-direction:column;
+            align-items:center;
+            filter: drop-shadow(0 2px 6px rgba(0,0,0,0.5));
+          ">
+            <div style="
+              background:#0d3d2e;
+              border:2px solid #34d399;
+              border-radius:50%;
+              width:44px;
+              height:44px;
+              display:flex;
+              align-items:center;
+              justify-content:center;
+              font-size:22px;
+            ">⚡🏍️</div>
+            <div style="
+              display:flex;
+              align-items:center;
+              gap:4px;
+              background:rgba(0,0,0,0.8);
+              border:1px solid #34d399;
+              border-radius:12px;
+              padding:2px 8px;
+              margin-top:4px;
+              white-space:nowrap;
+            ">
+              <div style="
+                width:7px;height:7px;
+                background:#34d399;
+                border-radius:50%;
+                animation:pulseLive 1.2s infinite;
+              "></div>
+              <span style="color:#34d399;font-size:10px;font-weight:700;">ao vivo</span>
+            </div>
+          </div>
+        `,
+        iconSize: [52, 64],
+        iconAnchor: [26, 64],
+        className: "",
+      });
+
+      // Adiciona a motinha no mapa
+      const marker = L.marker([lat, lng], { icon: iconeMotinha }).addTo(mapa);
+      markerRef.current = marker;
+      mapInstanceRef.current = mapa;
+    }
+
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+        markerRef.current = null;
+      }
+    };
+  }, []);
+
+  // Atualiza posição da motinha suavemente sem recarregar o mapa
+  useEffect(() => {
+    if (!mapInstanceRef.current || !markerRef.current || !lat || !lng) return;
+    const L = window.L;
+    const novaPos = L.latLng(lat, lng);
+    markerRef.current.setLatLng(novaPos);
+    mapInstanceRef.current.panTo(novaPos, { animate: true, duration: 1 });
+  }, [lat, lng]);
+
+  return (
+    <div style={{position:"relative"}}>
+      <style>{`
+        @keyframes pulseLive {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.4; transform: scale(0.7); }
+        }
+      `}</style>
+      <div ref={mapRef} style={{width:"100%",height:240,background:"#1f2937"}}/>
+      <div style={{
+        position:"absolute",bottom:10,left:"50%",transform:"translateX(-50%)",
+        background:"rgba(0,0,0,0.75)",borderRadius:20,padding:"5px 14px",
+        color:"#9ca3af",fontSize:11,whiteSpace:"nowrap",zIndex:1000,
+      }}>
+        📍 {enderecoLinha}
+      </div>
+    </div>
+  );
+}
+
 // ─── PÁGINA DE RASTREIO ──────────────────────────────────────────────────────
 export default function Rastreio() {
   const [params] = useSearchParams();
 
-  const pedidoId  = params.get("pedido")    || "";
-  const cliente   = params.get("cliente")   || "";
-  const empresa   = params.get("empresa")   || "";
-  const empresaTel= params.get("empresaTel")|| "";
-  const motoboy   = params.get("motoboy")   || "Nosso motoboy";
-  const bairro    = params.get("bairro")    || "";
-  const rua       = params.get("rua")       || "";
-  const num       = params.get("num")       || "";
-  const ref       = params.get("ref")       || "";
+  const pedidoId   = params.get("pedido")    || "";
+  const cliente    = params.get("cliente")   || "";
+  const empresa    = params.get("empresa")   || "";
+  const empresaTel = params.get("empresaTel")|| "";
+  const motoboy    = params.get("motoboy")   || "Nosso motoboy";
+  const bairro     = params.get("bairro")    || "";
+  const rua        = params.get("rua")       || "";
+  const num        = params.get("num")       || "";
+  const ref        = params.get("ref")       || "";
 
   const [etapa, setEtapa] = useState(1);
   const [motoboyLat, setMotoboyLat] = useState(null);
@@ -86,7 +226,6 @@ export default function Rastreio() {
       else if (data.status === "saiu_estabelecimento" || data.status === "aceito") setEtapa(1);
       else if (data.status === "aguardando") setEtapa(0);
 
-      // Guarda o ID do motoboy para buscar localização
       if (data.motoboy_id) setMotoboyIdRastreio(data.motoboy_id);
     }
 
@@ -102,7 +241,7 @@ export default function Rastreio() {
     async function buscarLocalizacao() {
       const { data } = await supabase
         .from("motoboys")
-        .select("latitude, longitude, ultima_localizacao")
+        .select("latitude, longitude")
         .eq("id", motoboyIdRastreio)
         .maybeSingle();
 
@@ -131,27 +270,25 @@ export default function Rastreio() {
       });
       setAvaliacaoEnviada(true);
     } catch(e) {
-      console.error("Erro ao salvar avaliação:", e);
-      setAvaliacaoEnviada(true); // mesmo com erro, não bloqueia o usuário
+      setAvaliacaoEnviada(true);
     }
     setEnviandoAvaliacao(false);
   }
 
-  // Link inválido / sem dados
+  // Link inválido
   if (!cliente && !bairro && !pedidoId) {
     return (
       <div style={{minHeight:"100vh",background:"#0a0f1a",display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Inter','Segoe UI',sans-serif"}}>
         <div style={{textAlign:"center",maxWidth:340}}>
           <div style={{fontSize:44,marginBottom:12}}>🔗</div>
           <div style={{color:"#f9fafb",fontWeight:800,fontSize:17,marginBottom:6}}>Link de rastreio inválido</div>
-          <div style={{color:"#6b7280",fontSize:13,lineHeight:1.6}}>Verifique o link recebido ou entre em contato com o estabelecimento que fez seu pedido.</div>
+          <div style={{color:"#6b7280",fontSize:13,lineHeight:1.6}}>Verifique o link recebido ou entre em contato com o estabelecimento.</div>
         </div>
       </div>
     );
   }
 
   const enderecoLinha = [rua && `${rua}${num ? ", "+num : ""}`, bairro].filter(Boolean).join(" — ");
-  const mapaQuery = encodeURIComponent(`${rua}${num?", "+num:""}, ${bairro}, Ilhabela, SP`);
 
   return (
     <div style={{minHeight:"100vh",background:"#0a0f1a",fontFamily:"'Inter','Segoe UI',sans-serif",color:"#f9fafb",paddingBottom:30}}>
@@ -211,27 +348,22 @@ export default function Rastreio() {
           </div>
         )}
 
-        {/* Avaliação — aparece só após entrega */}
+        {/* Avaliação */}
         {etapa >= 2 && !avaliacaoEnviada && (
           <div style={{background:"#111827",border:"1px solid #f59e0b",borderRadius:12,padding:"18px 16px",marginBottom:16}}>
             <div style={{color:"#fbbf24",fontWeight:800,fontSize:14,marginBottom:4,textAlign:"center"}}>⭐ Avalie sua experiência</div>
             <div style={{color:"#9ca3af",fontSize:12,textAlign:"center",marginBottom:14}}>Sua opinião é muito importante para nós!</div>
-
             <div style={{marginBottom:14}}>
               <div style={{color:"#d1d5db",fontSize:13,fontWeight:700,textAlign:"center",marginBottom:4}}>🏍️ Como foi a entrega?</div>
               <div style={{color:"#6b7280",fontSize:11,textAlign:"center",marginBottom:4}}>O motoboy foi pontual e educado?</div>
               <Estrelas valor={notaMotoboy} onChange={setNotaMotoboy}/>
             </div>
-
             <div style={{marginBottom:16}}>
               <div style={{color:"#d1d5db",fontSize:13,fontWeight:700,textAlign:"center",marginBottom:4}}>⚡ O que achou do MotoFast?</div>
               <div style={{color:"#6b7280",fontSize:11,textAlign:"center",marginBottom:4}}>Recomendaria nosso serviço de entregas?</div>
               <Estrelas valor={notaMotofast} onChange={setNotaMotofast}/>
             </div>
-
-            <button
-              onClick={enviarAvaliacao}
-              disabled={notaMotoboy===0||notaMotofast===0||enviandoAvaliacao}
+            <button onClick={enviarAvaliacao} disabled={notaMotoboy===0||notaMotofast===0||enviandoAvaliacao}
               style={{width:"100%",padding:"12px",borderRadius:10,background:notaMotoboy>0&&notaMotofast>0?"#10b981":"#1f2937",border:"none",color:"#fff",fontWeight:700,fontSize:14,cursor:notaMotoboy>0&&notaMotofast>0?"pointer":"not-allowed",opacity:notaMotoboy>0&&notaMotofast>0?1:0.5}}>
               {enviandoAvaliacao?"Enviando...":"✅ Enviar avaliação"}
             </button>
@@ -247,7 +379,7 @@ export default function Rastreio() {
           </div>
         )}
 
-        {/* Endereço + mapa */}
+        {/* Mapa com motinha ⚡🏍️ */}
         {(rua || bairro) && (
           <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,overflow:"hidden",marginBottom:16}}>
             <div style={{padding:"12px 16px",borderBottom:"1px solid #1f2937"}}>
@@ -255,39 +387,16 @@ export default function Rastreio() {
               <div style={{color:"#f9fafb",fontSize:14,fontWeight:600}}>{enderecoLinha}</div>
               {ref && <div style={{color:"#fbbf24",fontSize:12,marginTop:3}}>📌 {ref}</div>}
             </div>
-            {/* Mapa com localização do motoboy em tempo real */}
+
+            {/* Mapa Leaflet com motinha em tempo real */}
             {motoboyLat && motoboyLng && etapa < 2 ? (
-              <div style={{position:"relative",overflow:"hidden"}}>
-                <iframe
-                  src={`https://maps.google.com/maps?q=${motoboyLat},${motoboyLng}&output=embed&hl=pt-BR&z=15`}
-                  width="100%" height="220"
-                  style={{border:"none",display:"block",pointerEvents:"none"}}
-                  title="motoboy-localizacao" loading="lazy"
-                  scrolling="no"
-                />
-                <div style={{position:"absolute",inset:0,background:"transparent",cursor:"default"}}/>
-                <div style={{position:"absolute",bottom:8,left:0,right:0,textAlign:"center"}}>
-                  <span style={{background:"rgba(0,0,0,0.75)",color:"#34d399",fontSize:11,fontWeight:700,padding:"4px 12px",borderRadius:20}}>
-                    🏍️ Localização atual do motoboy
-                  </span>
-                </div>
-              </div>
+              <MapaMotoboy lat={motoboyLat} lng={motoboyLng} enderecoLinha={enderecoLinha}/>
             ) : (
-              <div style={{position:"relative",overflow:"hidden"}}>
-                <iframe
-                  src={`https://maps.google.com/maps?q=${mapaQuery}&output=embed&hl=pt-BR&z=16`}
-                  width="100%" height="220"
-                  style={{border:"none",display:"block",pointerEvents:"none"}}
-                  title="mapa-entrega" loading="lazy"
-                  scrolling="no"
-                />
-                <div style={{position:"absolute",inset:0,background:"transparent",cursor:"default"}}/>
-                {etapa < 2 && (
-                  <div style={{position:"absolute",bottom:8,left:0,right:0,textAlign:"center"}}>
-                    <span style={{background:"rgba(0,0,0,0.75)",color:"#fbbf24",fontSize:11,fontWeight:700,padding:"4px 12px",borderRadius:20}}>
-                      📍 Endereço de entrega
-                    </span>
-                  </div>
+              <div style={{background:"#0f172a",padding:"20px",textAlign:"center"}}>
+                {etapa < 2 ? (
+                  <div style={{color:"#6b7280",fontSize:13}}>🏍️ Aguardando localização do motoboy...</div>
+                ) : (
+                  <div style={{color:"#34d399",fontSize:13,fontWeight:700}}>✅ Pedido entregue!</div>
                 )}
               </div>
             )}
