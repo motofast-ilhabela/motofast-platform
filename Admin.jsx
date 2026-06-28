@@ -1223,6 +1223,151 @@ function Historico({ historico, motoboys, empresarios }) {
     </div>
   );
 }
+
+// ─── AVALIAÇÕES ───────────────────────────────────────────────────────────────
+function Avaliacoes({ avaliacoes, motoboys }) {
+  const [filtroMb, setFiltroMb] = useState("Todos");
+
+  const lista = filtroMb === "Todos"
+    ? avaliacoes
+    : avaliacoes.filter(a => a.motoboy_nome === filtroMb);
+
+  // Média por motoboy
+  const medias = motoboys.filter(m=>!m.banido).map(mb => {
+    const avs = avaliacoes.filter(a => a.motoboy_nome === mb.nomeCompleto);
+    const mediaMb = avs.length > 0
+      ? (avs.reduce((s,a)=>s+(a.nota_motoboy||0),0)/avs.length).toFixed(1)
+      : "—";
+    const mediaMf = avs.length > 0
+      ? (avs.reduce((s,a)=>s+(a.nota_motofast||0),0)/avs.length).toFixed(1)
+      : "—";
+    return {...mb, qtdAval: avs.length, mediaMotoboy: mediaMb, mediaMotofast: mediaMf};
+  }).sort((a,b)=>b.qtdAval-a.qtdAval);
+
+  const mediaGeralMb = avaliacoes.length > 0
+    ? (avaliacoes.reduce((s,a)=>s+(a.nota_motoboy||0),0)/avaliacoes.length).toFixed(1)
+    : "—";
+  const mediaGeralMf = avaliacoes.length > 0
+    ? (avaliacoes.reduce((s,a)=>s+(a.nota_motofast||0),0)/avaliacoes.length).toFixed(1)
+    : "—";
+
+  function Estrelinhas({ nota }) {
+    if (!nota || nota === "—") return <span style={{color:"#4b5563"}}>—</span>;
+    const n = parseFloat(nota);
+    return (
+      <span style={{color:"#f59e0b",fontSize:13}}>
+        {"⭐".repeat(Math.round(n))}{"☆".repeat(5-Math.round(n))}
+        <span style={{color:"#fbbf24",fontWeight:700,marginLeft:4}}>{nota}</span>
+      </span>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{marginBottom:16}}>
+        <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>⭐ Avaliações</div>
+        <div style={{color:"#6b7280",fontSize:13}}>{avaliacoes.length} avaliações recebidas</div>
+      </div>
+
+      {/* Cards de média geral */}
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:20}}>
+        <Stat icon="⭐" label="Média dos Motoboys" value={mediaGeralMb} sub={`${avaliacoes.length} avaliações`} cor="#f59e0b"/>
+        <Stat icon="⚡" label="Média do MotoFast" value={mediaGeralMf} sub="satisfação geral" cor="#34d399"/>
+        <Stat icon="📋" label="Total de avaliações" value={avaliacoes.length} cor="#60a5fa"/>
+      </div>
+
+      {/* Ranking por motoboy */}
+      <div style={{marginBottom:20}}>
+        <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>🏆 Ranking por Motoboy</div>
+        {medias.filter(m=>m.qtdAval>0).length === 0 && (
+          <Card><div style={{color:"#4b5563",textAlign:"center",padding:20}}>Nenhuma avaliação ainda.</div></Card>
+        )}
+        {medias.filter(m=>m.qtdAval>0).map((mb,i)=>(
+          <Card key={mb.id} style={{marginBottom:10,border: parseFloat(mb.mediaMotoboy)<3?"1px solid #ef4444":"1px solid #1f2937"}}>
+            <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+              <div style={{width:32,height:32,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:14,background:i===0?"#f59e0b":i===1?"#9ca3af":i===2?"#b45309":"#1f2937",color:i<3?"#000":"#6b7280",flexShrink:0}}>{i+1}</div>
+              <div style={{flex:1}}>
+                <div style={{color:"#f9fafb",fontWeight:700,fontSize:14,marginBottom:4}}>{mb.nomeCompleto}</div>
+                <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
+                  <div>
+                    <div style={{color:"#6b7280",fontSize:10,fontWeight:600,marginBottom:2}}>🏍️ ENTREGA</div>
+                    <Estrelinhas nota={mb.mediaMotoboy}/>
+                  </div>
+                  <div>
+                    <div style={{color:"#6b7280",fontSize:10,fontWeight:600,marginBottom:2}}>⚡ MOTOFAST</div>
+                    <Estrelinhas nota={mb.mediaMotofast}/>
+                  </div>
+                  <div>
+                    <div style={{color:"#6b7280",fontSize:10,fontWeight:600,marginBottom:2}}>📋 AVALIAÇÕES</div>
+                    <span style={{color:"#60a5fa",fontWeight:700}}>{mb.qtdAval}</span>
+                  </div>
+                </div>
+              </div>
+              {parseFloat(mb.mediaMotoboy)<3 && (
+                <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"6px 12px"}}>
+                  <div style={{color:"#f87171",fontSize:11,fontWeight:700}}>⚠️ Nota baixa — verificar</div>
+                </div>
+              )}
+            </div>
+          </Card>
+        ))}
+      </div>
+
+      {/* Lista de avaliações */}
+      <div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>📋 Todas as Avaliações</div>
+          <select value={filtroMb} onChange={e=>setFiltroMb(e.target.value)}
+            style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"6px 10px",fontSize:12}}>
+            <option value="Todos">Todos os motoboys</option>
+            {motoboys.filter(m=>!m.banido).map(m=>(
+              <option key={m.id} value={m.nomeCompleto}>{m.nomeCompleto.split(" ")[0]}</option>
+            ))}
+          </select>
+        </div>
+
+        {lista.length === 0 && (
+          <Card><div style={{color:"#4b5563",textAlign:"center",padding:20}}>Nenhuma avaliação encontrada.</div></Card>
+        )}
+
+        <Card style={{padding:0,overflow:"hidden"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+            <thead>
+              <tr style={{background:"#0f172a",borderBottom:"1px solid #1f2937"}}>
+                {["Data","Estabelecimento","Motoboy","🏍️ Entrega","⚡ MotoFast"].map(h=>(
+                  <th key={h} style={{padding:"10px 14px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {lista.map((a,i)=>(
+                <tr key={i} style={{borderBottom:"1px solid #1a2035"}}
+                  onMouseOver={e=>e.currentTarget.style.background="#0f172a"}
+                  onMouseOut={e=>e.currentTarget.style.background="transparent"}>
+                  <td style={{padding:"10px 14px",color:"#9ca3af",fontSize:12}}>
+                    {new Date(a.criado_em).toLocaleDateString("pt-BR")}
+                  </td>
+                  <td style={{padding:"10px 14px",color:"#d1d5db",fontSize:12}}>{a.empresa_nome||"—"}</td>
+                  <td style={{padding:"10px 14px",color:"#f9fafb",fontWeight:600,fontSize:12}}>{a.motoboy_nome?.split(" ")[0]||"—"}</td>
+                  <td style={{padding:"10px 14px"}}>
+                    <span style={{color:"#f59e0b"}}>{"⭐".repeat(a.nota_motoboy||0)}</span>
+                    <span style={{color:"#fbbf24",fontWeight:700,marginLeft:4}}>{a.nota_motoboy}/5</span>
+                  </td>
+                  <td style={{padding:"10px 14px"}}>
+                    <span style={{color:"#34d399"}}>{"⭐".repeat(a.nota_motofast||0)}</span>
+                    <span style={{color:"#34d399",fontWeight:700,marginLeft:4}}>{a.nota_motofast}/5</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {lista.length===0 && <div style={{textAlign:"center",padding:24,color:"#4b5563"}}>Nenhuma avaliação.</div>}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [aba, setAba] = useState("dashboard");
@@ -1232,22 +1377,40 @@ export default function App() {
   const [historico, setHistorico]     = useState([]);
   const [carregando, setCarregando]   = useState(true);
 
+  const [avaliacoes, setAvaliacoes] = useState([]);
   const [pendentes, setPendentes] = useState({motoboys:[], empresarios:[]});
   const [loadingPendentes, setLoadingPendentes] = useState(false);
   const [modalRejeitar, setModalRejeitar] = useState(null);
   const [motivoRejeicao, setMotivoRejeicao] = useState("");
 
   // ── Carrega dados reais do Supabase ao iniciar ──
-  useEffect(()=>{ carregarTudo(); },[]);
+  useEffect(()=>{
+    carregarTudo();
+
+    // Realtime — atualiza online dos motoboys em tempo real
+    const canal = supabase
+      .channel("motoboys-online")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "motoboys" }, (payload) => {
+        if (payload.new) {
+          setMotoboys(prev => prev.map(m =>
+            m.id === payload.new.id ? {...m, online: payload.new.online} : m
+          ));
+        }
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(canal);
+  },[]);
 
   async function carregarTudo() {
     setCarregando(true);
     try {
-      const [mbRes, empRes, cliRes, pedRes] = await Promise.all([
+      const [mbRes, empRes, cliRes, pedRes, avalRes] = await Promise.all([
         supabase.from("motoboys").select("*").eq("aprovado", true),
         supabase.from("empresarios").select("*").eq("aprovado", true),
         supabase.from("clientes").select("*"),
         supabase.from("pedidos").select("*").order("criado_em", {ascending: false}),
+        supabase.from("avaliacoes").select("*").order("criado_em", {ascending: false}),
       ]);
 
       const mbs = (mbRes.data || []).map(m => ({
@@ -1346,6 +1509,7 @@ export default function App() {
       setEmpresarios(emps);
       setClientes(clis);
       setHistorico(hist);
+      setAvaliacoes(avalRes.data || []);
     } catch(err) {
       console.error("Erro ao carregar dados:", err);
     }
@@ -1396,6 +1560,7 @@ export default function App() {
     {id:"estabelecimentos",label:"🏪 Estabelecimentos"},
     {id:"clientes",label:"👤 Clientes"},
     {id:"historico",label:"📋 Histórico"},
+    {id:"avaliacoes",label:"⭐ Avaliações"},
   ];
 
   if (carregando) return (
@@ -1547,6 +1712,7 @@ export default function App() {
         {aba==="estabelecimentos" && <Estabelecimentos empresarios={empresarios} setEmpresarios={setEmpresarios} historico={historico}/>}
         {aba==="clientes"         && <Clientes clientes={clientes} setClientes={setClientes} historico={historico} empresarios={empresarios}/>}
         {aba==="historico"        && <Historico historico={historico} motoboys={motoboys} empresarios={empresarios}/>}
+        {aba==="avaliacoes"        && <Avaliacoes avaliacoes={avaliacoes} motoboys={motoboys}/>}
       </div>
     </div>
   );

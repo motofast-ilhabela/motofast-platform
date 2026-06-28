@@ -107,36 +107,36 @@ function MapaMotoboy({ lat, lng, enderecoLinha }) {
               background:#0d3d2e;
               border:2px solid #34d399;
               border-radius:50%;
-              width:44px;
-              height:44px;
+              width:32px;
+              height:32px;
               display:flex;
               align-items:center;
               justify-content:center;
-              font-size:22px;
+              font-size:16px;
             ">⚡🏍️</div>
             <div style="
               display:flex;
               align-items:center;
-              gap:4px;
-              background:rgba(0,0,0,0.8);
+              gap:3px;
+              background:rgba(0,0,0,0.85);
               border:1px solid #34d399;
-              border-radius:12px;
-              padding:2px 8px;
-              margin-top:4px;
+              border-radius:10px;
+              padding:1px 6px;
+              margin-top:3px;
               white-space:nowrap;
             ">
               <div style="
-                width:7px;height:7px;
+                width:5px;height:5px;
                 background:#34d399;
                 border-radius:50%;
                 animation:pulseLive 1.2s infinite;
               "></div>
-              <span style="color:#34d399;font-size:10px;font-weight:700;">ao vivo</span>
+              <span style="color:#34d399;font-size:9px;font-weight:700;">ao vivo</span>
             </div>
           </div>
         `,
-        iconSize: [52, 64],
-        iconAnchor: [26, 64],
+        iconSize: [38, 48],
+        iconAnchor: [19, 48],
         className: "",
       });
 
