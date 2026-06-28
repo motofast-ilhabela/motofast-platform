@@ -800,8 +800,10 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
                 </div>
                 <div style={{color:"#6b7280",fontSize:12}}>📍 {emp.bairro} · 📞 {emp.tel}</div>
                 {emp.cnpj && <div style={{color:"#4b5563",fontSize:11,marginTop:1}}>CNPJ: {emp.cnpj} · Dono: {emp.nomeDono}</div>}
-                {emp.planoGratis && emp.dataFimGratis && <div style={{color:"#a78bfa",fontSize:12,marginTop:2}}>🎁 Grátis até {emp.dataFimGratis}</div>}
-                {motInad && <div style={{color:"#fbbf24",fontSize:12,marginTop:2}}>⚠️ Inadimplente: {motInad}</div>}
+                {emp.planoGratis && emp.dataFimGratis && emp.dataFimGratis !== "∞" && <div style={{color:"#a78bfa",fontSize:12,marginTop:2}}>🎁 Grátis até {emp.dataFimGratis}</div>}
+                {emp.planoGratis && emp.dataFimGratis === "∞" && <div style={{color:"#a78bfa",fontSize:12,marginTop:2}}>🎁 Sempre grátis</div>}
+                {!emp.planoGratis && !emp.mensalidadePaga && <div style={{color:"#ef4444",fontSize:12,marginTop:2,fontWeight:700}}>🔴 Período grátis encerrado — cobrar mensalidade!</div>}
+                {motInad && emp.mensalidadePaga !== false && <div style={{color:"#fbbf24",fontSize:12,marginTop:2}}>⚠️ Inadimplente: {motInad}</div>}
               </div>
               <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"center"}}>
                 <div style={{textAlign:"center"}}><div style={{color:"#60a5fa",fontWeight:700,fontSize:16}}>R${ts.taxas}</div><div style={{color:"#6b7280",fontSize:10}}>taxas semana</div></div>
@@ -1504,6 +1506,24 @@ export default function App() {
             repasePago: p.repasse_pago || false,
           };
         });
+
+      // Verifica empresários com plano grátis vencido e atualiza banco automaticamente
+      const hoje = new Date().toISOString().split("T")[0];
+      const vencidos = emps.filter(e =>
+        e.planoGratis && e.dataFimGratis && e.dataFimGratis !== "∞" && e.dataFimGratis < hoje
+      );
+      for (const emp of vencidos) {
+        await supabase.from("empresarios").update({
+          plano_gratis: false,
+          data_fim_gratis: null,
+          mensalidade_paga: false,
+        }).eq("id", emp.id);
+        // Atualiza localmente
+        const idx = emps.findIndex(e => e.id === emp.id);
+        if (idx >= 0) {
+          emps[idx] = {...emps[idx], planoGratis: false, dataFimGratis: null, mensalidadePaga: false};
+        }
+      }
 
       setMotoboys(mbs);
       setEmpresarios(emps);
