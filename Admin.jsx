@@ -892,15 +892,69 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
           {abaEmp==="pagamentos" && (
             <div>
               <Card style={{marginBottom:12,padding:"14px 16px",background:"#0f172a"}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                  <div style={{color:"#9ca3af",fontWeight:700,fontSize:13}}>💰 Comissão MotoFast — {empSel.planoPagamento==="mensal"?`R$${MENSALIDADE*4}/mês`:`R$${MENSALIDADE}/semana`}</div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{color:"#9ca3af",fontWeight:700,fontSize:13}}>💰 Comissão MotoFast</div>
                   {empSel.planoGratis ? <Tag label="🎁 Grátis" cor="#a78bfa"/> : empSel.mensalidadePaga ? <Tag label="✅ Paga" cor="#34d399"/> : <Btn small cor="amarelo" onClick={()=>marcarMensalidade(empSel.id)}>💰 Marcar paga</Btn>}
                 </div>
-                <div style={{color:"#6b7280",fontSize:12}}>Plano: {empSel.planoPagamento==="mensal"?"🗓️ Mensal":"📋 Semanal (toda terça)"}</div>
+                <div style={{color:"#6b7280",fontSize:12,marginBottom:10}}>Plano atual: <strong style={{color:"#f9fafb"}}>{empSel.planoPagamento==="mensal"?"🗓️ Mensal (R$"+MENSALIDADE*4+"/mês)":"📋 Semanal (R$"+MENSALIDADE+"/semana — toda terça)"}</strong></div>
+                <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:6}}>Mudar plano de pagamento:</div>
+                <div style={{display:"flex",gap:8,marginBottom:10}}>
+                  {[["semanal","📋 Semanal (toda terça)"],["mensal","🗓️ Mensal"]].map(([val,label])=>(
+                    <button key={val} onClick={async()=>{
+                      await supabase.from("empresarios").update({plano_pagamento:val}).eq("id",empSel.id);
+                      setEmpresarios(p=>p.map(e=>e.id===empSel.id?{...e,planoPagamento:val}:e));
+                    }} style={{flex:1,padding:"10px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,
+                      background:empSel.planoPagamento===val?"#0d3d2e":"#0f172a",
+                      border:empSel.planoPagamento===val?"2px solid #34d399":"2px solid #374151",
+                      color:empSel.planoPagamento===val?"#34d399":"#6b7280"}}>
+                      {label} {empSel.planoPagamento===val?"✅":""}
+                    </button>
+                  ))}
+                </div>
+                {empSel.planoPagamento==="mensal" && (
+                  <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,padding:"12px 14px"}}>
+                    <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,marginBottom:8}}>📅 Qual dia do mês o empresário vai pagar?</div>
+                    <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                      <input
+                        type="number" min="1" max="28"
+                        defaultValue={empSel.diaVencimento || new Date(empSel.criadoEm||Date.now()).getDate()}
+                        id={`dia-venc-${empSel.id}`}
+                        style={{background:"#111827",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"8px 12px",width:80,fontSize:16,fontWeight:700,outline:"none",textAlign:"center"}}
+                      />
+                      <span style={{color:"#6b7280",fontSize:13}}>de cada mês</span>
+                      <button onClick={async()=>{
+                        const dia = parseInt(document.getElementById(`dia-venc-${empSel.id}`).value);
+                        if (!dia || dia<1 || dia>28) return;
+                        await supabase.from("empresarios").update({dia_vencimento:dia}).eq("id",empSel.id);
+                        setEmpresarios(p=>p.map(e=>e.id===empSel.id?{...e,diaVencimento:dia}:e));
+                        alert(`✅ Dia de vencimento atualizado para todo dia ${dia}!`);
+                      }} style={{padding:"8px 16px",borderRadius:8,background:"#10b981",border:"none",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+                        💾 Salvar dia
+                      </button>
+                    </div>
+                    <div style={{color:"#4b5563",fontSize:11,marginTop:6}}>
+                      ⚠️ Máximo dia 28 — para funcionar em todos os meses do ano
+                    </div>
+                  </div>
+                )}
               </Card>
               <Card style={{marginBottom:12,padding:"14px 16px",background:"#0f172a"}}>
-                <div style={{color:"#9ca3af",fontWeight:700,fontSize:13,marginBottom:4}}>🏍️ Pagamento ao motoboy</div>
-                <div style={{color:"#6b7280",fontSize:12}}>Plano: {empSel.planoPagamentoMotoboy==="diario"?"📅 Diário (no dia seguinte)":"📋 Semanal (toda terça)"}</div>
+                <div style={{color:"#9ca3af",fontWeight:700,fontSize:13,marginBottom:6}}>🏍️ Pagamento ao motoboy</div>
+                <div style={{color:"#6b7280",fontSize:12,marginBottom:10}}>Plano atual: <strong style={{color:"#f9fafb"}}>{empSel.planoPagamentoMotoboy==="diario"?"📅 Diário (dia seguinte)":"📋 Semanal (toda terça)"}</strong></div>
+                <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:6}}>Mudar forma de pagamento ao motoboy:</div>
+                <div style={{display:"flex",gap:8}}>
+                  {[["diario","📅 Diário"],["semanal","📋 Semanal"]].map(([val,label])=>(
+                    <button key={val} onClick={async()=>{
+                      await supabase.from("empresarios").update({plano_pagamento_motoboy:val}).eq("id",empSel.id);
+                      setEmpresarios(p=>p.map(e=>e.id===empSel.id?{...e,planoPagamentoMotoboy:val}:e));
+                    }} style={{flex:1,padding:"10px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,
+                      background:empSel.planoPagamentoMotoboy===val?"#1a2f4a":"#0f172a",
+                      border:empSel.planoPagamentoMotoboy===val?"2px solid #fbbf24":"2px solid #374151",
+                      color:empSel.planoPagamentoMotoboy===val?"#fbbf24":"#6b7280"}}>
+                      {label} {empSel.planoPagamentoMotoboy===val?"✅":""}
+                    </button>
+                  ))}
+                </div>
               </Card>
               {empSel.planoPagamentoMotoboy==="diario" && (
                 <div>
@@ -1501,6 +1555,7 @@ export default function App() {
         mensalidadePaga: e.mensalidade_paga !== false,
         pagamentosDiarios: e.pagamentos_diarios || {},
         taxas: e.taxas || {},
+        diaVencimento: e.dia_vencimento || new Date(e.criado_em||Date.now()).getDate(),
       }));
 
       const clis = (cliRes.data || []).map(c => ({
