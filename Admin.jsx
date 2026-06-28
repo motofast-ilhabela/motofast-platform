@@ -1497,13 +1497,35 @@ export default function App() {
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "motoboys" }, (payload) => {
         if (payload.new) {
           setMotoboys(prev => prev.map(m =>
-            m.id === payload.new.id ? {...m, online: payload.new.online} : m
+            m.id === payload.new.id ? {
+              ...m,
+              online: payload.new.online,
+              ativo: !payload.new.bloqueado,
+            } : m
           ));
         }
       })
       .subscribe();
 
-    return () => supabase.removeChannel(canal);
+    // Polling de segurança a cada 10s — atualiza status online de todos os motoboys
+    const pollingOnline = setInterval(async () => {
+      const { data } = await supabase
+        .from("motoboys")
+        .select("id, online, bloqueado")
+        .eq("aprovado", true);
+      if (data) {
+        setMotoboys(prev => prev.map(m => {
+          const atualizado = data.find(d => d.id === m.id);
+          if (!atualizado) return m;
+          return {...m, online: atualizado.online, ativo: !atualizado.bloqueado};
+        }));
+      }
+    }, 10000);
+
+    return () => {
+      supabase.removeChannel(canal);
+      clearInterval(pollingOnline);
+    };
   },[]);
 
   async function carregarTudo() {

@@ -317,10 +317,14 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
     window.open(`https://www.google.com/maps/dir/?api=1&destination=${end}&travelmode=driving`,"_blank");
   }
   function abrirGPSCliente(p) {
-    // Monta o endereço completo do cliente para navegação precisa
-    const destino = `${p.rua}, ${p.num}, ${p.bairro}, Ilhabela, SP, Brasil`;
+    // Abre direto no endereço do cliente — funciona mesmo em ruas sem rota traçada
+    const destino = `${p.rua}, ${p.num}, ${p.bairro}, Ilhabela, SP`;
     const end = encodeURIComponent(destino);
-    window.open(`https://www.google.com/maps/dir/?api=1&destination=${end}&travelmode=driving`,"_blank");
+    // Tenta abrir no app Google Maps nativo primeiro (mais preciso no celular)
+    const urlApp = `comgooglemaps://?q=${end}&directionsmode=driving`;
+    const urlWeb = `https://www.google.com/maps/search/?api=1&query=${end}`;
+    // No celular abre o app, no computador abre o site
+    window.open(urlWeb, "_blank");
   }
 
   return (
