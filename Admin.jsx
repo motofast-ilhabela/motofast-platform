@@ -487,7 +487,7 @@ function Motoboys({ motoboys, setMotoboys, historico }) {
               <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
                 <div style={{textAlign:"center"}}><div style={{color:"#60a5fa",fontWeight:800,fontSize:18}}>{entsMes.length}</div><div style={{color:"#6b7280",fontSize:10}}>entregas este mês</div></div>
                 <div style={{textAlign:"center"}}><div style={{color:"#fbbf24",fontWeight:800,fontSize:16}}>R${saldo}</div><div style={{color:"#6b7280",fontSize:10}}>a receber esta semana</div></div>
-                <div style={{textAlign:"center"}}><div style={{color:"#a78bfa",fontWeight:700,fontSize:14}}>R${totalHist}</div><div style={{color:"#6b7280",fontSize:10}}>total já pago a ele</div></div>
+                <div style={{textAlign:"center"}}><div style={{color:"#a78bfa",fontWeight:700,fontSize:14}}>R${totalHist}</div><div style={{color:"#6b7280",fontSize:10}}>total a pagar a ele</div></div>
                 <div style={{textAlign:"center"}}><div style={{color:"#34d399",fontWeight:700,fontSize:14}}>{ents.length}</div><div style={{color:"#6b7280",fontSize:10}}>entregas desde o início</div></div>
               </div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
