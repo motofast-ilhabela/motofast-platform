@@ -1331,6 +1331,19 @@ export default function AppEmpresario() {
 
   async function publicarPedido(pedido) {
     if (!empresa?.id) return;
+
+    // Verifica se está bloqueado no banco antes de publicar
+    const { data: empAtual } = await supabase
+      .from("empresarios")
+      .select("bloqueado, mensalidade_paga")
+      .eq("id", empresa.id)
+      .single();
+
+    if (empAtual?.bloqueado) {
+      alert("⛔ Sua conta está bloqueada por mensalidade pendente.\n\nEntre em contato com o MotoFast para regularizar seu pagamento e reativar sua conta.\n\n📞 Suporte: " + SUPORTE_TEL);
+      return;
+    }
+
     // Salva o pedido no Supabase
     const { data: pedidoDB } = await supabase.from("pedidos").insert({
       empresario_id: empresa.id,
@@ -1361,6 +1374,37 @@ export default function AppEmpresario() {
         <div style={{textAlign:"center"}}>
           <div style={{fontSize:48,marginBottom:16}}>⚡</div>
           <div style={{color:"#34d399",fontWeight:700,fontSize:18}}>Carregando...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Tela de bloqueio — empresário não pode usar a plataforma
+  if (empresa?.bloqueado) {
+    return (
+      <div style={{minHeight:"100vh",background:"#0a0f1a",display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Inter','Segoe UI',sans-serif"}}>
+        <div style={{textAlign:"center",maxWidth:440}}>
+          <div style={{fontSize:64,marginBottom:16}}>⛔</div>
+          <div style={{color:"#ef4444",fontWeight:900,fontSize:24,marginBottom:12}}>Conta Bloqueada</div>
+          <div style={{background:"#1a0a0a",border:"1px solid #ef4444",borderRadius:12,padding:"20px 24px",marginBottom:20}}>
+            <div style={{color:"#f87171",fontSize:15,lineHeight:1.7,marginBottom:12}}>
+              Sua conta foi bloqueada por <strong>mensalidade pendente</strong>.
+            </div>
+            <div style={{color:"#9ca3af",fontSize:13,lineHeight:1.6}}>
+              Para reativar sua conta, entre em contato com o MotoFast e regularize seu pagamento.
+            </div>
+          </div>
+          <a href={`https://wa.me/${SUPORTE_TEL}?text=Olá, minha conta no MotoFast está bloqueada. Quero regularizar o pagamento.`}
+            target="_blank" rel="noreferrer"
+            style={{display:"inline-flex",alignItems:"center",gap:8,background:"#10b981",borderRadius:10,padding:"14px 24px",textDecoration:"none",fontWeight:700,fontSize:15,color:"#fff"}}>
+            💬 Falar com MotoFast
+          </a>
+          <div style={{marginTop:16}}>
+            <button onClick={async()=>{ await supabase.auth.signOut(); window.location.href="/"; }}
+              style={{background:"transparent",border:"1px solid #374151",color:"#6b7280",padding:"8px 16px",borderRadius:8,cursor:"pointer",fontSize:13}}>
+              🚪 Sair
+            </button>
+          </div>
         </div>
       </div>
     );
