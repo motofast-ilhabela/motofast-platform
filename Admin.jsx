@@ -894,7 +894,19 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
               <Card style={{marginBottom:12,padding:"14px 16px",background:"#0f172a"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                   <div style={{color:"#9ca3af",fontWeight:700,fontSize:13}}>💰 Comissão MotoFast</div>
-                  {empSel.planoGratis ? <Tag label="🎁 Grátis" cor="#a78bfa"/> : empSel.mensalidadePaga ? <Tag label="✅ Paga" cor="#34d399"/> : <Btn small cor="amarelo" onClick={()=>marcarMensalidade(empSel.id)}>💰 Marcar paga</Btn>}
+                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    {empSel.planoGratis ? <Tag label="🎁 Grátis" cor="#a78bfa"/> : empSel.mensalidadePaga ? (
+                      <div style={{display:"flex",gap:6}}>
+                        <Tag label="✅ Paga" cor="#34d399"/>
+                        <Btn small cor="perigo" onClick={async()=>{
+                          await supabase.from("empresarios").update({mensalidade_paga:false}).eq("id",empSel.id);
+                          setEmpresarios(p=>p.map(e=>e.id===empSel.id?{...e,mensalidadePaga:false}:e));
+                        }}>❌ Desmarcar</Btn>
+                      </div>
+                    ) : (
+                      <Btn small cor="amarelo" onClick={()=>marcarMensalidade(empSel.id)}>💰 Marcar paga</Btn>
+                    )}
+                  </div>
                 </div>
                 <div style={{color:"#6b7280",fontSize:12,marginBottom:10}}>Plano atual: <strong style={{color:"#f9fafb"}}>{empSel.planoPagamento==="mensal"?"🗓️ Mensal (R$"+MENSALIDADE*4+"/mês)":"📋 Semanal (R$"+MENSALIDADE+"/semana — toda terça)"}</strong></div>
                 <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:6}}>Mudar plano de pagamento:</div>
