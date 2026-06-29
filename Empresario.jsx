@@ -1360,6 +1360,7 @@ export default function AppEmpresario() {
       forma_pagamento: pedido.pagamento,
       taxa: pedido.taxa,
       taxa_motoboy: pedido.taxaMotoboy || 0,
+      taxa_empresario: pedido.taxa || 0,
       valor_pedido: pedido.valorPedido,
       valor_receber: pedido.valorReceber,
       valor_troco: pedido.troco,

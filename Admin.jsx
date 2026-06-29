@@ -124,7 +124,7 @@ function Dashboard({ historico, motoboys, empresarios }) {
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
         <Stat icon="✅" label="Entregas este mês" value={mAtu.length} sub={`${ent.length} total histórico`} cor="#34d399"/>
         <Stat icon="💰" label="Faturado este mês" value={`R$${fatMes}`} sub={`Taxas R$${taxasMes} + Mensalidades R$${mensMes}`} cor="#60a5fa"/>
-        <Stat icon="🏍️" label="Pago motoboys" value={`R$${pagoMb}`} sub="taxas repassadas este mês" cor="#fbbf24"/>
+        <Stat icon="🏍️" label="A pagar motoboys" value={`R$${pagoMb}`} sub="a repassar na terça-feira" cor="#fbbf24"/>
         <Stat icon="💵" label="Seu lucro mês" value={`R$${lucroMes}`} sub={`R$${lucroTotal} total acumulado`} cor="#a78bfa"/>
         <Stat icon="🟢" label="Motoboys online" value={motoboys.filter(m=>m.online&&!m.banido).length} sub={`de ${motoboys.filter(m=>!m.banido).length} ativos`} cor="#34d399"/>
         <Stat icon="🏪" label="Estabelecimentos" value={empresarios.filter(e=>!e.bloqueado).length} sub={`${empresarios.filter(e=>e.bloqueado).length} bloqueado(s)`} cor="#60a5fa"/>
@@ -1622,8 +1622,10 @@ export default function App() {
             const d = new Date(p.entregue_em);
             horaEntrega = `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
           }
-          const taxaEmp = p.taxa_empresario || 0;
+          const taxaEmp = p.taxa_empresario || p.taxa || 0;
           const taxaMb  = p.taxa_motoboy || 0;
+          // lucro = o que você fica (diferença entre taxa do cliente e taxa do motoboy)
+          const lucroEntrega = taxaEmp - taxaMb;
           return {
             id: p.id,
             motoboyId: p.motoboy_id,
@@ -1633,7 +1635,7 @@ export default function App() {
             pagamento: p.forma_pagamento || "pix",
             taxaEmpresario: taxaEmp,
             taxaMotoboy: taxaMb,
-            lucro: taxaEmp - taxaMb,
+            lucro: lucroEntrega,
             status: p.status === "entregue" ? "Entregue" : "Cancelada",
             data: dataStr,
             horaSaida,
