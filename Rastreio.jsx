@@ -159,9 +159,35 @@ function MapaMotoboy({ lat, lng, enderecoLinha }) {
   useEffect(() => {
     if (!mapInstanceRef.current || !markerRef.current || !lat || !lng) return;
     const L = window.L;
-    const novaPos = L.latLng(lat, lng);
-    markerRef.current.setLatLng(novaPos);
-    mapInstanceRef.current.panTo(novaPos, { animate: true, duration: 1 });
+
+    // Animação suave — interpola entre posição atual e nova posição em 5 segundos
+    const posAtual = markerRef.current.getLatLng();
+    const latInicio = posAtual.lat;
+    const lngInicio = posAtual.lng;
+    const latFim = lat;
+    const lngFim = lng;
+    const duracao = 4800; // 4.8s para chegar antes da próxima atualização
+    const inicio = performance.now();
+
+    // Cancela animação anterior se ainda estiver rodando
+    if (window._motoboyAnimFrame) cancelAnimationFrame(window._motoboyAnimFrame);
+
+    function animar(agora) {
+      const elapsed = agora - inicio;
+      const progresso = Math.min(elapsed / duracao, 1);
+      // Easing suave (ease-in-out)
+      const t = progresso < 0.5 ? 2 * progresso * progresso : -1 + (4 - 2 * progresso) * progresso;
+      const latAtual = latInicio + (latFim - latInicio) * t;
+      const lngAtual = lngInicio + (lngFim - lngInicio) * t;
+      markerRef.current.setLatLng([latAtual, lngAtual]);
+      if (progresso < 1) {
+        window._motoboyAnimFrame = requestAnimationFrame(animar);
+      } else {
+        // Centraliza o mapa suavemente quando chega ao destino
+        mapInstanceRef.current.panTo([latFim, lngFim], { animate: true, duration: 0.5 });
+      }
+    }
+    window._motoboyAnimFrame = requestAnimationFrame(animar);
   }, [lat, lng]);
 
   return (
