@@ -714,6 +714,7 @@ export default function AppCadastro() {
       {/* Footer */}
       <div style={{textAlign:"center",padding:"16px",borderTop:"1px solid #1f2937"}}>
         <div style={{color:"#4b5563",fontSize:12}}>⚡ MotoFast · Ilhabela/SP · Suporte: Seg-Sex 9h-22h • Sáb 9h-19h • Dom/feriados: fechado</div>
+        <div style={{color:"#374151",fontSize:11,marginTop:4}}>CNPJ: 51.269.432/0001-33</div>
       </div>
     </div>
   );
