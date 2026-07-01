@@ -1708,10 +1708,10 @@ export default function App() {
       });
 
       // Adiciona contagem nas empresas
-      emps = emps.map(e => ({...e, entregasMes: contagemEntregas[e.id] || 0}));
+      const empsComMeta = emps.map(e => ({...e, entregasMes: contagemEntregas[e.id] || 0}));
 
       setMotoboys(mbs);
-      setEmpresarios(emps);
+      setEmpresarios(empsComMeta);
       setClientes(clis);
       setHistorico(hist);
       setAvaliacoes(avalRes.data || []);
