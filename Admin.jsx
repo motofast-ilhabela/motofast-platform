@@ -1797,7 +1797,7 @@ export default function App() {
             ))}
           </nav>
           <div style={{display:"flex",gap:8,padding:"8px 0",flexShrink:0}}>
-            {+saldo>0 && <button onClick={()=>setAba("repasse")} style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#34d399",fontWeight:700,cursor:"pointer"}}>💵 R${saldo} a repassar</button>}
+            {+saldo>0 && <button onClick={()=>setAba("repasse")} style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#34d399",fontWeight:700,cursor:"pointer"}}>💰 Meu lucro: R${saldo}</button>}
             {bloqueados>0 && <button onClick={()=>setAba("estabelecimentos")} style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#f87171",fontWeight:700,cursor:"pointer"}}>⛔ {bloqueados} bloqueado(s)</button>}
             {banidos>0 && <button onClick={()=>setAba("motoboys")} style={{background:"#1f2937",border:"1px solid #6b7280",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#9ca3af",fontWeight:700,cursor:"pointer"}}>⛔ {banidos} banido(s)</button>}
             <button onClick={async()=>{ await supabase.auth.signOut(); window.location.href = "/"; }}
