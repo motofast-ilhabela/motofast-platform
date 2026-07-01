@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { supabase } from "./supabaseClient.js";
 
+const SUPORTE_TEL = "5512991213656";
+const SUPORTE_HORARIO = "Seg-Sex 9h-22h • Sáb 9h-19h • Dom/feriados: fechado";
+
 // ─── VALIDAÇÕES ───────────────────────────────────────────────────────────────
 function validarSenha(senha) {
   const erros = [];
@@ -639,7 +642,17 @@ export default function AppCadastro() {
                 </div>
               </div>
 
-              <div style={{color:"#4b5563",fontSize:12}}>
+              {/* Botão de suporte */}
+              <div style={{marginTop:16}}>
+                <a href={`https://wa.me/${SUPORTE_TEL}?text=Ol%C3%A1!%20Estou%20no%20site%20do%20MotoFast%20e%20tenho%20uma%20d%C3%BAvida%20antes%20de%20me%20cadastrar%20%E2%9A%A1`}
+                  target="_blank" rel="noreferrer"
+                  style={{display:"inline-flex",alignItems:"center",gap:8,background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"10px 20px",textDecoration:"none",color:"#34d399",fontWeight:700,fontSize:13}}>
+                  💬 Falar com o suporte
+                </a>
+                <div style={{color:"#4b5563",fontSize:11,marginTop:6}}>{SUPORTE_HORARIO}</div>
+              </div>
+
+              <div style={{color:"#4b5563",fontSize:12,marginTop:12}}>
                 Já tem conta? Clique na sua categoria acima para entrar.
               </div>
             </div>
