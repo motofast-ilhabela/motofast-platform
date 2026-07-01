@@ -1421,6 +1421,19 @@ export default function AppMotoboy() {
         </div>
       )}
 
+      {/* Botão suporte fixo */}
+      <div style={{position:"fixed",bottom:20,right:20,zIndex:200}}>
+        <a href={`https://wa.me/${SUPORTE_TEL}?text=Olá, sou motoboy no MotoFast e preciso de suporte`}
+          target="_blank" rel="noreferrer"
+          style={{display:"flex",alignItems:"center",gap:8,background:"#10b981",borderRadius:50,padding:"10px 16px",textDecoration:"none",boxShadow:"0 4px 20px rgba(16,185,129,0.4)"}}>
+          <span style={{fontSize:20}}>💬</span>
+          <div>
+            <div style={{color:"#fff",fontWeight:700,fontSize:13}}>Suporte</div>
+            <div style={{color:"#d1fae5",fontSize:10}}>{SUPORTE_HORARIO}</div>
+          </div>
+        </a>
+      </div>
+
       {pedidoDisponivel && online && !corridaAtiva && (
         <ModalPedidoDisponivel
           pedido={pedidoDisponivel}
