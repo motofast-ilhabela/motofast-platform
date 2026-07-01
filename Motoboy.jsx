@@ -237,6 +237,7 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
           <div style={{color:"#f9fafb",fontWeight:600,fontSize:14,marginTop:2}}>{pedido.rua}, {pedido.num}</div>
           <div style={{color:"#34d399",fontSize:14,marginTop:2}}>{pedido.bairro} — Ilhabela/SP</div>
           {pedido.ref && <div style={{color:"#fbbf24",fontSize:13,marginTop:4}}>📌 {pedido.ref}</div>}
+          {pedido.obs && <div style={{color:"#a78bfa",fontSize:13,marginTop:4,background:"#1a1a2e",borderRadius:6,padding:"6px 10px"}}>💬 Obs: {pedido.obs}</div>}
         </div>
 
         <div style={{textAlign:"center",background:"#111827",borderRadius:10,padding:"12px",marginBottom:0}}>
@@ -376,6 +377,7 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
                   <div style={{color:"#d1d5db",fontWeight:600,fontSize:14,marginTop:2}}>{p.rua}, {p.num}</div>
                   <div style={{color:"#9ca3af",fontSize:13,marginTop:2}}>{p.bairro} — Ilhabela/SP</div>
                   {p.ref && <div style={{color:"#fbbf24",fontSize:12,marginTop:3}}>📌 Ref: {p.ref}</div>}
+                  {p.obs && <div style={{color:"#a78bfa",fontSize:12,marginTop:3,background:"#1a1a2e",borderRadius:6,padding:"5px 8px"}}>💬 Obs: {p.obs}</div>}
                 </div>
 
                 {p.pagamento==="dinheiro" && (
