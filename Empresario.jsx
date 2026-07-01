@@ -33,7 +33,7 @@ const PG = {
 };
 
 
-const SUPORTE_TEL = "5512999999999";
+const SUPORTE_TEL = "5512991213656";
 const SUPORTE_HORARIO = "Seg-Sex 9h-22h • Sáb 9h-19h • Dom/feriados: fechado";
 
 // ─── ATOMS ────────────────────────────────────────────────────────────────────

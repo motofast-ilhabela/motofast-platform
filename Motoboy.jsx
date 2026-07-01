@@ -116,7 +116,7 @@ const SONS = {
 const TEMPO_PEDIDO = 30;       // segundos por rodada
 const INTERVALO_SOM = 5;       // toca a cada 5 segundos dentro da rodada
 const MAX_TENTATIVAS = 10;     // 10 rodadas × 30s = 5 minutos
-const SUPORTE_TEL = "5512999999999"; // troque pelo seu WhatsApp
+const SUPORTE_TEL = "5512991213656"; // troque pelo seu WhatsApp
 const SUPORTE_HORARIO = "Seg-Sex 9h-22h • Sáb 9h-19h • Dom/feriados: fechado";
 
 // ─── SOM DE NOTIFICAÇÃO ───────────────────────────────────────────────────────
