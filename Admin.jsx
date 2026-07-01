@@ -1726,6 +1726,23 @@ export default function App() {
     if (aba==="pendentes") carregarPendentes();
   },[aba]);
 
+  // Polling de 30s — verifica novos cadastros automaticamente
+  useEffect(()=>{
+    const intervalo = setInterval(async ()=>{
+      const [mb, emp] = await Promise.all([
+        supabase.from("motoboys").select("id").eq("aprovado",false).eq("rejeitado",false),
+        supabase.from("empresarios").select("id").eq("aprovado",false).eq("rejeitado",false),
+      ]);
+      const totalNovo = (mb.data?.length||0) + (emp.data?.length||0);
+      const totalAtual = pendentes.motoboys.length + pendentes.empresarios.length;
+      // Se chegou cadastro novo, recarrega e notifica
+      if (totalNovo > totalAtual) {
+        carregarPendentes();
+      }
+    }, 30000);
+    return ()=>clearInterval(intervalo);
+  },[pendentes]);
+
   async function carregarPendentes() {
     setLoadingPendentes(true);
     const [mb, emp] = await Promise.all([
@@ -1760,7 +1777,7 @@ export default function App() {
 
   const ABAS = [
     {id:"dashboard",label:"📊 Dashboard"},
-    {id:"pendentes",label:"⏳ Pendentes"},
+    {id:"pendentes",label:"⏳ Pendentes", badge: pendentes.motoboys.length + pendentes.empresarios.length},
     {id:"repasse",label:"💰 Repasse"},
     {id:"motoboys",label:"🏍️ Motoboys"},
     {id:"estabelecimentos",label:"🏪 Estabelecimentos"},
