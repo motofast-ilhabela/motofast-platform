@@ -800,6 +800,34 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
                 </div>
                 <div style={{color:"#6b7280",fontSize:12}}>📍 {emp.bairro} · 📞 {emp.tel}</div>
                 {emp.cnpj && <div style={{color:"#4b5563",fontSize:11,marginTop:1}}>CNPJ: {emp.cnpj} · Dono: {emp.nomeDono}</div>}
+                {/* Régua de meta de entregas */}
+                {(()=>{
+                  const meta = 40;
+                  const atual = emp.entregasMes || 0;
+                  const pct = Math.min((atual/meta)*100, 100);
+                  const bateu = atual >= meta;
+                  return (
+                    <div style={{marginTop:6}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                        <span style={{color: bateu?"#f59e0b":"#6b7280", fontSize:11, fontWeight:700}}>
+                          {bateu ? "🏆 Meta batida — cobrar mensalidade!" : `📦 ${atual}/${meta} entregas este mês`}
+                        </span>
+                        <span style={{color: bateu?"#f59e0b":"#4b5563", fontSize:10}}>
+                          {bateu ? "✅ Acima de 40" : `faltam ${meta-atual}`}
+                        </span>
+                      </div>
+                      <div style={{background:"#1f2937",borderRadius:4,height:5}}>
+                        <div style={{
+                          background: bateu?"#f59e0b":"#3b82f6",
+                          borderRadius:4, height:5,
+                          width:`${pct}%`,
+                          transition:"width 0.5s"
+                        }}/>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {emp.planoGratis && emp.dataFimGratis && emp.dataFimGratis !== "∞" && (()=>{
                   const d = new Date(emp.dataFimGratis+"T12:00:00");
                   const hoje = new Date();
@@ -1663,6 +1691,24 @@ export default function App() {
           emps[idx] = {...emps[idx], planoGratis: false, dataFimGratis: null, mensalidadePaga: false};
         }
       }
+
+      // Busca entregas do mês atual por empresário para régua de meta
+      const inicioMesAtual = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+      const { data: entregasMesDB } = await supabase
+        .from("pedidos")
+        .select("empresario_id")
+        .eq("status", "entregue")
+        .gte("criado_em", inicioMesAtual);
+
+      // Conta entregas por empresário
+      const contagemEntregas = {};
+      (entregasMesDB || []).forEach(p => {
+        if (!p.empresario_id) return;
+        contagemEntregas[p.empresario_id] = (contagemEntregas[p.empresario_id] || 0) + 1;
+      });
+
+      // Adiciona contagem nas empresas
+      emps = emps.map(e => ({...e, entregasMes: contagemEntregas[e.id] || 0}));
 
       setMotoboys(mbs);
       setEmpresarios(emps);
