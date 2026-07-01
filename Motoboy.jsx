@@ -792,6 +792,7 @@ export default function AppMotoboy() {
   const [pedidoDisponivel, setPedidoDisponivel] = useState(null);
   const [corridaAtiva, setCorridaAtiva] = useState(null);
   const [tipoSom, setTipoSom] = useState("alerta_forte");
+  const [pedidoCancelado, setPedidoCancelado] = useState(false);
   const [motoboyId, setMotoboyId] = useState(null);
   const [motoboy, setMotoboy] = useState(MOTOBOY_VAZIO);
   const [rankingGeral, setRankingGeral] = useState([]);
@@ -936,7 +937,12 @@ export default function AppMotoboy() {
           .eq("id", pedidoRef.current.id)
           .maybeSingle();
         if (!verificacao || verificacao.status !== "aguardando") {
-          // Pedido foi cancelado ou aceito por outro motoboy — limpa tela
+          // Pedido foi cancelado pelo empresário ou aceito por outro motoboy
+          if (verificacao && verificacao.status === "cancelado") {
+            // Mostra aviso de cancelamento por 4 segundos
+            setPedidoCancelado(true);
+            setTimeout(() => setPedidoCancelado(false), 4000);
+          }
           setPedidoDisponivel(null);
           pedidoRef.current = null;
           tentativas.current = 0;
@@ -1394,6 +1400,17 @@ export default function AppMotoboy() {
           <span style={{color:"#fff",fontWeight:700,fontSize:13}}>Suporte</span>
         </a>
       </div>
+      {/* Aviso de pedido cancelado pelo empresário */}
+      {pedidoCancelado && (
+        <div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",zIndex:500,
+          background:"#3d1010",border:"2px solid #ef4444",borderRadius:12,padding:"16px 24px",
+          textAlign:"center",boxShadow:"0 4px 20px rgba(239,68,68,0.4)",minWidth:280}}>
+          <div style={{fontSize:32,marginBottom:8}}>❌</div>
+          <div style={{color:"#f87171",fontWeight:900,fontSize:16}}>Pedido cancelado</div>
+          <div style={{color:"#9ca3af",fontSize:13,marginTop:4}}>O estabelecimento cancelou este pedido</div>
+        </div>
+      )}
+
       {pedidoDisponivel && online && !corridaAtiva && (
         <ModalPedidoDisponivel
           pedido={pedidoDisponivel}
