@@ -873,6 +873,22 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
               );
             })}
 
+            {/* Botão cancelar corrida mesmo depois de aceita */}
+            <div style={{marginTop:8,marginBottom:8}}>
+              <button onClick={async()=>{
+                if (!window.confirm("Tem certeza que quer cancelar esta entrega? O motoboy será notificado.")) return;
+                for (const p of corrida.pedidos) {
+                  await supabase.from("pedidos").update({
+                    status: "cancelado",
+                    motivo_cancelamento: "Cancelado pelo estabelecimento",
+                  }).eq("id", p.id);
+                }
+                await onRecarregar();
+              }} style={{width:"100%",padding:"10px",borderRadius:8,background:"#3d1010",border:"1px solid #ef4444",color:"#f87171",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+                ❌ Cancelar esta entrega
+              </button>
+            </div>
+
             {/* Adicionar pedido extra à mesma corrida (máx 3) ou aviso de limite */}
             {corrida.pedidos.length<3 ? (
               <Btn small cor="azul" full onClick={()=>setModalAddCorrida({

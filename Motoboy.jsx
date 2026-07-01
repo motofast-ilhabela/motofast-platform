@@ -1025,10 +1025,20 @@ export default function AppMotoboy() {
       .from("pedidos")
       .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
       .eq("corrida_id", corridaId)
-      .in("status", ["aceito","saiu_estabelecimento"])
+      .in("status", ["aceito","saiu_estabelecimento","cancelado"])
       .order("criado_em", { ascending: true });
 
     if (error || !data || data.length === 0) return;
+
+    // Verifica se todos os pedidos foram cancelados pelo empresário
+    const todosCancelados = data.every(p => p.status === "cancelado");
+    if (todosCancelados) {
+      setPedidoCancelado(true);
+      setTimeout(() => setPedidoCancelado(false), 4000);
+      setCorridaAtiva(null);
+      setAba("home");
+      return;
+    }
 
     setCorridaAtiva(prev => {
       if (!prev) return prev;
