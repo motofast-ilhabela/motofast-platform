@@ -548,7 +548,7 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
   const agora = new Date();
   const mesAtual = agora.getMonth() + 1;
   const diaAtual = agora.getDate();
-  const semAtual = diaAtual<=7?1:diaAtual<=14?2:diaAtual<=21?3:4;
+  const semAtual = diaAtual<=7?1:diaAtual<=14?2:diaAtual<=21?3:diaAtual<=28?4:5;
   const nomesMes = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
   const nomeMesAtual = nomesMes[mesAtual-1];
   const hojeStr = agora.toLocaleDateString("pt-BR");
@@ -1163,7 +1163,7 @@ export default function AppMotoboy() {
   const _agora = new Date();
   const _mesAtual = _agora.getMonth()+1;
   const _diaAtual = _agora.getDate();
-  const _semAtual = _diaAtual<=7?1:_diaAtual<=14?2:_diaAtual<=21?3:4;
+  const _semAtual = _diaAtual<=7?1:_diaAtual<=14?2:_diaAtual<=21?3:_diaAtual<=28?4:5;
   const saldoSemana = historico.filter(e=>e.status==="Entregue"&&e.mes===_mesAtual&&e.semana===_semAtual&&!e.repasePago).reduce((s,e)=>s+e.taxa,0).toFixed(2);
 
   const ABAS = [
