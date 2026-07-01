@@ -1266,7 +1266,12 @@ export default function AppMotoboy() {
               <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"14px 16px",flex:1,textAlign:"center"}}>
                 <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Ranking</div>
                 <div style={{color:"#f59e0b",fontWeight:900,fontSize:24}}>
-                  {(()=>{const ag=new Date();const m=ag.getMonth()+1;const contagem={};historico.filter(e=>e.status==="Entregue"&&e.mes===m).forEach(e=>{contagem[e.motoboyId||-1]=(contagem[e.motoboyId||-1]||0)+1;});const minhas=historico.filter(e=>e.status==="Entregue"&&e.mes===m).length;const pos=Object.values(contagem).filter(v=>v>minhas).length+1;return pos===1?"🥇 1º":pos===2?"🥈 2º":pos===3?"🥉 3º":`#${pos}º`;})()}
+                  {(()=>{
+                    if (!rankingGeral || rankingGeral.length === 0) return "🏆 —";
+                    const pos = rankingGeral.findIndex(m=>m.id===motoboyId)+1;
+                    if (pos===0) return "🏆 —";
+                    return pos===1?"🥇 1º":pos===2?"🥈 2º":pos===3?"🥉 3º":`#${pos}º`;
+                  })()}
                 </div>
               </div>
             </div>
