@@ -990,43 +990,40 @@ function HistoricoEmp({ historico }) {
         ))}
       </div>
 
-      <Card style={{padding:0,overflow:"hidden"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead>
-            <tr style={{background:"#0f172a",borderBottom:"1px solid #1f2937"}}>
-              {["Data","Saiu Est.","Entregue","Cliente","Bairro","Pgto","Taxa","Motoboy","Status"].map(h=>(
-                <th key={h} style={{padding:"10px 12px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"}}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {lista.map(e=>{
-              const pg = PG[e.pagamento]||{icon:"•",cor:"#9ca3af"};
-              const entregue = e.status==="Entregue";
-              return (
-                <tr key={e.id} style={{borderBottom:"1px solid #1a2035"}}
-                  onMouseOver={ev=>ev.currentTarget.style.background="#0f172a"}
-                  onMouseOut={ev=>ev.currentTarget.style.background="transparent"}>
-                  <td style={{padding:"9px 12px",color:"#9ca3af",fontSize:12}}>{e.data}</td>
-                  <td style={{padding:"9px 12px",color:"#fbbf24",fontSize:12}}>{e.horaSaida||"—"}</td>
-                  <td style={{padding:"9px 12px",color:"#34d399",fontSize:12}}>{e.horaEntrega||"—"}</td>
-                  <td style={{padding:"9px 12px",color:"#f9fafb",fontWeight:600}}>{e.clienteNome}</td>
-                  <td style={{padding:"9px 12px",color:"#34d399",fontSize:12}}>{e.bairro}</td>
-                  <td style={{padding:"9px 12px"}}><span style={{color:pg.cor,fontWeight:700}}>{pg.icon}</span></td>
-                  <td style={{padding:"9px 12px",color:"#fbbf24",fontWeight:700}}>R${e.taxa}</td>
-                  <td style={{padding:"9px 12px",color:"#d1d5db",fontSize:12}}>{e.motoboyNome}</td>
-                  <td style={{padding:"9px 12px"}}>
-                    <span style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>
-                      {entregue?"✅ Entregue":"❌ Cancelada"}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {lista.length===0 && <div style={{textAlign:"center",padding:30,color:"#4b5563"}}>Nenhum registro.</div>}
-      </Card>
+      <div>
+        {lista.map(e=>{
+          const pg = PG[e.pagamento]||{icon:"•",cor:"#9ca3af",label:e.pagamento};
+          const entregue = e.status==="Entregue";
+          return (
+            <div key={e.id} style={{background:"#111827",border:`1px solid ${entregue?"#1f2937":"#3d1010"}`,borderRadius:10,padding:"14px 16px",marginBottom:10}}>
+              {/* Linha 1: Status + Taxa */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <span style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700}}>
+                  {entregue?"✅ Entregue":"❌ Cancelada"}
+                </span>
+                <div style={{textAlign:"right"}}>
+                  <div style={{color:"#fbbf24",fontWeight:900,fontSize:18}}>R${e.taxa}</div>
+                  <div style={{color:pg.cor,fontSize:11,fontWeight:700}}>{pg.icon} {pg.label}</div>
+                </div>
+              </div>
+              {/* Linha 2: Cliente + Bairro */}
+              <div style={{marginBottom:6}}>
+                <div style={{color:"#f9fafb",fontWeight:700,fontSize:14}}>{e.clienteNome}</div>
+                <div style={{color:"#34d399",fontSize:12,marginTop:2}}>📍 {e.bairro}</div>
+              </div>
+              {/* Linha 3: Motoboy */}
+              {e.motoboyNome && <div style={{color:"#9ca3af",fontSize:12,marginBottom:6}}>🏍️ {e.motoboyNome}</div>}
+              {/* Linha 4: Datas e horários */}
+              <div style={{display:"flex",gap:12,flexWrap:"wrap",borderTop:"1px solid #1f2937",paddingTop:8,marginTop:4}}>
+                <div style={{fontSize:11,color:"#6b7280"}}>📅 {e.data}</div>
+                {e.horaSaida && <div style={{fontSize:11,color:"#fbbf24"}}>🚀 Saiu: {e.horaSaida}</div>}
+                {e.horaEntrega && <div style={{fontSize:11,color:"#34d399"}}>✅ Entregue: {e.horaEntrega}</div>}
+              </div>
+            </div>
+          );
+        })}
+        {lista.length===0 && <div style={{textAlign:"center",padding:30,color:"#4b5563",background:"#111827",borderRadius:10}}>Nenhum registro.</div>}
+      </div>
     </div>
   );
 }
