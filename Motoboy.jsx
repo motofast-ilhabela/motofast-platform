@@ -1406,10 +1406,6 @@ export default function AppMotoboy() {
         </div>
       )}
 
-
-        </a>
-      </div>
-
       {/* Suporte no rodapé */}
       <div style={{maxWidth:600,margin:"0 auto",padding:"0 16px 30px"}}>
         <a href={`https://wa.me/${SUPORTE_TEL}?text=Olá, sou motoboy no MotoFast e preciso de suporte`}
