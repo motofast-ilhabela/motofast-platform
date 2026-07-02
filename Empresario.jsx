@@ -1474,18 +1474,7 @@ export default function AppEmpresario() {
         {aba==="clientes"  && <ClientesSalvos clientes={clientes} setClientes={setClientes} empresaId={empresa.id}/>}
       </div>
 
-      {/* Botão suporte fixo */}
-      <div style={{position:"fixed",bottom:20,right:20,zIndex:200}}>
-        <a href={`https://wa.me/${SUPORTE_TEL}?text=Olá, sou empresário no MotoFast e preciso de suporte`}
-          target="_blank" rel="noreferrer"
-          style={{display:"flex",alignItems:"center",gap:8,background:"#10b981",borderRadius:50,padding:"10px 16px",textDecoration:"none",boxShadow:"0 4px 20px rgba(16,185,129,0.4)"}}>
-          <span style={{fontSize:20}}>💬</span>
-          <div>
-            <div style={{color:"#fff",fontWeight:700,fontSize:13}}>Suporte</div>
-            <div style={{color:"#d1fae5",fontSize:10}}>{SUPORTE_HORARIO}</div>
-          </div>
-        </a>
-      </div>
+
 
       {avisoSemMotoboy && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
@@ -1539,6 +1528,18 @@ export default function AppEmpresario() {
           </div>
         </div>
       )}
+      {/* Suporte no rodapé */}
+      <div style={{maxWidth:900,margin:"0 auto",padding:"0 20px 30px"}}>
+        <a href={`https://wa.me/${SUPORTE_TEL}?text=Olá, sou empresário no MotoFast e preciso de suporte`}
+          target="_blank" rel="noreferrer"
+          style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"12px 20px",textDecoration:"none"}}>
+          <span style={{fontSize:18}}>💬</span>
+          <div>
+            <div style={{color:"#34d399",fontWeight:700,fontSize:13}}>Suporte MotoFast</div>
+            <div style={{color:"#6b7280",fontSize:11}}>{SUPORTE_HORARIO}</div>
+          </div>
+        </a>
+      </div>
     </div>
   );
 }
