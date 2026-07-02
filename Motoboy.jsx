@@ -733,42 +733,35 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
         </button>
       </div>
 
-      <Card style={{padding:0,overflow:"hidden"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead>
-            <tr style={{background:"#0f172a",borderBottom:"1px solid #1f2937"}}>
-              {["Data","Hora","Cliente","Estabelecimento","Bairro","Pgto","Valor","Status"].map(h=>(
-                <th key={h} style={{padding:"9px 12px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {lista.map(e=>{
-              const pg = PG[e.pagamento]||{icon:"•",cor:"#9ca3af"};
-              const entregue = e.status==="Entregue";
-              return (
-                <tr key={e.id} style={{borderBottom:"1px solid #1a2035"}}
-                  onMouseOver={ev=>ev.currentTarget.style.background="#0f172a"}
-                  onMouseOut={ev=>ev.currentTarget.style.background="transparent"}>
-                  <td style={{padding:"8px 12px",color:"#9ca3af",fontSize:12,whiteSpace:"nowrap"}}>{e.data}</td>
-                  <td style={{padding:"8px 12px",color:"#9ca3af",fontSize:12}}>{e.hora}</td>
-                  <td style={{padding:"8px 12px",color:"#f9fafb",fontWeight:600}}>{e.clienteNome}</td>
-                  <td style={{padding:"8px 12px",color:"#d1d5db",fontSize:12}}>{e.empresaNome}</td>
-                  <td style={{padding:"8px 12px",color:"#34d399",fontSize:12}}>{e.bairro}</td>
-                  <td style={{padding:"8px 12px"}}><span style={{color:pg.cor,fontWeight:700}}>{pg.icon}</span></td>
-                  <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700,fontSize:14}}>R${e.taxa}</td>
-                  <td style={{padding:"8px 12px"}}>
-                    <span style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>
-                      {entregue?"✅":"❌"} {e.status}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {lista.length===0 && <div style={{textAlign:"center",padding:24,color:"#4b5563"}}>Nenhuma entrega ainda nesta semana.</div>}
-      </Card>
+      <div>
+        {lista.map(e=>{
+          const pg = PG[e.pagamento]||{icon:"•",cor:"#9ca3af",label:e.pagamento};
+          const entregue = e.status==="Entregue";
+          return (
+            <div key={e.id} style={{background:"#111827",border:`1px solid ${entregue?"#1f2937":"#3d1010"}`,borderRadius:10,padding:"14px 16px",marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <span style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700}}>
+                  {entregue?"✅ Entregue":"❌ Cancelada"}
+                </span>
+                <div style={{textAlign:"right"}}>
+                  <div style={{color:"#fbbf24",fontWeight:900,fontSize:18}}>R${e.taxa}</div>
+                  <div style={{color:pg.cor,fontSize:11,fontWeight:700}}>{pg.icon} {pg.label}</div>
+                </div>
+              </div>
+              <div style={{marginBottom:6}}>
+                <div style={{color:"#f9fafb",fontWeight:700,fontSize:14}}>{e.clienteNome}</div>
+                <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>🏪 {e.empresaNome}</div>
+                <div style={{color:"#34d399",fontSize:12,marginTop:2}}>📍 {e.bairro}</div>
+              </div>
+              <div style={{display:"flex",gap:12,borderTop:"1px solid #1f2937",paddingTop:8,marginTop:4}}>
+                <div style={{fontSize:11,color:"#6b7280"}}>📅 {e.data}</div>
+                <div style={{fontSize:11,color:"#6b7280"}}>🕐 {e.hora}</div>
+              </div>
+            </div>
+          );
+        })}
+        {lista.length===0 && <div style={{textAlign:"center",padding:24,color:"#4b5563",background:"#111827",borderRadius:10}}>Nenhuma entrega ainda.</div>}
+      </div>
 
       {!verTudo && semanaAtual.length>0 && (
         <div style={{marginTop:10,textAlign:"center"}}>
@@ -1401,15 +1394,7 @@ export default function AppMotoboy() {
         {aba==="ganhos" && <Ganhos historico={historico} motoboyId={motoboyId} todosHistorico={historico} rankingGeral={rankingGeral} motoboy={motoboy}/>}
       </div>
 
-      {/* Botão suporte fixo */}
-      <div style={{position:"fixed",bottom:20,right:20,zIndex:200}}>
-        <a href={`https://wa.me/${SUPORTE_TEL}?text=Olá, preciso de suporte MotoFast`}
-          target="_blank" rel="noreferrer"
-          style={{display:"flex",alignItems:"center",gap:8,background:"#10b981",borderRadius:50,padding:"10px 16px",textDecoration:"none",boxShadow:"0 4px 20px rgba(16,185,129,0.4)"}}>
-          <span style={{fontSize:20}}>💬</span>
-          <span style={{color:"#fff",fontWeight:700,fontSize:13}}>Suporte</span>
-        </a>
-      </div>
+
       {/* Aviso de pedido cancelado pelo empresário */}
       {pedidoCancelado && (
         <div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",zIndex:500,
@@ -1430,6 +1415,19 @@ export default function AppMotoboy() {
           <div>
             <div style={{color:"#fff",fontWeight:700,fontSize:13}}>Suporte</div>
             <div style={{color:"#d1fae5",fontSize:10}}>{SUPORTE_HORARIO}</div>
+          </div>
+        </a>
+      </div>
+
+      {/* Suporte no rodapé */}
+      <div style={{maxWidth:600,margin:"0 auto",padding:"0 16px 30px"}}>
+        <a href={`https://wa.me/${SUPORTE_TEL}?text=Olá, sou motoboy no MotoFast e preciso de suporte`}
+          target="_blank" rel="noreferrer"
+          style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"12px 20px",textDecoration:"none"}}>
+          <span style={{fontSize:18}}>💬</span>
+          <div>
+            <div style={{color:"#34d399",fontWeight:700,fontSize:13}}>Suporte MotoFast</div>
+            <div style={{color:"#6b7280",fontSize:11}}>{SUPORTE_HORARIO}</div>
           </div>
         </a>
       </div>
