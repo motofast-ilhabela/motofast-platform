@@ -307,6 +307,7 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
   const [loading, setLoading] = useState(false);
   const [erros, setErros] = useState({});
 
+  const [aceitouTermos, setAceitouTermos] = useState(false);
   const [form, setForm] = useState({
     // Pessoal
     nomeCompleto:"", cpf:"", rg:"", nascimento:"",
@@ -479,15 +480,30 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
           <SenhaForca senha={form.senha}/>
           <Inp label="Confirmar senha" obrigatorio value={form.senhaConfirm} onChange={v=>set("senhaConfirm",v)} placeholder="Digite a senha novamente" type="password" erro={erros.senhaConfirm}/>
 
-          <div style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginBottom:14}}>
-            <div style={{color:"#9ca3af",fontSize:12}}>
-              Ao se cadastrar, você concorda com os <span style={{color:"#60a5fa",cursor:"pointer"}}>Termos de Uso</span> do MotoFast. Seu cadastro será analisado e aprovado em até 24 horas.
+          {/* Checkbox de aceite dos termos */}
+          <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
+            <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:10}}>📋 Termos de Uso e Contrato</div>
+            <div style={{color:"#9ca3af",fontSize:12,lineHeight:1.6,marginBottom:12}}>
+              Antes de finalizar, leia e aceite nosso contrato de prestação de serviços autônomos. Ele define seus direitos, responsabilidades e modelo de pagamento.
             </div>
+            <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:10}}>
+              <input type="checkbox" id="termos-mb" checked={aceitouTermos} onChange={e=>setAceitouTermos(e.target.checked)}
+                style={{marginTop:3,width:18,height:18,cursor:"pointer",accentColor:"#34d399"}}/>
+              <label htmlFor="termos-mb" style={{color:"#d1d5db",fontSize:13,cursor:"pointer",lineHeight:1.5}}>
+                Declaro que li e aceito integralmente os{" "}
+                <a href="https://www.motofastentregas.com.br/termos-motoboy" target="_blank" rel="noreferrer"
+                  style={{color:"#34d399",fontWeight:700}}>Termos de Uso e Contrato de Prestação de Serviços Autônomos</a>
+                {" "}do MotoFast, incluindo as condições de pagamento, responsabilidades e natureza autônoma da prestação de serviços.
+              </label>
+            </div>
+            {!aceitouTermos && (
+              <div style={{color:"#f87171",fontSize:11}}>⚠️ Você precisa aceitar os termos para continuar</div>
+            )}
           </div>
 
           <div style={{display:"flex",gap:8}}>
             <Btn cor="cinza" onClick={()=>{setErros({});setStep(2);}}>← Voltar</Btn>
-            <Btn onClick={enviar} full loading={loading}>✅ Enviar cadastro</Btn>
+            <Btn onClick={enviar} full loading={loading} disabled={!aceitouTermos}>✅ Enviar cadastro</Btn>
           </div>
         </div>
       )}
