@@ -289,15 +289,23 @@ function CadastroEmpresario({ onVoltar, onSucesso }) {
 
           {/* Checkbox de aceite dos termos */}
           <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
-            <div style={{color:"#60a5fa",fontSize:12,fontWeight:700,marginBottom:10}}>📋 Termos de Uso e Contrato</div>
-            <div style={{width:"100%",padding:"10px",borderRadius:8,background:"#1a2f4a",border:"1px solid #60a5fa",color:"#60a5fa",fontWeight:700,fontSize:13,textAlign:"center",marginBottom:12,cursor:"pointer"}}
-              onClick={()=>setVerTermos(true)}>
-              📋 Toque aqui para ler os Termos de Uso
+            <div style={{color:"#60a5fa",fontSize:12,fontWeight:700,marginBottom:10}}>📋 Termos de Uso — Resumo</div>
+            <div style={{color:"#9ca3af",fontSize:12,lineHeight:1.7,marginBottom:12}}>
+              Ao cadastrar seu estabelecimento no MotoFast, você declara que:<br/>
+              <br/>
+              ✅ Pagará R$95/semana (plano semanal) ou R$380/mês (plano mensal)<br/>
+              ✅ Pagará as taxas de entrega toda segunda-feira<br/>
+              ✅ Aceita bloqueio automático em caso de inadimplência<br/>
+              ✅ É responsável pelas informações fornecidas nos pedidos<br/>
+              ✅ A MotoFast não se responsabiliza por acidentes ou atrasos<br/>
+              ✅ Pode cancelar a qualquer momento quitando valores pendentes
             </div>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <input type="checkbox" id="termos-emp" checked={aceitouTermos} onChange={e=>setAceitouTermos(e.target.checked)}
                 style={{width:20,height:20,cursor:"pointer",accentColor:"#60a5fa",flexShrink:0}}/>
-              <span style={{color:"#d1d5db",fontSize:13}}>Li e aceito os Termos de Uso do MotoFast</span>
+              <label htmlFor="termos-emp" style={{color:"#d1d5db",fontSize:13,cursor:"pointer"}}>
+                Li e aceito os Termos de Uso do MotoFast
+              </label>
             </div>
             {!aceitouTermos && <div style={{color:"#f87171",fontSize:11,marginTop:6}}>⚠️ Aceite os termos para continuar</div>}
           </div>
@@ -496,15 +504,25 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
 
           {/* Checkbox de aceite dos termos */}
           <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
-            <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:10}}>📋 Termos de Uso e Contrato</div>
-            <div style={{width:"100%",padding:"10px",borderRadius:8,background:"#0d3d2e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,fontSize:13,textAlign:"center",marginBottom:12,cursor:"pointer"}}
-              onClick={()=>setVerTermos(true)}>
-              📋 Toque aqui para ler os Termos de Uso
+            <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:10}}>📋 Termos de Uso — Resumo</div>
+            <div style={{color:"#9ca3af",fontSize:12,lineHeight:1.7,marginBottom:12}}>
+              Ao se cadastrar como Motoboy no MotoFast, você declara que:<br/>
+              <br/>
+              ✅ É maior de 18 anos<br/>
+              ✅ Possui CNH válida para motocicleta<br/>
+              ✅ Possui moto própria com documentação em dia<br/>
+              ✅ É prestador autônomo — sem vínculo empregatício<br/>
+              ✅ É responsável por acidentes, danos e multas durante as entregas<br/>
+              ✅ A MotoFast não se responsabiliza por acidentes ou imprevistos<br/>
+              ✅ Receberá pagamento toda terça-feira via PIX<br/>
+              ✅ Pode ser descredenciado por comportamento inadequado
             </div>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <input type="checkbox" id="termos-mb" checked={aceitouTermos} onChange={e=>setAceitouTermos(e.target.checked)}
                 style={{width:20,height:20,cursor:"pointer",accentColor:"#34d399",flexShrink:0}}/>
-              <span style={{color:"#d1d5db",fontSize:13}}>Li e aceito os Termos de Uso do MotoFast</span>
+              <label htmlFor="termos-mb" style={{color:"#d1d5db",fontSize:13,cursor:"pointer"}}>
+                Li e aceito os Termos de Uso do MotoFast
+              </label>
             </div>
             {!aceitouTermos && <div style={{color:"#f87171",fontSize:11,marginTop:6}}>⚠️ Aceite os termos para continuar</div>}
           </div>
