@@ -6,6 +6,8 @@ import Admin from './Admin.jsx'
 import Empresario from './Empresario.jsx'
 import Motoboy from './Motoboy.jsx'
 import Rastreio from './Rastreio.jsx'
+import TermosMotoboy from './TermosMotoboy.jsx'
+import TermosEmpresario from './TermosEmpresario.jsx'
 
 // ─── TELA DE LOGIN DO ADMIN ───────────────────────────────────────────────────
 function LoginAdmin() {
@@ -257,6 +259,10 @@ export default function App() {
 
         {/* Rastreio público — sem login */}
         <Route path="/rastreio" element={<Rastreio />} />
+
+        {/* Termos de uso */}
+        <Route path="/termos-motoboy" element={<TermosMotoboy />} />
+        <Route path="/termos-empresario" element={<TermosEmpresario />} />
 
         {/* Qualquer outro link redireciona pra tela inicial */}
         <Route path="*" element={<Navigate to="/" replace />} />
