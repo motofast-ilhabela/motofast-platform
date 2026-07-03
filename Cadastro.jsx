@@ -115,6 +115,73 @@ function TelaSucesso({ tipo, onVoltar }) {
   );
 }
 
+// ─── TERMOS EXPANSÍVEIS ──────────────────────────────────────────────────────
+function ClausulaItem({ titulo, itens, cor }) {
+  const [aberto, setAberto] = useState(false);
+  return (
+    <div style={{border:`1px solid ${aberto ? cor : "#1f2937"}`,borderRadius:8,marginBottom:6,overflow:"hidden"}}>
+      <div onClick={()=>setAberto(x=>!x)}
+        style={{padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",background:aberto?"#0d1f14":"#0f172a"}}>
+        <span style={{color:aberto?cor:"#9ca3af",fontWeight:700,fontSize:12}}>{titulo}</span>
+        <span style={{color:cor,fontSize:14,fontWeight:900}}>{aberto?"▲":"▼"}</span>
+      </div>
+      {aberto && (
+        <div style={{padding:"10px 14px",background:"#0a0f1a",borderTop:`1px solid ${cor}33`}}>
+          {itens.map((item, i) => (
+            <p key={i} style={{color:"#d1d5db",fontSize:12,lineHeight:1.7,margin:"4px 0",
+              paddingLeft: item.startsWith("•") ? 10 : 0}}>
+              {item}
+            </p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TermosExpandiveis({ tipo }) {
+  const cor = tipo === "motoboy" ? "#34d399" : "#60a5fa";
+
+  const clausulasMotoboy = [
+    { titulo: "CLÁUSULA 1 — DAS PARTES", itens: ["A MotoFast Entregas, CNPJ 51.269.432/0001-33, Ilhabela/SP, é a CONTRATANTE.", "O Motoboy é o CONTRATADO, prestador autônomo de serviços de entrega."] },
+    { titulo: "CLÁUSULA 2 — NATUREZA DO SERVIÇO", itens: ["Contrato de natureza CIVIL. Não gera vínculo empregatício, trabalhista ou previdenciário.", "O Motoboy é AUTÔNOMO E INDEPENDENTE, livre para aceitar ou recusar pedidos.", "O Motoboy é responsável pelo recolhimento de seus próprios encargos fiscais."] },
+    { titulo: "CLÁUSULA 3 — REQUISITOS OBRIGATÓRIOS", itens: ["Ao aceitar, o Motoboy declara que:", "• É MAIOR DE 18 anos;", "• Possui CNH válida na categoria para motocicleta;", "• Possui MOTOCICLETA PRÓPRIA com CRLV regularizado;", "• Possui seguro ou assume responsabilidade por danos a terceiros;", "• As informações fornecidas no cadastro são verdadeiras."] },
+    { titulo: "CLÁUSULA 4 — RESPONSABILIDADE DO MOTOBOY", itens: ["O Motoboy é ÚNICA E EXCLUSIVAMENTE responsável por:", "• Acidentes, colisões e incidentes durante as entregas;", "• Danos materiais ou corporais causados a terceiros;", "• Multas de trânsito e infrações;", "• Extravio, roubo ou deterioração de mercadorias;", "• Acidentes pessoais, lesões ou morte durante a atividade.", "A PLATAFORMA não se responsabiliza por nenhum desses eventos."] },
+    { titulo: "CLÁUSULA 5 — ISENÇÃO DA PLATAFORMA", itens: ["A MotoFast NÃO SE RESPONSABILIZA por:", "• Acidentes, danos ou mortes durante entregas;", "• Problemas mecânicos no veículo do Motoboy;", "• Perdas financeiras por cancelamentos ou baixo volume;", "• Ações criminosas durante as entregas.", "A Plataforma não garante volume mínimo de pedidos ou renda mínima."] },
+    { titulo: "CLÁUSULA 6 — REMUNERAÇÃO", itens: ["Pagamento toda TERÇA-FEIRA via PIX para a chave cadastrada.", "O valor exibido no pedido é o valor líquido que o Motoboy irá receber.", "Não há adiantamentos ou antecipações de pagamento."] },
+    { titulo: "CLÁUSULA 7 — OBRIGAÇÕES", itens: ["• Manter CNH e CRLV válidos;", "• Usar capacete homologado pelo INMETRO;", "• Respeitar o Código de Trânsito Brasileiro;", "• Tratar estabelecimentos e clientes com respeito;", "• Não utilizar a plataforma para fins ilícitos."] },
+    { titulo: "CLÁUSULA 8 — DESCREDENCIAMENTO", itens: ["A Plataforma poderá descredenciar o Motoboy sem aviso em caso de:", "• Informações falsas no cadastro;", "• Comportamento inadequado;", "• Atos ilícitos durante as entregas;", "• Descumprimento destes termos."] },
+    { titulo: "CLÁUSULA 9 — PRIVACIDADE", itens: ["Dados pessoais usados exclusivamente para operação da plataforma e pagamentos.", "O Motoboy autoriza coleta de geolocalização durante as entregas."] },
+    { titulo: "CLÁUSULA 10 — VIGÊNCIA", itens: ["Contrato por prazo indeterminado.", "A Plataforma pode alterar os termos com 7 dias de aviso prévio."] },
+    { titulo: "CLÁUSULA 11 — FORO", itens: ["Foro da Comarca de Ilhabela/SP para quaisquer controvérsias."] },
+  ];
+
+  const clausulasEmpresario = [
+    { titulo: "CLÁUSULA 1 — DAS PARTES", itens: ["A MotoFast Entregas, CNPJ 51.269.432/0001-33, Ilhabela/SP, é a CONTRATADA.", "O Estabelecimento Comercial é o CONTRATANTE."] },
+    { titulo: "CLÁUSULA 2 — DO OBJETO", itens: ["A Plataforma disponibiliza sistema digital de intermediação de entregas.", "Atua exclusivamente como INTERMEDIADORA tecnológica.", "Não se responsabiliza pela qualidade dos produtos entregues."] },
+    { titulo: "CLÁUSULA 3 — PLANOS E MENSALIDADE", itens: ["PLANO SEMANAL — R$ 95,00/semana:", "• Pagamento toda segunda-feira;", "• Bloqueio na terça às 09h em caso de não pagamento.", "PLANO MENSAL — R$ 380,00/mês:", "• Pagamento no dia de vencimento escolhido;", "• Bloqueio no dia seguinte às 09h em caso de não pagamento.", "TAXAS POR ENTREGA: pagas conforme plano diário ou semanal."] },
+    { titulo: "CLÁUSULA 4 — BLOQUEIO POR INADIMPLÊNCIA", itens: ["O não pagamento nos prazos resulta em BLOQUEIO automático.", "Durante o bloqueio, novos pedidos não poderão ser solicitados.", "Desbloqueio somente após regularização integral dos valores."] },
+    { titulo: "CLÁUSULA 5 — RESPONSABILIDADE DO ESTABELECIMENTO", itens: ["O Estabelecimento é responsável por:", "• Fornecer endereço e informações corretas nos pedidos;", "• Disponibilizar mercadoria em perfeitas condições;", "• Disponibilizar maquininha ou troco conforme pagamento;", "• Qualidade e integridade dos produtos entregues."] },
+    { titulo: "CLÁUSULA 6 — ISENÇÃO DA PLATAFORMA", itens: ["A MotoFast NÃO SE RESPONSABILIZA por:", "• Acidentes ou danos durante as entregas;", "• Atrasos por trânsito ou clima;", "• Qualidade dos produtos entregues;", "• Indisponibilidade temporária de motoboys."] },
+    { titulo: "CLÁUSULA 7 — PERÍODO GRATUITO", itens: ["A Plataforma pode conceder período gratuito conforme acordado.", "Ao término, cobrança inicia automaticamente.", "O não pagamento após o período gratuito resulta em bloqueio."] },
+    { titulo: "CLÁUSULA 8 — OBRIGAÇÕES", itens: ["• Efetuar pagamentos nos prazos;", "• Tratar motoboys com respeito;", "• Manter dados de contato atualizados;", "• Não usar a plataforma para fins ilegais."] },
+    { titulo: "CLÁUSULA 9 — RESCISÃO", itens: ["O Estabelecimento pode cancelar a qualquer momento, quitando valores pendentes.", "A Plataforma pode rescindir sem aviso em caso de uso ilegal ou inadimplência."] },
+    { titulo: "CLÁUSULA 10 — PRIVACIDADE", itens: ["Dados usados exclusivamente para operação e cobranças.", "Não serão comercializados a terceiros."] },
+    { titulo: "CLÁUSULA 11 — FORO", itens: ["Foro da Comarca de Ilhabela/SP para quaisquer controvérsias."] },
+  ];
+
+  const clausulas = tipo === "motoboy" ? clausulasMotoboy : clausulasEmpresario;
+
+  return (
+    <div style={{marginBottom:12}}>
+      <div style={{color:cor,fontSize:12,fontWeight:700,marginBottom:8}}>📋 Termos de Uso — Clique em cada cláusula para ler</div>
+      {clausulas.map((c, i) => (
+        <ClausulaItem key={i} titulo={c.titulo} itens={c.itens} cor={cor}/>
+      ))}
+    </div>
+  );
+}
+
 // ─── CADASTRO EMPRESÁRIO ──────────────────────────────────────────────────────
 function CadastroEmpresario({ onVoltar, onSucesso }) {
   const [step, setStep] = useState(1);
@@ -288,23 +355,14 @@ function CadastroEmpresario({ onVoltar, onSucesso }) {
           <Inp label="Confirmar senha" obrigatorio value={form.senhaConfirm} onChange={v=>set("senhaConfirm",v)} placeholder="Digite a senha novamente" type="password" erro={erros.senhaConfirm}/>
 
           {/* Checkbox de aceite dos termos */}
+          {/* Termos expansíveis do Empresário */}
+          <TermosExpandiveis tipo="empresario"/>
           <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
-            <div style={{color:"#60a5fa",fontSize:12,fontWeight:700,marginBottom:10}}>📋 Termos de Uso — Resumo</div>
-            <div style={{color:"#9ca3af",fontSize:12,lineHeight:1.7,marginBottom:12}}>
-              Ao cadastrar seu estabelecimento no MotoFast, você declara que:<br/>
-              <br/>
-              ✅ Pagará R$95/semana (plano semanal) ou R$380/mês (plano mensal)<br/>
-              ✅ Pagará as taxas de entrega toda segunda-feira<br/>
-              ✅ Aceita bloqueio automático em caso de inadimplência<br/>
-              ✅ É responsável pelas informações fornecidas nos pedidos<br/>
-              ✅ A MotoFast não se responsabiliza por acidentes ou atrasos<br/>
-              ✅ Pode cancelar a qualquer momento quitando valores pendentes
-            </div>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <input type="checkbox" id="termos-emp" checked={aceitouTermos} onChange={e=>setAceitouTermos(e.target.checked)}
                 style={{width:20,height:20,cursor:"pointer",accentColor:"#60a5fa",flexShrink:0}}/>
               <label htmlFor="termos-emp" style={{color:"#d1d5db",fontSize:13,cursor:"pointer"}}>
-                Li e aceito os Termos de Uso do MotoFast
+                Li e aceito todos os Termos de Uso do MotoFast
               </label>
             </div>
             {!aceitouTermos && <div style={{color:"#f87171",fontSize:11,marginTop:6}}>⚠️ Aceite os termos para continuar</div>}
@@ -503,25 +561,14 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
           <Inp label="Confirmar senha" obrigatorio value={form.senhaConfirm} onChange={v=>set("senhaConfirm",v)} placeholder="Digite a senha novamente" type="password" erro={erros.senhaConfirm}/>
 
           {/* Checkbox de aceite dos termos */}
+          {/* Termos expansíveis do Motoboy */}
+          <TermosExpandiveis tipo="motoboy"/>
           <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
-            <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:10}}>📋 Termos de Uso — Resumo</div>
-            <div style={{color:"#9ca3af",fontSize:12,lineHeight:1.7,marginBottom:12}}>
-              Ao se cadastrar como Motoboy no MotoFast, você declara que:<br/>
-              <br/>
-              ✅ É maior de 18 anos<br/>
-              ✅ Possui CNH válida para motocicleta<br/>
-              ✅ Possui moto própria com documentação em dia<br/>
-              ✅ É prestador autônomo — sem vínculo empregatício<br/>
-              ✅ É responsável por acidentes, danos e multas durante as entregas<br/>
-              ✅ A MotoFast não se responsabiliza por acidentes ou imprevistos<br/>
-              ✅ Receberá pagamento toda terça-feira via PIX<br/>
-              ✅ Pode ser descredenciado por comportamento inadequado
-            </div>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <input type="checkbox" id="termos-mb" checked={aceitouTermos} onChange={e=>setAceitouTermos(e.target.checked)}
                 style={{width:20,height:20,cursor:"pointer",accentColor:"#34d399",flexShrink:0}}/>
               <label htmlFor="termos-mb" style={{color:"#d1d5db",fontSize:13,cursor:"pointer"}}>
-                Li e aceito os Termos de Uso do MotoFast
+                Li e aceito todos os Termos de Uso do MotoFast
               </label>
             </div>
             {!aceitouTermos && <div style={{color:"#f87171",fontSize:11,marginTop:6}}>⚠️ Aceite os termos para continuar</div>}
