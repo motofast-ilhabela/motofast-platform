@@ -290,22 +290,16 @@ function CadastroEmpresario({ onVoltar, onSucesso }) {
           {/* Checkbox de aceite dos termos */}
           <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
             <div style={{color:"#60a5fa",fontSize:12,fontWeight:700,marginBottom:10}}>📋 Termos de Uso e Contrato</div>
-            <div style={{color:"#9ca3af",fontSize:12,lineHeight:1.6,marginBottom:12}}>
-              Antes de finalizar, leia e aceite nosso contrato de prestacao de servicos. Ele define os planos de pagamento, responsabilidades e condicoes de uso da plataforma.
+            <div style={{width:"100%",padding:"10px",borderRadius:8,background:"#1a2f4a",border:"1px solid #60a5fa",color:"#60a5fa",fontWeight:700,fontSize:13,textAlign:"center",marginBottom:12,cursor:"pointer"}}
+              onClick={()=>setVerTermos(true)}>
+              📋 Toque aqui para ler os Termos de Uso
             </div>
-            <div style={{marginBottom:10}}>
-              <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:8}}>
-                <input type="checkbox" id="termos-emp" checked={aceitouTermos} onChange={e=>setAceitouTermos(e.target.checked)}
-                  style={{marginTop:3,width:18,height:18,cursor:"pointer",accentColor:"#60a5fa"}}/>
-                <label htmlFor="termos-emp" style={{color:"#d1d5db",fontSize:13,cursor:"pointer",lineHeight:1.5}}>
-                  Declaro que li e aceito os Termos de Uso do MotoFast, incluindo planos de pagamento e política de bloqueio.
-                </label>
-              </div>
-              <button onClick={()=>setVerTermos(true)} style={{width:"100%",padding:"8px",borderRadius:8,background:"#1a2f4a",border:"1px solid #60a5fa",color:"#60a5fa",fontWeight:700,cursor:"pointer",fontSize:13}}>
-                📋 Ler os Termos de Uso e Contrato
-              </button>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <input type="checkbox" id="termos-emp" checked={aceitouTermos} onChange={e=>setAceitouTermos(e.target.checked)}
+                style={{width:20,height:20,cursor:"pointer",accentColor:"#60a5fa",flexShrink:0}}/>
+              <span style={{color:"#d1d5db",fontSize:13}}>Li e aceito os Termos de Uso do MotoFast</span>
             </div>
-            )}
+            {!aceitouTermos && <div style={{color:"#f87171",fontSize:11,marginTop:6}}>⚠️ Aceite os termos para continuar</div>}
           </div>
 
           <div style={{display:"flex",gap:8}}>
@@ -503,24 +497,16 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
           {/* Checkbox de aceite dos termos */}
           <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
             <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:10}}>📋 Termos de Uso e Contrato</div>
-            <div style={{color:"#9ca3af",fontSize:12,lineHeight:1.6,marginBottom:12}}>
-              Antes de finalizar, leia e aceite nosso contrato de prestação de serviços autônomos. Ele define seus direitos, responsabilidades e modelo de pagamento.
+            <div style={{width:"100%",padding:"10px",borderRadius:8,background:"#0d3d2e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,fontSize:13,textAlign:"center",marginBottom:12,cursor:"pointer"}}
+              onClick={()=>setVerTermos(true)}>
+              📋 Toque aqui para ler os Termos de Uso
             </div>
-            <div style={{marginBottom:10}}>
-              <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:8}}>
-                <input type="checkbox" id="termos-mb" checked={aceitouTermos} onChange={e=>setAceitouTermos(e.target.checked)}
-                  style={{marginTop:3,width:18,height:18,cursor:"pointer",accentColor:"#34d399"}}/>
-                <label htmlFor="termos-mb" style={{color:"#d1d5db",fontSize:13,cursor:"pointer",lineHeight:1.5}}>
-                  Declaro que li e aceito os Termos de Uso do MotoFast, incluindo responsabilidades e condições de pagamento.
-                </label>
-              </div>
-              <button onClick={()=>setVerTermos(true)} style={{width:"100%",padding:"8px",borderRadius:8,background:"#0d3d2e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,cursor:"pointer",fontSize:13}}>
-                📋 Ler os Termos de Uso e Contrato
-              </button>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <input type="checkbox" id="termos-mb" checked={aceitouTermos} onChange={e=>setAceitouTermos(e.target.checked)}
+                style={{width:20,height:20,cursor:"pointer",accentColor:"#34d399",flexShrink:0}}/>
+              <span style={{color:"#d1d5db",fontSize:13}}>Li e aceito os Termos de Uso do MotoFast</span>
             </div>
-            {!aceitouTermos && (
-              <div style={{color:"#f87171",fontSize:11}}>⚠️ Você precisa aceitar os termos para continuar</div>
-            )}
+            {!aceitouTermos && <div style={{color:"#f87171",fontSize:11,marginTop:6}}>⚠️ Aceite os termos para continuar</div>}
           </div>
 
           <div style={{display:"flex",gap:8}}>
