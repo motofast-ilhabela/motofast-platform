@@ -538,36 +538,11 @@ function ModalTermos({ tipo, onFechar }) {
   const clausulasMotoboy = [
     { titulo: "CLÁUSULA 1 — DAS PARTES", texto: "A MotoFast Entregas, CNPJ 51.269.432/0001-33, Ilhabela/SP, é a CONTRATANTE. O Motoboy é o CONTRATADO, prestador autônomo de serviços de entrega." },
     { titulo: "CLÁUSULA 2 — NATUREZA DO SERVIÇO", texto: "O contrato tem natureza estritamente CIVIL. Não gera vínculo empregatício, trabalhista ou previdenciário. O Motoboy é AUTÔNOMO E INDEPENDENTE, responsável pela gestão do próprio tempo e livre para aceitar ou recusar pedidos. É responsável pelo recolhimento de seus próprios encargos fiscais." },
-    { titulo: "CLÁUSULA 3 — REQUISITOS OBRIGATÓRIOS", texto: "Ao aceitar, o Motoboy declara que:
-• É MAIOR DE 18 anos;
-• Possui CNH válida na categoria para motocicleta;
-• Possui MOTOCICLETA PRÓPRIA com documentação regularizada (CRLV);
-• Possui seguro ou assume responsabilidade por danos a terceiros;
-• As informações fornecidas no cadastro são verdadeiras." },
-    { titulo: "CLÁUSULA 4 — RESPONSABILIDADE DO MOTOBOY", texto: "O Motoboy é ÚNICA E EXCLUSIVAMENTE responsável por:
-• Acidentes, colisões e incidentes durante as entregas;
-• Danos materiais ou corporais causados a terceiros;
-• Multas de trânsito e infrações;
-• Extravio, roubo ou deterioração de mercadorias;
-• Acidentes pessoais, lesões ou morte durante o exercício da atividade;
-• Danos ao próprio veículo.
-
-A PLATAFORMA não se responsabiliza por nenhum desses eventos." },
-    { titulo: "CLÁUSULA 5 — ISENÇÃO DA PLATAFORMA", texto: "A MotoFast NÃO SE RESPONSABILIZA por:
-• Acidentes, danos ou mortes durante entregas;
-• Problemas mecânicos no veículo do Motoboy;
-• Perdas financeiras por cancelamentos ou baixo volume;
-• Ações criminosas durante as entregas;
-• Falhas técnicas temporárias na plataforma.
-
-A Plataforma não garante volume mínimo de pedidos ou renda mínima." },
+    { titulo: "CLÁUSULA 3 — REQUISITOS OBRIGATÓRIOS", texto: "Ao aceitar, o Motoboy declara que:\n• É MAIOR DE 18 anos;\n• Possui CNH válida na categoria para motocicleta;\n• Possui MOTOCICLETA PRÓPRIA com documentação regularizada (CRLV);\n• Possui seguro ou assume responsabilidade por danos a terceiros;\n• As informações fornecidas no cadastro são verdadeiras." },
+    { titulo: "CLÁUSULA 4 — RESPONSABILIDADE DO MOTOBOY", texto: "O Motoboy é ÚNICA E EXCLUSIVAMENTE responsável por:\n• Acidentes, colisões e incidentes durante as entregas;\n• Danos materiais ou corporais causados a terceiros;\n• Multas de trânsito e infrações;\n• Extravio, roubo ou deterioração de mercadorias;\n• Acidentes pessoais, lesões ou morte durante o exercício da atividade;\n• Danos ao próprio veículo.\n\nA PLATAFORMA não se responsabiliza por nenhum desses eventos." },
+    { titulo: "CLÁUSULA 5 — ISENÇÃO DA PLATAFORMA", texto: "A MotoFast NÃO SE RESPONSABILIZA por:\n• Acidentes, danos ou mortes durante entregas;\n• Problemas mecânicos no veículo do Motoboy;\n• Perdas financeiras por cancelamentos ou baixo volume;\n• Ações criminosas durante as entregas;\n• Falhas técnicas temporárias na plataforma.\n\nA Plataforma não garante volume mínimo de pedidos ou renda mínima." },
     { titulo: "CLÁUSULA 6 — REMUNERAÇÃO", texto: "O Motoboy receberá por entrega o valor líquido já descontada a taxa da plataforma, exibido no momento do pedido. Pagamento toda TERÇA-FEIRA via PIX para a chave cadastrada, referente às entregas da semana anterior (segunda a domingo). Não há adiantamentos ou antecipações." },
-    { titulo: "CLÁUSULA 7 — OBRIGAÇÕES", texto: "O Motoboy se compromete a:
-• Manter CNH e CRLV válidos;
-• Usar capacete homologado pelo INMETRO;
-• Respeitar o Código de Trânsito Brasileiro;
-• Tratar estabelecimentos e clientes com respeito;
-• Não utilizar a plataforma para fins ilícitos." },
+    { titulo: "CLÁUSULA 7 — OBRIGAÇÕES", texto: "O Motoboy se compromete a:\n• Manter CNH e CRLV válidos;\n• Usar capacete homologado pelo INMETRO;\n• Respeitar o Código de Trânsito Brasileiro;\n• Tratar estabelecimentos e clientes com respeito;\n• Não utilizar a plataforma para fins ilícitos." },
     { titulo: "CLÁUSULA 8 — DESCREDENCIAMENTO", texto: "A Plataforma poderá descredenciar o Motoboy sem aviso prévio em caso de: informações falsas, comportamento inadequado, reclamações reiteradas, atos ilícitos ou descumprimento destes termos." },
     { titulo: "CLÁUSULA 9 — PRIVACIDADE", texto: "Os dados pessoais serão usados exclusivamente para operação da plataforma e pagamentos. O Motoboy autoriza coleta de geolocalização durante as entregas para rastreamento em tempo real pelos clientes." },
     { titulo: "CLÁUSULA 10 — VIGÊNCIA", texto: "Contrato por prazo indeterminado. A Plataforma pode alterar os termos com 7 dias de aviso prévio. Continuar usando a plataforma implica aceite automático das alterações." },
@@ -577,34 +552,12 @@ A Plataforma não garante volume mínimo de pedidos ou renda mínima." },
   const clausulasEmpresario = [
     { titulo: "CLÁUSULA 1 — DAS PARTES", texto: "A MotoFast Entregas, CNPJ 51.269.432/0001-33, Ilhabela/SP, é a CONTRATADA. O Estabelecimento Comercial é o CONTRATANTE." },
     { titulo: "CLÁUSULA 2 — DO OBJETO", texto: "A Plataforma disponibiliza sistema digital de intermediação de entregas, conectando o Estabelecimento a motoboys autônomos cadastrados. A Plataforma atua exclusivamente como INTERMEDIADORA tecnológica, não sendo parte nas relações entre Estabelecimento, motoboy e cliente final." },
-    { titulo: "CLÁUSULA 3 — PLANOS E MENSALIDADE", texto: "PLANO SEMANAL — R$ 95,00/semana
-• Pagamento toda segunda-feira;
-• Bloqueio na terça às 09h em caso de não pagamento.
-
-PLANO MENSAL — R$ 380,00/mês
-• Pagamento no dia de vencimento escolhido;
-• Bloqueio no dia seguinte às 09h em caso de não pagamento.
-
-TAXAS POR ENTREGA: pagas conforme o plano (diário ou semanal), de acordo com a tabela de preços por bairro configurada no cadastro." },
+    { titulo: "CLÁUSULA 3 — PLANOS E MENSALIDADE", texto: "PLANO SEMANAL — R$ 95,00/semana\n• Pagamento toda segunda-feira;\n• Bloqueio na terça às 09h em caso de não pagamento.\n\nPLANO MENSAL — R$ 380,00/mês\n• Pagamento no dia de vencimento escolhido;\n• Bloqueio no dia seguinte às 09h em caso de não pagamento.\n\nTAXAS POR ENTREGA: pagas conforme o plano (diário ou semanal), de acordo com a tabela de preços por bairro configurada no cadastro." },
     { titulo: "CLÁUSULA 4 — BLOQUEIO POR INADIMPLÊNCIA", texto: "O não pagamento nos prazos resulta em BLOQUEIO automático. Durante o bloqueio, novos pedidos não poderão ser solicitados. O desbloqueio ocorre somente após regularização integral dos valores em aberto." },
-    { titulo: "CLÁUSULA 5 — RESPONSABILIDADE DO ESTABELECIMENTO", texto: "O Estabelecimento é responsável por:
-• Fornecer endereço e informações corretas nos pedidos;
-• Disponibilizar mercadoria em perfeitas condições para o motoboy;
-• Disponibilizar maquininha ou troco conforme a forma de pagamento;
-• Prejuízos causados ao cliente por informações incorretas;
-• Qualidade e integridade dos produtos entregues." },
-    { titulo: "CLÁUSULA 6 — ISENÇÃO DA PLATAFORMA", texto: "A MotoFast NÃO SE RESPONSABILIZA por:
-• Acidentes ou danos durante as entregas;
-• Atrasos por trânsito ou clima;
-• Qualidade dos produtos entregues;
-• Indisponibilidade temporária de motoboys;
-• Pedidos não aceitos por nenhum motoboy disponível." },
+    { titulo: "CLÁUSULA 5 — RESPONSABILIDADE DO ESTABELECIMENTO", texto: "O Estabelecimento é responsável por:\n• Fornecer endereço e informações corretas nos pedidos;\n• Disponibilizar mercadoria em perfeitas condições para o motoboy;\n• Disponibilizar maquininha ou troco conforme a forma de pagamento;\n• Prejuízos causados ao cliente por informações incorretas;\n• Qualidade e integridade dos produtos entregues." },
+    { titulo: "CLÁUSULA 6 — ISENÇÃO DA PLATAFORMA", texto: "A MotoFast NÃO SE RESPONSABILIZA por:\n• Acidentes ou danos durante as entregas;\n• Atrasos por trânsito ou clima;\n• Qualidade dos produtos entregues;\n• Indisponibilidade temporária de motoboys;\n• Pedidos não aceitos por nenhum motoboy disponível." },
     { titulo: "CLÁUSULA 7 — PERÍODO GRATUITO", texto: "A Plataforma pode conceder período de uso gratuito conforme acordado no cadastro. Ao término, a cobrança inicia automaticamente. O não pagamento após o período gratuito resultará em bloqueio." },
-    { titulo: "CLÁUSULA 8 — OBRIGAÇÕES", texto: "O Estabelecimento se compromete a:
-• Efetuar pagamentos nos prazos;
-• Tratar motoboys com respeito;
-• Manter dados de contato atualizados;
-• Não usar a plataforma para fins ilegais." },
+    { titulo: "CLÁUSULA 8 — OBRIGAÇÕES", texto: "O Estabelecimento se compromete a:\n• Efetuar pagamentos nos prazos;\n• Tratar motoboys com respeito;\n• Manter dados de contato atualizados;\n• Não usar a plataforma para fins ilegais." },
     { titulo: "CLÁUSULA 9 — RESCISÃO", texto: "O Estabelecimento pode cancelar a qualquer momento, quitando valores pendentes. A Plataforma pode rescindir sem aviso em caso de uso ilegal, inadimplência reiterada ou descumprimento destes termos." },
     { titulo: "CLÁUSULA 10 — PRIVACIDADE", texto: "Dados do Estabelecimento usados exclusivamente para operação da plataforma e cobranças. Não serão comercializados a terceiros." },
     { titulo: "CLÁUSULA 11 — FORO", texto: "Foro da Comarca de Ilhabela/SP para quaisquer controvérsias." },
