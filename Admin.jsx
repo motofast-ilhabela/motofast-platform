@@ -7,6 +7,17 @@ const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov"
 const MENSALIDADE = 95;
 const PG = { pix:{label:"Pix",icon:"💠",cor:"#34d399"}, dinheiro:{label:"Dinheiro",icon:"💵",cor:"#fbbf24"}, cartao:{label:"Cartão",icon:"💳",cor:"#60a5fa"} };
 
+// Retorna a data no formato AAAA-MM-DD usando o horário LOCAL (Brasil), nunca UTC.
+// IMPORTANTE: nunca usar date.toISOString().split("T")[0] para pegar "a data de hoje"
+// ou "a data de um pedido" — toISOString() converte pra UTC e desloca a data em
+// horários próximos da meia-noite (ex: pedido às 21h no Brasil vira dia seguinte em UTC).
+function dataLocalISO(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth()+1).padStart(2,"0");
+  const d = String(date.getDate()).padStart(2,"0");
+  return `${y}-${m}-${d}`;
+}
+
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
 function Card({ children, style={} }) {
   return <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"18px 22px",...style}}>{children}</div>;
@@ -421,8 +432,8 @@ function Motoboys({ motoboys, setMotoboys, historico }) {
 
   async function banir(id) {
     if (!motivo.trim()) return;
-    await supabase.from("motoboys").update({banido:true, bloqueado:true, motivo_banimento:motivo, data_banimento:new Date().toISOString().split("T")[0]}).eq("id", id);
-    setMotoboys(p=>p.map(m=>m.id===id?{...m,banido:true,ativo:false,online:false,motivoBanimento:motivo,dataBanimento:new Date().toISOString().split("T")[0]}:m));
+    await supabase.from("motoboys").update({banido:true, bloqueado:true, motivo_banimento:motivo, data_banimento:dataLocalISO()}).eq("id", id);
+    setMotoboys(p=>p.map(m=>m.id===id?{...m,banido:true,ativo:false,online:false,motivoBanimento:motivo,dataBanimento:dataLocalISO()}:m));
     setModalBanir(null); setMotivo(""); setDetalhe(null);
   }
 
@@ -624,7 +635,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
   const [novoNomeBairro, setNovoNomeBairro] = useState("");
   const [modalCad, setModalCad] = useState(false);
   const [mesesGratis, setMesesGratis] = useState("0");
-  const [dataSelecionadaEmp, setDataSelecionadaEmp] = useState(new Date().toISOString().split("T")[0]);
+  const [dataSelecionadaEmp, setDataSelecionadaEmp] = useState(dataLocalISO());
   const FVAZIO = {nome:"",tel:"",bairro:"",planoPagamento:"semanal",planoPagamentoMotoboy:"diario",cnpj:"",nomeDono:"",telDono:"",nomeSocio:"",telSocio:"",enderecoEstab:""};
   const [form, setForm] = useState(FVAZIO);
 
@@ -632,7 +643,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
   const mesAtual = agora.getMonth()+1;
   const DIAS = Array.from({length:7},(_,i)=>{
     const d = new Date(agora); d.setDate(agora.getDate()-i);
-    return d.toISOString().split("T")[0];
+    return dataLocalISO(d);
   });
   const DNOMES = {};
   DIAS.forEach(d=>{
@@ -679,7 +690,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
     else if (meses===-1) update = {plano_gratis:true, data_fim_gratis:null, mensalidade_paga:true, bloqueado:false};
     else {
       const fim = new Date(); fim.setMonth(fim.getMonth()+meses);
-      update = {plano_gratis:true, data_fim_gratis:fim.toISOString().split("T")[0], mensalidade_paga:true, bloqueado:false};
+      update = {plano_gratis:true, data_fim_gratis:dataLocalISO(fim), mensalidade_paga:true, bloqueado:false};
     }
     await supabase.from("empresarios").update(update).eq("id", id);
     setEmpresarios(p=>p.map(e=>{
@@ -687,7 +698,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
       if (meses===0) return {...e,planoGratis:false,dataFimGratis:null};
       if (meses===-1) return {...e,planoGratis:true,dataFimGratis:"∞",mensalidadePaga:true,bloqueado:false};
       const fim = new Date(); fim.setMonth(fim.getMonth()+meses);
-      return {...e,planoGratis:true,dataFimGratis:fim.toISOString().split("T")[0],mensalidadePaga:true,bloqueado:false};
+      return {...e,planoGratis:true,dataFimGratis:dataLocalISO(fim),mensalidadePaga:true,bloqueado:false};
     }));
   }
 
@@ -714,7 +725,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
     const t = {}; BAIRROS.forEach(b=>{t[b]={e:0,m:0};});
     const mg = parseInt(mesesGratis);
     let dataFim = null;
-    if (mg>0) { const d=new Date(); d.setMonth(d.getMonth()+mg); dataFim=d.toISOString().split("T")[0]; }
+    if (mg>0) { const d=new Date(); d.setMonth(d.getMonth()+mg); dataFim=dataLocalISO(d); }
     const { data, error } = await supabase.from("empresarios").insert({
       nome: form.nome, telefone: form.tel, bairro: form.bairro.trim(),
       cnpj: form.cnpj, nome_dono: form.nomeDono, tel_dono: form.telDono,
@@ -925,8 +936,8 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
             const entregasDia = historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue"&&e.data===dataSelecionadaEmp);
             const totalDia = entregasDia.reduce((s,e)=>s+e.taxaEmpresario,0);
             const dataFmt = new Date(dataSelecionadaEmp+"T12:00:00").toLocaleDateString("pt-BR");
-            const hojeISO = new Date().toISOString().split("T")[0];
-            const ontemISO = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return d.toISOString().split("T")[0]; })();
+            const hojeISO = dataLocalISO();
+            const ontemISO = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return dataLocalISO(d); })();
 
             const porDia = {};
             historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue").forEach(e=>{
@@ -1709,7 +1720,7 @@ export default function App() {
           const mes = criadoEm.getMonth() + 1;
           const dia = criadoEm.getDate();
           const sem = dia<=7?1:dia<=14?2:dia<=21?3:4;
-          const dataStr = criadoEm.toISOString().split("T")[0];
+          const dataStr = dataLocalISO(criadoEm);
           let horaSaida = "—";
           if (p.saiu_estabelecimento_em) {
             const d = new Date(p.saiu_estabelecimento_em);
@@ -1745,7 +1756,7 @@ export default function App() {
         });
 
       // Verifica empresários com plano grátis vencido e atualiza banco automaticamente
-      const hoje = new Date().toISOString().split("T")[0];
+      const hoje = dataLocalISO();
       const vencidos = emps.filter(e =>
         e.planoGratis && e.dataFimGratis && e.dataFimGratis !== "∞" && e.dataFimGratis < hoje
       );

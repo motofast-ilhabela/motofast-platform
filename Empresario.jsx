@@ -36,6 +36,17 @@ const PG = {
 const SUPORTE_TEL = "5512991213656";
 const SUPORTE_HORARIO = "Seg-Sex 9h-22h • Sáb 9h-19h • Dom/feriados: fechado";
 
+// Retorna a data no formato AAAA-MM-DD usando o horário LOCAL (Brasil), nunca UTC.
+// IMPORTANTE: nunca usar date.toISOString().split("T")[0] para pegar "a data de hoje"
+// ou "a data de um pedido" — toISOString() converte pra UTC e desloca a data em
+// horários próximos da meia-noite (ex: pedido às 21h no Brasil vira dia seguinte em UTC).
+function dataLocalISO(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth()+1).padStart(2,"0");
+  const d = String(date.getDate()).padStart(2,"0");
+  return `${y}-${m}-${d}`;
+}
+
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
 function Card({ children, style={} }) {
   return <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"18px 22px",...style}}>{children}</div>;
@@ -952,7 +963,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
 // ─── HISTÓRICO DO ESTABELECIMENTO ─────────────────────────────────────────────
 function HistoricoEmp({ historico }) {
   const [filtro, setFiltro] = useState("Todos");
-  const [dataSelecionada, setDataSelecionada] = useState(new Date().toISOString().split("T")[0]);
+  const [dataSelecionada, setDataSelecionada] = useState(dataLocalISO());
 
   // historico ja vem com status normalizado (Entregue / Cancelada) do App principal
   const todos = historico;
@@ -965,8 +976,8 @@ function HistoricoEmp({ historico }) {
   const entregasDia = todos.filter(e=>e.status==="Entregue" && e.dataISO===dataSelecionada);
   const totalDia = entregasDia.reduce((s,e)=>s+e.taxa,0);
   const dataFmt = new Date(dataSelecionada+"T12:00:00").toLocaleDateString("pt-BR");
-  const hojeISO = new Date().toISOString().split("T")[0];
-  const ontemISO = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return d.toISOString().split("T")[0]; })();
+  const hojeISO = dataLocalISO();
+  const ontemISO = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return dataLocalISO(d); })();
 
   // Resumo agrupado por dia — lista todos os dias que tiveram entrega, mais recente primeiro
   const porDia = {};
@@ -997,6 +1008,22 @@ function HistoricoEmp({ historico }) {
         <div style={{color:"#34d399",fontSize:32,fontWeight:900}}>R${totalDia}</div>
         <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasDia.length} entrega{entregasDia.length!==1?"s":""} nesta data</div>
       </Card>
+
+      {/* Lista das entregas do dia selecionado — cliente, bairro e valor */}
+      {entregasDia.length>0 && (
+        <Card style={{marginBottom:14}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Entregas de {dataFmt}</div>
+          {entregasDia.map(e=>(
+            <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1f2937"}}>
+              <div>
+                <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
+                <span style={{color:"#34d399",fontSize:12,marginLeft:8}}>{e.bairro}</span>
+              </div>
+              <span style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>R${e.taxa}</span>
+            </div>
+          ))}
+        </Card>
+      )}
 
       {/* Lista de todos os dias com entrega — clique para ver o total daquele dia */}
       {diasOrdenados.length>0 && (
@@ -1253,7 +1280,7 @@ export default function AppEmpresario() {
     status: p.status==="entregue" ? "Entregue" : "Cancelada",
     motoboyNome: p.motoboyNome || "—",
     data: new Date(p.criadoEm).toLocaleDateString("pt-BR"),
-    dataISO: new Date(p.criadoEm).toISOString().split("T")[0],
+    dataISO: dataLocalISO(new Date(p.criadoEm)),
     hora: new Date(p.criadoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
     horaSaida: p.saiuEstabelecimentoEm ? new Date(p.saiuEstabelecimentoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
     horaEntrega: p.entregueEm ? new Date(p.entregueEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
