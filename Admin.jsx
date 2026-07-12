@@ -625,7 +625,7 @@ function Motoboys({ motoboys, setMotoboys, historico }) {
 }
 
 // ─── ESTABELECIMENTOS ─────────────────────────────────────────────────────────
-function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
+function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, onRecarregar }) {
   const [sel, setSel] = useState(null);
   const [abaEmp, setAbaEmp] = useState("geral");
   const [taxasEdit, setTaxasEdit] = useState({});
@@ -636,6 +636,10 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
   const [modalCad, setModalCad] = useState(false);
   const [mesesGratis, setMesesGratis] = useState("0");
   const [dataSelecionadaEmp, setDataSelecionadaEmp] = useState(dataLocalISO());
+  const FORM_REGISTRO_VAZIO = {clienteNome:"",clienteTel:"",rua:"",num:"",bairro:"",ref:"",pagamento:"pix",motoboyId:""};
+  const [formRegistro, setFormRegistro] = useState(FORM_REGISTRO_VAZIO);
+  const [salvandoRegistro, setSalvandoRegistro] = useState(false);
+  const [erroRegistro, setErroRegistro] = useState("");
   const FVAZIO = {nome:"",tel:"",bairro:"",planoPagamento:"semanal",planoPagamentoMotoboy:"diario",cnpj:"",nomeDono:"",telDono:"",nomeSocio:"",telSocio:"",enderecoEstab:""};
   const [form, setForm] = useState(FVAZIO);
 
@@ -919,7 +923,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
         <Overlay onClose={()=>setSel(null)} maxW={660}>
           <OvHeader titulo={empSel.nome} sub={`📍 ${empSel.bairro} · 📞 ${empSel.tel}`} onClose={()=>setSel(null)}/>
           <div style={{display:"flex",gap:0,marginBottom:16,borderBottom:"1px solid #1f2937"}}>
-            {[["geral","📊 Visão Geral"],["porDia","📅 Por Dia"],["pagamentos","💰 Pagamentos"],["taxas","🗺️ Taxas"]].map(([id,label])=>(
+            {[["geral","📊 Visão Geral"],["porDia","📅 Por Dia"],["registrar","➕ Registrar Entrega"],["pagamentos","💰 Pagamentos"],["taxas","🗺️ Taxas"]].map(([id,label])=>(
               <button key={id} onClick={()=>setAbaEmp(id)} style={{background:"transparent",border:"none",borderBottom:abaEmp===id?"2px solid #34d399":"2px solid transparent",color:abaEmp===id?"#34d399":"#6b7280",padding:"8px 16px",cursor:"pointer",fontWeight:700,fontSize:13}}>{label}</button>
             ))}
           </div>
@@ -1027,6 +1031,94 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
                     })}
                   </Card>
                 )}
+              </div>
+            );
+          })()}
+
+          {abaEmp==="registrar" && (()=>{
+            const bairrosEmp = Object.keys(empSel.taxas||{});
+            const bairroSel = formRegistro.bairro || bairrosEmp[0] || "";
+            const taxaKeyReg = bairrosEmp.find(k=>k.trim().toLowerCase()===bairroSel.trim().toLowerCase()) || bairroSel;
+            const taxaReg = (empSel.taxas||{})[taxaKeyReg] || {e:0,m:0};
+
+            async function registrarEntrega() {
+              if (!formRegistro.clienteNome.trim() || !formRegistro.rua.trim() || !formRegistro.num.trim()) {
+                setErroRegistro("Preencha nome do cliente, rua e número.");
+                return;
+              }
+              setSalvandoRegistro(true);
+              setErroRegistro("");
+              try {
+                await supabase.from("clientes").insert({
+                  empresario_id: empSel.id,
+                  nome: formRegistro.clienteNome,
+                  telefone: formRegistro.clienteTel || "Não informado",
+                  rua: formRegistro.rua,
+                  numero: formRegistro.num,
+                  bairro: bairroSel,
+                  referencia: formRegistro.ref,
+                });
+                const agoraISO = new Date().toISOString();
+                const { error } = await supabase.from("pedidos").insert({
+                  empresario_id: empSel.id,
+                  motoboy_id: formRegistro.motoboyId || null,
+                  cliente_nome: formRegistro.clienteNome,
+                  cliente_telefone: formRegistro.clienteTel,
+                  rua: formRegistro.rua,
+                  numero: formRegistro.num,
+                  bairro: bairroSel,
+                  referencia: formRegistro.ref,
+                  forma_pagamento: formRegistro.pagamento,
+                  taxa: taxaReg.e,
+                  taxa_motoboy: taxaReg.m,
+                  taxa_empresario: taxaReg.e,
+                  status: "entregue",
+                  saiu_estabelecimento_em: agoraISO,
+                  entregue_em: agoraISO,
+                });
+                if (error) { setErroRegistro("Erro ao salvar: " + error.message); setSalvandoRegistro(false); return; }
+                setFormRegistro(FORM_REGISTRO_VAZIO);
+                if (onRecarregar) await onRecarregar();
+                setSalvandoRegistro(false);
+              } catch (err) {
+                setErroRegistro("Erro inesperado: " + err.message);
+                setSalvandoRegistro(false);
+              }
+            }
+
+            return (
+              <div>
+                <div style={{color:"#9ca3af",fontSize:12,marginBottom:14,background:"#0f172a",borderRadius:8,padding:"10px 14px"}}>
+                  Use isso quando VOCÊ (admin) fez ou precisa lançar uma entrega manualmente para este estabelecimento — sem precisar do login dele. A entrega já entra como "Entregue" no histórico de hoje.
+                </div>
+                {erroRegistro && <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#f87171",fontSize:13}}>{erroRegistro}</div>}
+                <Inp label="Nome do cliente *" value={formRegistro.clienteNome} onChange={v=>setFormRegistro(f=>({...f,clienteNome:v}))} placeholder="Nome completo"/>
+                <Inp label="Telefone do cliente" value={formRegistro.clienteTel} onChange={v=>setFormRegistro(f=>({...f,clienteTel:v}))} placeholder="(12) 99999-0000"/>
+                <div style={{display:"flex",gap:10}}>
+                  <div style={{flex:3}}><Inp label="Rua *" value={formRegistro.rua} onChange={v=>setFormRegistro(f=>({...f,rua:v}))} placeholder="Ex: Rua das Flores"/></div>
+                  <div style={{flex:1}}><Inp label="Nº *" value={formRegistro.num} onChange={v=>setFormRegistro(f=>({...f,num:v}))} placeholder="123"/></div>
+                </div>
+                <SelInput label="Bairro" value={bairroSel} onChange={v=>setFormRegistro(f=>({...f,bairro:v}))}>
+                  {bairrosEmp.map(b=><option key={b}>{b}</option>)}
+                </SelInput>
+                <Inp label="Referência (opcional)" value={formRegistro.ref} onChange={v=>setFormRegistro(f=>({...f,ref:v}))} placeholder="Casa de cor, portão..."/>
+                <div style={{marginBottom:12}}>
+                  <div style={{color:"#9ca3af",fontSize:12,fontWeight:600,marginBottom:6}}>Forma de pagamento</div>
+                  <div style={{display:"flex",gap:8}}>
+                    {Object.entries(PG).map(([k,p])=>(
+                      <button key={k} onClick={()=>setFormRegistro(f=>({...f,pagamento:k}))} style={{flex:1,padding:"9px 6px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:12,background:formRegistro.pagamento===k?"#1e293b":"#0f172a",border:formRegistro.pagamento===k?`2px solid ${p.cor}`:"2px solid #1f2937",color:formRegistro.pagamento===k?p.cor:"#6b7280"}}>{p.icon} {p.label}</button>
+                    ))}
+                  </div>
+                </div>
+                <SelInput label="Quem entregou (opcional)" value={formRegistro.motoboyId} onChange={v=>setFormRegistro(f=>({...f,motoboyId:v}))}>
+                  <option value="">— Não informado / eu mesmo —</option>
+                  {motoboys.filter(m=>!m.banido).map(m=><option key={m.id} value={m.id}>{m.nomeCompleto}</option>)}
+                </SelInput>
+                <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px",marginBottom:14}}>
+                  <div style={{color:"#9ca3af",fontSize:11}}>Taxa — {bairroSel || "selecione um bairro"}</div>
+                  <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>Cliente R${taxaReg.e} → Motoboy R${taxaReg.m}</div>
+                </div>
+                <Btn onClick={registrarEntrega} full disabled={salvandoRegistro}>{salvandoRegistro?"Salvando...":"✅ Registrar Entrega (já feita)"}</Btn>
               </div>
             );
           })()}
@@ -2045,7 +2137,7 @@ export default function App() {
         {aba==="dashboard" && <Dashboard historico={historico} motoboys={motoboys} empresarios={empresarios}/> }
         {aba==="repasse"          && <Repasse historico={historico} setHistorico={setHistorico} motoboys={motoboys} empresarios={empresarios}/>}
         {aba==="motoboys"         && <Motoboys motoboys={motoboys} setMotoboys={setMotoboys} historico={historico}/>}
-        {aba==="estabelecimentos" && <Estabelecimentos empresarios={empresarios} setEmpresarios={setEmpresarios} historico={historico}/>}
+        {aba==="estabelecimentos" && <Estabelecimentos empresarios={empresarios} setEmpresarios={setEmpresarios} historico={historico} motoboys={motoboys} onRecarregar={carregarTudo}/>}
         {aba==="clientes"         && <Clientes clientes={clientes} setClientes={setClientes} historico={historico} empresarios={empresarios}/>}
         {aba==="historico"        && <Historico historico={historico} motoboys={motoboys} empresarios={empresarios}/>}
         {aba==="avaliacoes"        && <Avaliacoes avaliacoes={avaliacoes} motoboys={motoboys}/>}
