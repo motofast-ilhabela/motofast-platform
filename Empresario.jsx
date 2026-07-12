@@ -959,6 +959,13 @@ function HistoricoEmp({ historico }) {
   const totalTaxas = todos.filter(e=>e.status==="Entregue").reduce((s,e)=>s+e.taxa,0);
   const semana = todos.filter(e=>e.status==="Entregue").slice(0,5).reduce((s,e)=>s+e.taxa,0);
 
+  // Taxa de hoje — soma automaticamente as entregas feitas no dia atual.
+  // Como compara com a data de hoje em tempo real, o valor "reseta" sozinho
+  // assim que vira o dia (não precisa apagar nada manualmente).
+  const hojeStr = new Date().toLocaleDateString("pt-BR");
+  const entregasHoje = todos.filter(e=>e.status==="Entregue" && e.data===hojeStr);
+  const totalHoje = entregasHoje.reduce((s,e)=>s+e.taxa,0);
+
   return (
     <div>
       <div style={{marginBottom:14}}>
@@ -968,6 +975,11 @@ function HistoricoEmp({ historico }) {
 
       {/* Resumo financeiro */}
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
+        <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"14px 18px",flex:1,minWidth:130}}>
+          <div style={{color:"#34d399",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>💰 Taxa de Hoje ({hojeStr})</div>
+          <div style={{color:"#34d399",fontSize:26,fontWeight:900}}>R${totalHoje}</div>
+          <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>{entregasHoje.length} entrega{entregasHoje.length!==1?"s":""} hoje · atualiza sozinho</div>
+        </div>
         <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"14px 18px",flex:1,minWidth:130}}>
           <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>A pagar esta semana</div>
           <div style={{color:"#fbbf24",fontSize:22,fontWeight:800}}>R${semana}</div>
