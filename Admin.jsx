@@ -776,6 +776,19 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
   const bloqueados = empresarios.filter(e=>e.bloqueado).length;
   const inadimplentes = empresarios.filter(e=>!e.mensalidadePaga&&!e.planoGratis).length;
 
+  // Lista de cobrança — só aparece a partir de terça-feira (segunda ainda é dia
+  // de tolerância pro empresário pagar). Só entra aqui quem está no plano SEMANAL,
+  // não é grátis, e ainda não marcou como pago nesta semana.
+  const hojeEhSegunda = new Date().getDay() === 1; // 0=domingo, 1=segunda...
+  const paraCobrar = empresarios.filter(e=>
+    e.planoPagamento==="semanal" && !e.planoGratis && !e.mensalidadePaga && !hojeEhSegunda
+  );
+
+  function mensagemCobranca(emp) {
+    const primeiroNome = (emp.nomeDono || emp.nome || "").split(" ")[0];
+    return `Olá${primeiroNome?" "+primeiroNome:""}! Passando pra lembrar que a mensalidade semanal do MotoFast (R$${MENSALIDADE}) do ${emp.nome} venceu segunda-feira e ainda consta em aberto. Pra evitar o bloqueio automático da conta, pode regularizar o quanto antes? Qualquer dúvida, é só chamar por aqui. 🙏`;
+  }
+
   return (
     <div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:10}}>
@@ -790,8 +803,28 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
         <Btn onClick={()=>setModalCad(true)}>+ Cadastrar Estabelecimento</Btn>
       </div>
 
+      {paraCobrar.length>0 && (
+        <Card style={{marginBottom:14,background:"#1a0a0a",border:"1px solid #ef4444"}}>
+          <div style={{color:"#f87171",fontWeight:800,fontSize:14,marginBottom:4}}>📞 Cobrança pendente — {paraCobrar.length} estabelecimento{paraCobrar.length!==1?"s":""}</div>
+          <div style={{color:"#9ca3af",fontSize:12,marginBottom:12}}>Não pagaram a mensalidade semanal (venceu segunda-feira)</div>
+          {paraCobrar.map(emp=>(
+            <div key={emp.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0f172a",borderRadius:8,padding:"10px 14px",marginBottom:8,flexWrap:"wrap",gap:8}}>
+              <div>
+                <div style={{color:"#f9fafb",fontWeight:700,fontSize:14}}>{emp.nome}</div>
+                <div style={{color:"#6b7280",fontSize:12}}>👤 {emp.nomeDono||"—"} · R${MENSALIDADE} pendente</div>
+              </div>
+              <a href={`https://wa.me/55${(emp.telDono||emp.tel||"").replace(/\D/g,"")}?text=${encodeURIComponent(mensagemCobranca(emp))}`}
+                target="_blank" rel="noreferrer"
+                style={{background:"#10b981",color:"#fff",padding:"8px 14px",borderRadius:8,fontSize:12,fontWeight:700,textDecoration:"none",whiteSpace:"nowrap"}}>
+                💬 Cobrar no WhatsApp
+              </a>
+            </div>
+          ))}
+        </Card>
+      )}
+
       <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:10,padding:"11px 16px",marginBottom:14}}>
-        <span style={{color:"#fbbf24",fontWeight:700,fontSize:13}}>🔒 Bloqueio automático toda segunda às 09h00 · Mensalidade R${MENSALIDADE}/semana</span>
+        <span style={{color:"#fbbf24",fontWeight:700,fontSize:13}}>🔒 Cobrança toda segunda · Bloqueio automático toda terça às 09h00 se não pagar · Mensalidade R${MENSALIDADE}/semana</span>
       </div>
 
       {empresarios.length===0 && (
@@ -1017,10 +1050,10 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
                     )}
                   </div>
                 </div>
-                <div style={{color:"#6b7280",fontSize:12,marginBottom:10}}>Plano atual: <strong style={{color:"#f9fafb"}}>{empSel.planoPagamento==="mensal"?"🗓️ Mensal (R$"+MENSALIDADE*4+"/mês)":"📋 Semanal (R$"+MENSALIDADE+"/semana — toda terça)"}</strong></div>
+                <div style={{color:"#6b7280",fontSize:12,marginBottom:10}}>Plano atual: <strong style={{color:"#f9fafb"}}>{empSel.planoPagamento==="mensal"?"🗓️ Mensal (R$"+MENSALIDADE*4+"/mês)":"📋 Semanal (R$"+MENSALIDADE+"/semana — toda segunda)"}</strong></div>
                 <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:6}}>Mudar plano de pagamento:</div>
                 <div style={{display:"flex",gap:8,marginBottom:10}}>
-                  {[["semanal","📋 Semanal (toda terça)"],["mensal","🗓️ Mensal"]].map(([val,label])=>(
+                  {[["semanal","📋 Semanal (toda segunda)"],["mensal","🗓️ Mensal"]].map(([val,label])=>(
                     <button key={val} onClick={async()=>{
                       await supabase.from("empresarios").update({plano_pagamento:val}).eq("id",empSel.id);
                       setEmpresarios(p=>p.map(e=>e.id===empSel.id?{...e,planoPagamento:val}:e));
@@ -1061,7 +1094,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
               </Card>
               <Card style={{marginBottom:12,padding:"14px 16px",background:"#0f172a"}}>
                 <div style={{color:"#9ca3af",fontWeight:700,fontSize:13,marginBottom:6}}>🏍️ Pagamento ao motoboy</div>
-                <div style={{color:"#6b7280",fontSize:12,marginBottom:10}}>Plano atual: <strong style={{color:"#f9fafb"}}>{empSel.planoPagamentoMotoboy==="diario"?"📅 Diário (dia seguinte)":"📋 Semanal (toda terça)"}</strong></div>
+                <div style={{color:"#6b7280",fontSize:12,marginBottom:10}}>Plano atual: <strong style={{color:"#f9fafb"}}>{empSel.planoPagamentoMotoboy==="diario"?"📅 Diário (dia seguinte)":"📋 Semanal (toda segunda)"}</strong></div>
                 <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:6}}>Mudar forma de pagamento ao motoboy:</div>
                 <div style={{display:"flex",gap:8}}>
                   {[["diario","📅 Diário"],["semanal","📋 Semanal"]].map(([val,label])=>(
@@ -1200,7 +1233,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
           <div style={{marginBottom:12}}>
             <div style={{color:"#9ca3af",fontSize:12,fontWeight:600,marginBottom:8}}>Plano de pagamento — comissão MotoFast</div>
             <div style={{display:"flex",gap:8}}>
-              {[["semanal","📋 Semanal (toda terça)"],["mensal","🗓️ Mensal (uma vez)"]].map(([val,label])=>(
+              {[["semanal","📋 Semanal (toda segunda)"],["mensal","🗓️ Mensal (uma vez)"]].map(([val,label])=>(
                 <button key={val} onClick={()=>setForm(f=>({...f,planoPagamento:val}))} style={{flex:1,padding:"10px 8px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,background:form.planoPagamento===val?"#1e293b":"#0f172a",border:form.planoPagamento===val?"2px solid #34d399":"2px solid #1f2937",color:form.planoPagamento===val?"#34d399":"#6b7280"}}>{label}</button>
               ))}
             </div>
@@ -1208,7 +1241,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
           <div style={{marginBottom:12}}>
             <div style={{color:"#9ca3af",fontSize:12,fontWeight:600,marginBottom:8}}>Como o estabelecimento paga o motoboy</div>
             <div style={{display:"flex",gap:8}}>
-              {[["diario","📅 Diário (dia seguinte)"],["semanal","📋 Semanal (toda terça)"]].map(([val,label])=>(
+              {[["diario","📅 Diário (dia seguinte)"],["semanal","📋 Semanal (toda segunda)"]].map(([val,label])=>(
                 <button key={val} onClick={()=>setForm(f=>({...f,planoPagamentoMotoboy:val}))} style={{flex:1,padding:"10px 8px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,background:form.planoPagamentoMotoboy===val?"#1e293b":"#0f172a",border:form.planoPagamentoMotoboy===val?"2px solid #fbbf24":"2px solid #1f2937",color:form.planoPagamentoMotoboy===val?"#fbbf24":"#6b7280"}}>{label}</button>
               ))}
             </div>
