@@ -651,8 +651,9 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
   }
 
   function adicionarBairro() {
-    if (!novoBairro.trim()) return;
-    setTaxasEdit(p=>({...p,[novoBairro]:{e:0,m:0}}));
+    const nome = novoBairro.trim();
+    if (!nome) return;
+    setTaxasEdit(p=>({...p,[nome]:{e:0,m:0}}));
     setNovoBairro("");
   }
 
@@ -661,10 +662,11 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
   }
 
   function renomearBairro(bAntigo) {
-    if (!novoNomeBairro.trim() || novoNomeBairro===bAntigo) { setBairroEditando(null); return; }
+    const novoNome = novoNomeBairro.trim();
+    if (!novoNome || novoNome===bAntigo) { setBairroEditando(null); return; }
     setTaxasEdit(p=>{
       const novo={};
-      Object.entries(p).forEach(([k,v])=>{ novo[k===bAntigo?novoNomeBairro:k]=v; });
+      Object.entries(p).forEach(([k,v])=>{ novo[k===bAntigo?novoNome:k]=v; });
       return novo;
     });
     setBairroEditando(null);
@@ -713,7 +715,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
     let dataFim = null;
     if (mg>0) { const d=new Date(); d.setMonth(d.getMonth()+mg); dataFim=d.toISOString().split("T")[0]; }
     const { data, error } = await supabase.from("empresarios").insert({
-      nome: form.nome, telefone: form.tel, bairro: form.bairro,
+      nome: form.nome, telefone: form.tel, bairro: form.bairro.trim(),
       cnpj: form.cnpj, nome_dono: form.nomeDono, tel_dono: form.telDono,
       nome_socio: form.nomeSocio, tel_socio: form.telSocio,
       endereco_estabelecimento: form.enderecoEstab,
@@ -725,7 +727,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
     }).select().single();
     if (!error && data) {
       setEmpresarios(p=>[...p,{
-        id:data.id, nome:form.nome, tel:form.tel, bairro:form.bairro,
+        id:data.id, nome:form.nome, tel:form.tel, bairro:form.bairro.trim(),
         cnpj:form.cnpj, nomeDono:form.nomeDono, telDono:form.telDono,
         nomeSocio:form.nomeSocio, telSocio:form.telSocio, enderecoEstab:form.enderecoEstab,
         planoPagamento:form.planoPagamento, planoPagamentoMotoboy:form.planoPagamentoMotoboy,
