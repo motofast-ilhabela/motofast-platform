@@ -624,6 +624,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
   const [novoNomeBairro, setNovoNomeBairro] = useState("");
   const [modalCad, setModalCad] = useState(false);
   const [mesesGratis, setMesesGratis] = useState("0");
+  const [dataSelecionadaEmp, setDataSelecionadaEmp] = useState(new Date().toISOString().split("T")[0]);
   const FVAZIO = {nome:"",tel:"",bairro:"",planoPagamento:"semanal",planoPagamentoMotoboy:"diario",cnpj:"",nomeDono:"",telDono:"",nomeSocio:"",telSocio:"",enderecoEstab:""};
   const [form, setForm] = useState(FVAZIO);
 
@@ -874,7 +875,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
         <Overlay onClose={()=>setSel(null)} maxW={660}>
           <OvHeader titulo={empSel.nome} sub={`📍 ${empSel.bairro} · 📞 ${empSel.tel}`} onClose={()=>setSel(null)}/>
           <div style={{display:"flex",gap:0,marginBottom:16,borderBottom:"1px solid #1f2937"}}>
-            {[["geral","📊 Visão Geral"],["pagamentos","💰 Pagamentos"],["taxas","🗺️ Taxas"]].map(([id,label])=>(
+            {[["geral","📊 Visão Geral"],["porDia","📅 Por Dia"],["pagamentos","💰 Pagamentos"],["taxas","🗺️ Taxas"]].map(([id,label])=>(
               <button key={id} onClick={()=>setAbaEmp(id)} style={{background:"transparent",border:"none",borderBottom:abaEmp===id?"2px solid #34d399":"2px solid transparent",color:abaEmp===id?"#34d399":"#6b7280",padding:"8px 16px",cursor:"pointer",fontWeight:700,fontSize:13}}>{label}</button>
             ))}
           </div>
@@ -919,6 +920,72 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico }) {
               </Card>
             </div>
           )}
+
+          {abaEmp==="porDia" && (()=>{
+            const entregasDia = historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue"&&e.data===dataSelecionadaEmp);
+            const totalDia = entregasDia.reduce((s,e)=>s+e.taxaEmpresario,0);
+            const dataFmt = new Date(dataSelecionadaEmp+"T12:00:00").toLocaleDateString("pt-BR");
+            const hojeISO = new Date().toISOString().split("T")[0];
+            const ontemISO = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return d.toISOString().split("T")[0]; })();
+
+            const porDia = {};
+            historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue").forEach(e=>{
+              if (!porDia[e.data]) porDia[e.data] = {qtd:0, total:0};
+              porDia[e.data].qtd++;
+              porDia[e.data].total += e.taxaEmpresario;
+            });
+            const diasOrdenados = Object.entries(porDia).sort((a,b)=>b[0].localeCompare(a[0]));
+
+            return (
+              <div>
+                <Card style={{marginBottom:14,background:"#0d3d2e",border:"1px solid #34d399"}}>
+                  <SectionTitle>💰 Taxas por dia — {empSel.nome}</SectionTitle>
+                  <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:14}}>
+                    <input type="date" value={dataSelecionadaEmp} onChange={e=>setDataSelecionadaEmp(e.target.value)}
+                      style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"9px 12px",fontSize:14,outline:"none"}}/>
+                    <button onClick={()=>setDataSelecionadaEmp(hojeISO)} style={{padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:12,background:dataSelecionadaEmp===hojeISO?"#0d3d2e":"#1f2937",border:dataSelecionadaEmp===hojeISO?"1px solid #34d399":"1px solid #374151",color:dataSelecionadaEmp===hojeISO?"#34d399":"#9ca3af"}}>Hoje</button>
+                    <button onClick={()=>setDataSelecionadaEmp(ontemISO)} style={{padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:12,background:dataSelecionadaEmp===ontemISO?"#0d3d2e":"#1f2937",border:dataSelecionadaEmp===ontemISO?"1px solid #34d399":"1px solid #374151",color:dataSelecionadaEmp===ontemISO?"#34d399":"#9ca3af"}}>Ontem</button>
+                  </div>
+                  <div style={{color:"#6b7280",fontSize:12,marginBottom:4}}>{dataFmt}</div>
+                  <div style={{color:"#34d399",fontSize:32,fontWeight:900}}>R${totalDia}</div>
+                  <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasDia.length} entrega{entregasDia.length!==1?"s":""} nesta data</div>
+                </Card>
+
+                {entregasDia.length>0 && (
+                  <Card style={{marginBottom:14}}>
+                    <SectionTitle>Entregas de {dataFmt}</SectionTitle>
+                    {entregasDia.map(e=>(
+                      <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1f2937"}}>
+                        <div>
+                          <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
+                          <span style={{color:"#6b7280",fontSize:12,marginLeft:8}}>{e.bairro}</span>
+                        </div>
+                        <span style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>R${e.taxaEmpresario}</span>
+                      </div>
+                    ))}
+                  </Card>
+                )}
+
+                {diasOrdenados.length>0 && (
+                  <Card>
+                    <SectionTitle>📅 Dias anteriores</SectionTitle>
+                    {diasOrdenados.slice(0,30).map(([data,info])=>{
+                      const dFmt = new Date(data+"T12:00:00").toLocaleDateString("pt-BR");
+                      const sel = data===dataSelecionadaEmp;
+                      return (
+                        <div key={data} onClick={()=>setDataSelecionadaEmp(data)}
+                          style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:sel?"#0d3d2e":"#0f172a",border:sel?"1px solid #34d399":"1px solid #1f2937",borderRadius:8,padding:"9px 14px",marginBottom:6,cursor:"pointer"}}>
+                          <span style={{color:sel?"#34d399":"#d1d5db",fontSize:13,fontWeight:600}}>{dFmt}</span>
+                          <span style={{color:"#6b7280",fontSize:12}}>{info.qtd} entrega{info.qtd!==1?"s":""}</span>
+                          <span style={{color:"#60a5fa",fontWeight:700,fontSize:14}}>R${info.total.toFixed(2)}</span>
+                        </div>
+                      );
+                    })}
+                  </Card>
+                )}
+              </div>
+            );
+          })()}
 
           {abaEmp==="pagamentos" && (
             <div>

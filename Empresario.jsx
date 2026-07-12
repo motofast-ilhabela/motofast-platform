@@ -952,6 +952,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
 // ─── HISTÓRICO DO ESTABELECIMENTO ─────────────────────────────────────────────
 function HistoricoEmp({ historico }) {
   const [filtro, setFiltro] = useState("Todos");
+  const [dataSelecionada, setDataSelecionada] = useState(new Date().toISOString().split("T")[0]);
 
   // historico ja vem com status normalizado (Entregue / Cancelada) do App principal
   const todos = historico;
@@ -959,12 +960,22 @@ function HistoricoEmp({ historico }) {
   const totalTaxas = todos.filter(e=>e.status==="Entregue").reduce((s,e)=>s+e.taxa,0);
   const semana = todos.filter(e=>e.status==="Entregue").slice(0,5).reduce((s,e)=>s+e.taxa,0);
 
-  // Taxa de hoje — soma automaticamente as entregas feitas no dia atual.
-  // Como compara com a data de hoje em tempo real, o valor "reseta" sozinho
-  // assim que vira o dia (não precisa apagar nada manualmente).
-  const hojeStr = new Date().toLocaleDateString("pt-BR");
-  const entregasHoje = todos.filter(e=>e.status==="Entregue" && e.data===hojeStr);
-  const totalHoje = entregasHoje.reduce((s,e)=>s+e.taxa,0);
+  // Entregas do dia selecionado — o mesmo cálculo usado no painel Admin,
+  // então o valor aqui e lá no Admin sempre batem.
+  const entregasDia = todos.filter(e=>e.status==="Entregue" && e.dataISO===dataSelecionada);
+  const totalDia = entregasDia.reduce((s,e)=>s+e.taxa,0);
+  const dataFmt = new Date(dataSelecionada+"T12:00:00").toLocaleDateString("pt-BR");
+  const hojeISO = new Date().toISOString().split("T")[0];
+  const ontemISO = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return d.toISOString().split("T")[0]; })();
+
+  // Resumo agrupado por dia — lista todos os dias que tiveram entrega, mais recente primeiro
+  const porDia = {};
+  todos.filter(e=>e.status==="Entregue").forEach(e=>{
+    if (!porDia[e.dataISO]) porDia[e.dataISO] = {qtd:0, total:0};
+    porDia[e.dataISO].qtd++;
+    porDia[e.dataISO].total += e.taxa;
+  });
+  const diasOrdenados = Object.entries(porDia).sort((a,b)=>b[0].localeCompare(a[0]));
 
   return (
     <div>
@@ -973,13 +984,41 @@ function HistoricoEmp({ historico }) {
         <div style={{color:"#6b7280",fontSize:13}}>{lista.length} registros</div>
       </div>
 
+      {/* Seletor de data — vê o total de taxas de qualquer dia, hoje ou anterior */}
+      <Card style={{marginBottom:14,background:"#0d3d2e",border:"1px solid #34d399"}}>
+        <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>💰 Taxas por dia</div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:14}}>
+          <input type="date" value={dataSelecionada} onChange={e=>setDataSelecionada(e.target.value)}
+            style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"9px 12px",fontSize:14,outline:"none"}}/>
+          <button onClick={()=>setDataSelecionada(hojeISO)} style={{padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:12,background:dataSelecionada===hojeISO?"#0d3d2e":"#1f2937",border:dataSelecionada===hojeISO?"1px solid #34d399":"1px solid #374151",color:dataSelecionada===hojeISO?"#34d399":"#9ca3af"}}>Hoje</button>
+          <button onClick={()=>setDataSelecionada(ontemISO)} style={{padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:12,background:dataSelecionada===ontemISO?"#0d3d2e":"#1f2937",border:dataSelecionada===ontemISO?"1px solid #34d399":"1px solid #374151",color:dataSelecionada===ontemISO?"#34d399":"#9ca3af"}}>Ontem</button>
+        </div>
+        <div style={{color:"#6b7280",fontSize:12,marginBottom:4}}>{dataFmt}</div>
+        <div style={{color:"#34d399",fontSize:32,fontWeight:900}}>R${totalDia}</div>
+        <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasDia.length} entrega{entregasDia.length!==1?"s":""} nesta data</div>
+      </Card>
+
+      {/* Lista de todos os dias com entrega — clique para ver o total daquele dia */}
+      {diasOrdenados.length>0 && (
+        <Card style={{marginBottom:14}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📅 Dias anteriores</div>
+          {diasOrdenados.slice(0,30).map(([data,info])=>{
+            const dFmt = new Date(data+"T12:00:00").toLocaleDateString("pt-BR");
+            const sel = data===dataSelecionada;
+            return (
+              <div key={data} onClick={()=>setDataSelecionada(data)}
+                style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:sel?"#0d3d2e":"#0f172a",border:sel?"1px solid #34d399":"1px solid #1f2937",borderRadius:8,padding:"9px 14px",marginBottom:6,cursor:"pointer"}}>
+                <span style={{color:sel?"#34d399":"#d1d5db",fontSize:13,fontWeight:600}}>{dFmt}</span>
+                <span style={{color:"#6b7280",fontSize:12}}>{info.qtd} entrega{info.qtd!==1?"s":""}</span>
+                <span style={{color:"#60a5fa",fontWeight:700,fontSize:14}}>R${info.total.toFixed(2)}</span>
+              </div>
+            );
+          })}
+        </Card>
+      )}
+
       {/* Resumo financeiro */}
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
-        <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"14px 18px",flex:1,minWidth:130}}>
-          <div style={{color:"#34d399",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>💰 Taxa de Hoje ({hojeStr})</div>
-          <div style={{color:"#34d399",fontSize:26,fontWeight:900}}>R${totalHoje}</div>
-          <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>{entregasHoje.length} entrega{entregasHoje.length!==1?"s":""} hoje · atualiza sozinho</div>
-        </div>
         <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"14px 18px",flex:1,minWidth:130}}>
           <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>A pagar esta semana</div>
           <div style={{color:"#fbbf24",fontSize:22,fontWeight:800}}>R${semana}</div>
@@ -1214,6 +1253,7 @@ export default function AppEmpresario() {
     status: p.status==="entregue" ? "Entregue" : "Cancelada",
     motoboyNome: p.motoboyNome || "—",
     data: new Date(p.criadoEm).toLocaleDateString("pt-BR"),
+    dataISO: new Date(p.criadoEm).toISOString().split("T")[0],
     hora: new Date(p.criadoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
     horaSaida: p.saiuEstabelecimentoEm ? new Date(p.saiuEstabelecimentoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
     horaEntrega: p.entregueEm ? new Date(p.entregueEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
