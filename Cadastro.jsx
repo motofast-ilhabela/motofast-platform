@@ -318,7 +318,7 @@ function CadastroEmpresario({ onVoltar, onSucesso }) {
           </div>
           <Inp label="Endereço completo" obrigatorio value={form.enderecoEstab} onChange={v=>set("enderecoEstab",v)} placeholder="Ex: Rua da Padroeira, 45" erro={erros.enderecoEstab}/>
           <Inp label="Bairro" obrigatorio value={form.bairro} onChange={v=>set("bairro",v)} placeholder="Ex: Vila, Perequê, Feiticeira..." erro={erros.bairro}/>
-          <Inp label="🕐 Horário de funcionamento" obrigatorio value={form.horarioFuncionamento} onChange={v=>set("horarioFuncionamento",v)} placeholder="Ex: 08:00 às 18:00" hint="Assim os motoboys sabem quando seu estabelecimento está aberto para pedidos" erro={erros.horarioFuncionamento}/>
+          <Inp label="🕐 Horário de funcionamento" obrigatorio value={form.horarioFuncionamento} onChange={v=>set("horarioFuncionamento",v)} placeholder="Ex: 08:00 às 18:00" erro={erros.horarioFuncionamento}/>
           <Btn onClick={avancar} full>Próximo →</Btn>
         </div>
       )}

@@ -965,7 +965,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                     💾 Salvar
                   </button>
                 </div>
-                {!empSel.horarioFuncionamento && <div style={{color:"#fbbf24",fontSize:11,marginTop:6}}>⚠️ Sem horário cadastrado — motoboys não vão saber quando esse estabelecimento funciona</div>}
+                {!empSel.horarioFuncionamento && <div style={{color:"#fbbf24",fontSize:11,marginTop:6}}>⚠️ Sem horário cadastrado — preencha para seu controle interno</div>}
               </Card>
               <Card style={{padding:"14px 16px",background:"#0f172a"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -1335,7 +1335,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
           </div>
           <Inp label="Endereço completo" value={form.enderecoEstab} onChange={v=>setForm(f=>({...f,enderecoEstab:v}))} placeholder="Ex: Rua da Padroeira, 45, Vila, Ilhabela/SP"/>
           <Inp label="Bairro *" value={form.bairro} onChange={v=>setForm(f=>({...f,bairro:v}))} placeholder="Digite o bairro"/>
-          <Inp label="🕐 Horário de funcionamento *" value={form.horarioFuncionamento} onChange={v=>setForm(f=>({...f,horarioFuncionamento:v}))} placeholder="Ex: 08:00 às 18:00" hint="Fora desse horário os motoboys sabem que não tem pedido desse estabelecimento"/>
+          <Inp label="🕐 Horário de funcionamento *" value={form.horarioFuncionamento} onChange={v=>setForm(f=>({...f,horarioFuncionamento:v}))} placeholder="Ex: 08:00 às 18:00"/>
           <Divider/>
           <SectionTitle>Responsáveis</SectionTitle>
           <div style={{display:"flex",gap:10}}>
