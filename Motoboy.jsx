@@ -365,9 +365,20 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
                   <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏪 1º — Ir buscar no estabelecimento</div>
                   <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{p.empresaNome}</div>
                   <div style={{color:"#9ca3af",fontSize:13,marginTop:2}}>{p.empresaEndereco||"Perequê, Ilhabela/SP"}</div>
+                  {p.empresaTel && (
+                    <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
+                      <a href={`https://wa.me/55${p.empresaTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                        style={{background:"#0f2540",color:"#60a5fa",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>💬 Falar com o estabelecimento</a>
+                    </div>
+                  )}
                   <button onClick={()=>abrirGPSEstab(p)} style={{marginTop:8,width:"100%",padding:"9px",borderRadius:8,background:"#1e3a5f",border:"1px solid #3b82f6",color:"#60a5fa",fontWeight:700,fontSize:13,cursor:"pointer"}}>
                     🗺️ Abrir rota para o estabelecimento
                   </button>
+                  {p.empresaTel && (
+                    <div style={{color:"#4b5563",fontSize:11,textAlign:"center",marginTop:6}}>
+                      💡 Não achou o local? Manda mensagem no WhatsApp do estabelecimento acima
+                    </div>
+                  )}
                 </div>
 
                 {/* Endereço do cliente já visível, mesmo antes de sair — facilita a vida do motoboy */}
@@ -462,6 +473,18 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
                 <div style={{background:"#0f172a",borderRadius:8,padding:"8px 12px",marginBottom:10}}>
                   <div style={{color:"#9ca3af",fontSize:12,fontWeight:700}}>ℹ️ O estabelecimento já avisa o cliente que o pedido saiu.</div>
                 </div>
+
+                {/* Botão de contato com o estabelecimento — útil se o cliente não responder ou o endereço estiver errado */}
+                {p.empresaTel && (
+                  <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:10,padding:"10px 14px",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                    <div>
+                      <div style={{color:"#9ca3af",fontSize:11,fontWeight:700}}>🏪 Precisa falar com o estabelecimento?</div>
+                      <div style={{color:"#6b7280",fontSize:11,marginTop:1}}>{p.empresaNome} — ex: cliente não responde, endereço errado</div>
+                    </div>
+                    <a href={`https://wa.me/55${p.empresaTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                      style={{background:"#0d3d2e",color:"#34d399",padding:"6px 12px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none",whiteSpace:"nowrap"}}>💬 WhatsApp</a>
+                  </div>
+                )}
 
                 <button onClick={()=>marcarEntregue(p.id)} style={{width:"100%",padding:"14px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
                   ✅ Confirmar entrega
