@@ -640,7 +640,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   const [formRegistro, setFormRegistro] = useState(FORM_REGISTRO_VAZIO);
   const [salvandoRegistro, setSalvandoRegistro] = useState(false);
   const [erroRegistro, setErroRegistro] = useState("");
-  const FVAZIO = {nome:"",tel:"",bairro:"",planoPagamento:"semanal",planoPagamentoMotoboy:"diario",cnpj:"",nomeDono:"",telDono:"",nomeSocio:"",telSocio:"",enderecoEstab:""};
+  const FVAZIO = {nome:"",tel:"",bairro:"",planoPagamento:"semanal",planoPagamentoMotoboy:"diario",cnpj:"",nomeDono:"",telDono:"",nomeSocio:"",telSocio:"",enderecoEstab:"",horarioFuncionamento:""};
   const [form, setForm] = useState(FVAZIO);
 
   const agora = new Date();
@@ -735,6 +735,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
       cnpj: form.cnpj, nome_dono: form.nomeDono, tel_dono: form.telDono,
       nome_socio: form.nomeSocio, tel_socio: form.telSocio,
       endereco_estabelecimento: form.enderecoEstab,
+      horario_funcionamento: form.horarioFuncionamento,
       plano_pagamento: form.planoPagamento,
       plano_pagamento_motoboy: form.planoPagamentoMotoboy,
       plano_gratis: mg!==0, data_fim_gratis: mg===-1?null:dataFim,
@@ -746,6 +747,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
         id:data.id, nome:form.nome, tel:form.tel, bairro:form.bairro.trim(),
         cnpj:form.cnpj, nomeDono:form.nomeDono, telDono:form.telDono,
         nomeSocio:form.nomeSocio, telSocio:form.telSocio, enderecoEstab:form.enderecoEstab,
+        horarioFuncionamento:form.horarioFuncionamento,
         planoPagamento:form.planoPagamento, planoPagamentoMotoboy:form.planoPagamentoMotoboy,
         planoGratis:mg!==0, dataFimGratis:mg===-1?"∞":dataFim,
         bloqueado:false, mensalidadePaga:mg!==0, pagamentosDiarios:{}, taxas:t,
@@ -851,6 +853,9 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                   <Tag label={emp.planoPagamento==="mensal"?"🗓️ Mensal":"📋 Semanal"} cor="#60a5fa"/>
                 </div>
                 <div style={{color:"#6b7280",fontSize:12}}>📍 {emp.bairro} · 📞 {emp.tel}</div>
+                {emp.horarioFuncionamento
+                  ? <div style={{color:"#60a5fa",fontSize:12,marginTop:2}}>🕐 {emp.horarioFuncionamento}</div>
+                  : <div style={{color:"#f59e0b",fontSize:12,marginTop:2}}>⚠️ Horário de funcionamento não cadastrado</div>}
                 {emp.cnpj && <div style={{color:"#4b5563",fontSize:11,marginTop:1}}>CNPJ: {emp.cnpj} · Dono: {emp.nomeDono}</div>}
                 {/* Régua de meta de entregas */}
                 {(()=>{
@@ -942,6 +947,25 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                     <div key={l}><div style={{color:"#4b5563",fontSize:11}}>{l}</div><div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{v||"—"}</div></div>
                   ))}
                 </div>
+              </Card>
+              <Card style={{marginBottom:14,padding:"14px 16px",background:empSel.horarioFuncionamento?"#0f172a":"#1a1000",border:empSel.horarioFuncionamento?"1px solid #1f2937":"1px solid #f59e0b"}}>
+                <SectionTitle>🕐 Horário de Funcionamento</SectionTitle>
+                <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                  <input
+                    defaultValue={empSel.horarioFuncionamento}
+                    id={`horario-func-${empSel.id}`}
+                    placeholder="Ex: 08:00 às 18:00"
+                    style={{background:"#111827",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"9px 12px",flex:1,minWidth:180,fontSize:14,outline:"none"}}
+                  />
+                  <button onClick={async()=>{
+                    const val = document.getElementById(`horario-func-${empSel.id}`).value.trim();
+                    await supabase.from("empresarios").update({horario_funcionamento:val}).eq("id",empSel.id);
+                    setEmpresarios(p=>p.map(e=>e.id===empSel.id?{...e,horarioFuncionamento:val}:e));
+                  }} style={{padding:"9px 16px",borderRadius:8,background:"#10b981",border:"none",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+                    💾 Salvar
+                  </button>
+                </div>
+                {!empSel.horarioFuncionamento && <div style={{color:"#fbbf24",fontSize:11,marginTop:6}}>⚠️ Sem horário cadastrado — motoboys não vão saber quando esse estabelecimento funciona</div>}
               </Card>
               <Card style={{padding:"14px 16px",background:"#0f172a"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -1311,6 +1335,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
           </div>
           <Inp label="Endereço completo" value={form.enderecoEstab} onChange={v=>setForm(f=>({...f,enderecoEstab:v}))} placeholder="Ex: Rua da Padroeira, 45, Vila, Ilhabela/SP"/>
           <Inp label="Bairro *" value={form.bairro} onChange={v=>setForm(f=>({...f,bairro:v}))} placeholder="Digite o bairro"/>
+          <Inp label="🕐 Horário de funcionamento *" value={form.horarioFuncionamento} onChange={v=>setForm(f=>({...f,horarioFuncionamento:v}))} placeholder="Ex: 08:00 às 18:00" hint="Fora desse horário os motoboys sabem que não tem pedido desse estabelecimento"/>
           <Divider/>
           <SectionTitle>Responsáveis</SectionTitle>
           <div style={{display:"flex",gap:10}}>
@@ -1824,6 +1849,7 @@ export default function App() {
         pagamentosDiarios: e.pagamentos_diarios || {},
         taxas: e.taxas || {},
         diaVencimento: e.dia_vencimento || new Date(e.criado_em||Date.now()).getDate(),
+        horarioFuncionamento: e.horario_funcionamento || "",
       }));
 
       const clis = (cliRes.data || []).map(c => ({
