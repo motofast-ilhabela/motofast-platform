@@ -941,6 +941,25 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                 <Stat label="Total a cobrar" value={`R$${totalSemana(empSel).total}`} cor="#a78bfa"/>
               </div>
               <Card style={{marginBottom:14,padding:"14px 16px",background:"#0f172a"}}>
+                <SectionTitle>✏️ Nome do Estabelecimento</SectionTitle>
+                <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                  <input
+                    defaultValue={empSel.nome}
+                    id={`nome-emp-${empSel.id}`}
+                    placeholder="Nome do estabelecimento"
+                    style={{background:"#111827",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"9px 12px",flex:1,minWidth:180,fontSize:14,outline:"none"}}
+                  />
+                  <button onClick={async()=>{
+                    const val = document.getElementById(`nome-emp-${empSel.id}`).value.trim();
+                    if (!val) return;
+                    await supabase.from("empresarios").update({nome:val}).eq("id",empSel.id);
+                    setEmpresarios(p=>p.map(e=>e.id===empSel.id?{...e,nome:val}:e));
+                  }} style={{padding:"9px 16px",borderRadius:8,background:"#10b981",border:"none",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+                    💾 Salvar
+                  </button>
+                </div>
+              </Card>
+              <Card style={{marginBottom:14,padding:"14px 16px",background:"#0f172a"}}>
                 <SectionTitle>📋 Dados Cadastrais</SectionTitle>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                   {[["CNPJ",empSel.cnpj],["Telefone",empSel.tel],["Endereço",empSel.enderecoEstab],["Bairro",empSel.bairro],["Dono",empSel.nomeDono],["Tel. Dono",empSel.telDono],["Sócio",empSel.nomeSocio||"—"],["Tel. Sócio",empSel.telSocio||"—"]].map(([l,v])=>(
