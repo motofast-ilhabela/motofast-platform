@@ -538,7 +538,8 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
               </div>
             )}
             <div style={{background:"#3d1010",borderRadius:8,padding:"10px 14px",marginBottom:14}}>
-              <div style={{color:"#f87171",fontSize:12,fontWeight:700}}>⚠️ Ao confirmar você ficará offline automaticamente e o empresário será notificado.</div>
+              <div style={{color:"#f87171",fontSize:12,fontWeight:700}}>⚠️ Ao confirmar você ficará offline automaticamente e o empresário receberá um aviso automático na tela dele com o motivo.</div>
+              <div style={{color:"#fbbf24",fontSize:11,marginTop:6}}>💡 Se der, avisa o estabelecimento direto pelo WhatsApp também (botão "Falar com o estabelecimento" na tela da corrida) — assim ele já sabe na hora e não fica esperando.</div>
             </div>
             <div style={{display:"flex",gap:8}}>
               <button onClick={()=>{
@@ -1180,6 +1181,7 @@ export default function AppMotoboy() {
         await supabase.from("pedidos").update({
           status: "cancelado",
           motivo_cancelamento: motivo,
+          cancelado_por_motoboy: true,
         }).eq("id", p.id);
       }
     }

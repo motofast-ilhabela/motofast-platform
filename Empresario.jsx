@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient.js";
 
 // ─── DADOS DO ESTABELECIMENTO (viriam do login) ───────────────────────────────
@@ -1286,6 +1286,9 @@ export default function AppEmpresario() {
     horaEntrega: p.entregueEm ? new Date(p.entregueEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
   }));
   const [avisoSemMotoboy, setAvisoSemMotoboy] = useState(null);
+  const [avisoCancelamentoMotoboy, setAvisoCancelamentoMotoboy] = useState(null);
+  const notificadosCancelamento = useRef(new Set());
+  const primeiroCarregamentoPedidos = useRef(true);
   const [empresa, setEmpresa] = useState({...EMPRESA, id:null}); // começa SEM id até carregar o real do Supabase
   const [carregando, setCarregando] = useState(true);
 
@@ -1382,6 +1385,25 @@ export default function AppEmpresario() {
     if (error) { console.error("Erro ao carregar pedidos:", error); return; }
 
     if (pedidosDB) {
+      // Detecta cancelamentos feitos pelo motoboy (não pelo empresário) que ainda não foram avisados.
+      // No primeiro carregamento da página só marca como "já visto" — não dispara aviso de coisas antigas.
+      pedidosDB.forEach(p => {
+        const canceladoPeloMotoboy = p.status === "cancelado" && p.cancelado_por_motoboy;
+        if (canceladoPeloMotoboy && !notificadosCancelamento.current.has(p.id)) {
+          notificadosCancelamento.current.add(p.id);
+          if (!primeiroCarregamentoPedidos.current) {
+            setAvisoCancelamentoMotoboy({
+              clienteNome: p.cliente_nome,
+              bairro: p.bairro,
+              motivo: p.motivo_cancelamento || "Não informado",
+              motoboyNome: p.motoboys?.nome_completo || "Motoboy",
+              motoboyTel: p.motoboys?.telefone || "",
+            });
+          }
+        }
+      });
+      primeiroCarregamentoPedidos.current = false;
+
       setPedidos(pedidosDB.map(p=>({
         id: p.id,
         clienteNome: p.cliente_nome,
@@ -1610,6 +1632,40 @@ export default function AppEmpresario() {
           </div>
         </div>
       )}
+      {avisoCancelamentoMotoboy && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"#111827",border:"2px solid #ef4444",borderRadius:16,width:"100%",maxWidth:440,padding:28,textAlign:"center"}}>
+            <div style={{fontSize:56,marginBottom:12}}>⚠️</div>
+            <div style={{color:"#f87171",fontWeight:900,fontSize:22,marginBottom:14}}>Motoboy cancelou a entrega</div>
+            <div style={{background:"#0f172a",borderRadius:10,padding:"14px 18px",marginBottom:16,textAlign:"left"}}>
+              <div style={{color:"#9ca3af",fontSize:12}}>Cliente</div>
+              <div style={{color:"#f9fafb",fontWeight:700,fontSize:15,marginBottom:8}}>{avisoCancelamentoMotoboy.clienteNome} — {avisoCancelamentoMotoboy.bairro}</div>
+              <div style={{color:"#9ca3af",fontSize:12}}>Motivo informado pelo motoboy</div>
+              <div style={{color:"#fbbf24",fontWeight:700,fontSize:15}}>{avisoCancelamentoMotoboy.motivo}</div>
+            </div>
+            <div style={{color:"#9ca3af",fontSize:13,marginBottom:18,lineHeight:1.6}}>
+              Entre em contato com <strong style={{color:"#f9fafb"}}>{avisoCancelamentoMotoboy.motoboyNome}</strong> para mais informações, se precisar.
+            </div>
+            {avisoCancelamentoMotoboy.motoboyTel && (
+              <div style={{display:"flex",gap:8,marginBottom:10}}>
+                <a href={`https://wa.me/55${avisoCancelamentoMotoboy.motoboyTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                  style={{flex:1,padding:"12px",borderRadius:10,background:"#10b981",color:"#fff",fontWeight:800,fontSize:14,textDecoration:"none"}}>
+                  💬 WhatsApp
+                </a>
+                <a href={`tel:${avisoCancelamentoMotoboy.motoboyTel.replace(/\D/g,"")}`}
+                  style={{flex:1,padding:"12px",borderRadius:10,background:"#3b82f6",color:"#fff",fontWeight:800,fontSize:14,textDecoration:"none"}}>
+                  📱 Ligar
+                </a>
+              </div>
+            )}
+            <button onClick={()=>setAvisoCancelamentoMotoboy(null)}
+              style={{width:"100%",padding:"12px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Suporte no rodapé */}
       <div style={{maxWidth:900,margin:"0 auto",padding:"0 20px 30px"}}>
         <a href={`https://wa.me/${SUPORTE_TEL}?text=Olá, sou empresário no MotoFast e preciso de suporte`}

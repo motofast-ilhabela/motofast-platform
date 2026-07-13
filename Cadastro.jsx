@@ -161,7 +161,7 @@ function TermosExpandiveis({ tipo }) {
     { titulo: "CLÁUSULA 2 — DO OBJETO", itens: ["A Plataforma disponibiliza sistema digital de intermediação de entregas.", "Atua exclusivamente como INTERMEDIADORA tecnológica.", "Não se responsabiliza pela qualidade dos produtos entregues."] },
     { titulo: "CLÁUSULA 3 — PLANOS E MENSALIDADE", itens: ["PLANO SEMANAL — R$ 95,00/semana:", "• Pagamento toda segunda-feira;", "• Bloqueio na terça às 09h em caso de não pagamento.", "PLANO MENSAL — R$ 380,00/mês:", "• Pagamento no dia de vencimento escolhido;", "• Bloqueio no dia seguinte às 09h em caso de não pagamento.", "TAXAS POR ENTREGA: pagas conforme plano diário ou semanal."] },
     { titulo: "CLÁUSULA 4 — BLOQUEIO POR INADIMPLÊNCIA", itens: ["O não pagamento nos prazos resulta em BLOQUEIO automático.", "Durante o bloqueio, novos pedidos não poderão ser solicitados.", "Desbloqueio somente após regularização integral dos valores."] },
-    { titulo: "CLÁUSULA 5 — RESPONSABILIDADE DO ESTABELECIMENTO", itens: ["O Estabelecimento é responsável por:", "• Fornecer endereço e informações corretas nos pedidos;", "• Disponibilizar mercadoria em perfeitas condições;", "• Disponibilizar maquininha ou troco conforme pagamento;", "• Qualidade e integridade dos produtos entregues."] },
+    { titulo: "CLÁUSULA 5 — RESPONSABILIDADE DO ESTABELECIMENTO", itens: ["O Estabelecimento é responsável por:", "• Fornecer endereço e informações corretas nos pedidos;", "• Disponibilizar mercadoria em perfeitas condições;", "• Disponibilizar maquininha ou troco conforme pagamento;", "• Qualidade e integridade dos produtos entregues.", "• Manter o horário de funcionamento informado no cadastro sempre atualizado."] },
     { titulo: "CLÁUSULA 6 — ISENÇÃO DA PLATAFORMA", itens: ["A MotoFast NÃO SE RESPONSABILIZA por:", "• Acidentes ou danos durante as entregas;", "• Atrasos por trânsito ou clima;", "• Qualidade dos produtos entregues;", "• Indisponibilidade temporária de motoboys."] },
     { titulo: "CLÁUSULA 7 — PERÍODO GRATUITO", itens: ["A Plataforma pode conceder período gratuito conforme acordado.", "Ao término, cobrança inicia automaticamente.", "O não pagamento após o período gratuito resulta em bloqueio."] },
     { titulo: "CLÁUSULA 8 — OBRIGAÇÕES", itens: ["• Efetuar pagamentos nos prazos;", "• Tratar motoboys com respeito;", "• Manter dados de contato atualizados;", "• Não usar a plataforma para fins ilegais."] },
@@ -192,7 +192,7 @@ function CadastroEmpresario({ onVoltar, onSucesso }) {
   const [verTermos, setVerTermos] = useState(false);
   const [form, setForm] = useState({
     // Empresa
-    nomeEstab:"", cnpj:"", enderecoEstab:"", bairro:"", tel:"",
+    nomeEstab:"", cnpj:"", enderecoEstab:"", bairro:"", tel:"", horarioFuncionamento:"",
     // Dono
     nomeDono:"", cpfDono:"", rgDono:"", whatsappDono:"",
     // Sócio (opcional)
@@ -210,6 +210,7 @@ function CadastroEmpresario({ onVoltar, onSucesso }) {
     if (!form.enderecoEstab.trim()) e.enderecoEstab = "Campo obrigatório";
     if (!form.bairro.trim()) e.bairro = "Campo obrigatório";
     if (!form.tel.trim()) e.tel = "Campo obrigatório";
+    if (!form.horarioFuncionamento.trim()) e.horarioFuncionamento = "Campo obrigatório";
     setErros(e);
     return Object.keys(e).length===0;
   }
@@ -265,6 +266,7 @@ function CadastroEmpresario({ onVoltar, onSucesso }) {
       endereco_estabelecimento: form.enderecoEstab,
       bairro: form.bairro,
       telefone: form.tel,
+      horario_funcionamento: form.horarioFuncionamento,
       nome_dono: form.nomeDono,
       tel_dono: form.whatsappDono,
       nome_socio: form.nomeSocio || null,
@@ -316,6 +318,7 @@ function CadastroEmpresario({ onVoltar, onSucesso }) {
           </div>
           <Inp label="Endereço completo" obrigatorio value={form.enderecoEstab} onChange={v=>set("enderecoEstab",v)} placeholder="Ex: Rua da Padroeira, 45" erro={erros.enderecoEstab}/>
           <Inp label="Bairro" obrigatorio value={form.bairro} onChange={v=>set("bairro",v)} placeholder="Ex: Vila, Perequê, Feiticeira..." erro={erros.bairro}/>
+          <Inp label="🕐 Horário de funcionamento" obrigatorio value={form.horarioFuncionamento} onChange={v=>set("horarioFuncionamento",v)} placeholder="Ex: 08:00 às 18:00" hint="Assim os motoboys sabem quando seu estabelecimento está aberto para pedidos" erro={erros.horarioFuncionamento}/>
           <Btn onClick={avancar} full>Próximo →</Btn>
         </div>
       )}
@@ -632,7 +635,7 @@ function ModalTermos({ tipo, onFechar }) {
     { titulo: "CLÁUSULA 2 — DO OBJETO", itens: ["A Plataforma disponibiliza sistema digital de intermediação de entregas.", "A Plataforma atua exclusivamente como INTERMEDIADORA tecnológica.", "Não se responsabiliza pela qualidade dos produtos entregues."] },
     { titulo: "CLÁUSULA 3 — PLANOS E MENSALIDADE", itens: ["PLANO SEMANAL — R$ 95,00/semana:", "• Pagamento toda segunda-feira;", "• Bloqueio na terça às 09h em caso de não pagamento.", "PLANO MENSAL — R$ 380,00/mês:", "• Pagamento no dia de vencimento escolhido;", "• Bloqueio no dia seguinte às 09h em caso de não pagamento.", "TAXAS POR ENTREGA: pagas conforme plano diário ou semanal."] },
     { titulo: "CLÁUSULA 4 — BLOQUEIO POR INADIMPLÊNCIA", itens: ["O não pagamento nos prazos resulta em BLOQUEIO automático.", "Durante o bloqueio, novos pedidos não poderão ser solicitados.", "Desbloqueio somente após regularização integral dos valores."] },
-    { titulo: "CLÁUSULA 5 — RESPONSABILIDADE DO ESTABELECIMENTO", itens: ["O Estabelecimento é responsável por:", "• Fornecer endereço e informações corretas nos pedidos;", "• Disponibilizar mercadoria em perfeitas condições;", "• Disponibilizar maquininha ou troco conforme pagamento;", "• Prejuízos por informações incorretas nos pedidos;", "• Qualidade e integridade dos produtos entregues."] },
+    { titulo: "CLÁUSULA 5 — RESPONSABILIDADE DO ESTABELECIMENTO", itens: ["O Estabelecimento é responsável por:", "• Fornecer endereço e informações corretas nos pedidos;", "• Disponibilizar mercadoria em perfeitas condições;", "• Disponibilizar maquininha ou troco conforme pagamento;", "• Prejuízos por informações incorretas nos pedidos;", "• Qualidade e integridade dos produtos entregues;", "• Manter o horário de funcionamento informado no cadastro sempre atualizado."] },
     { titulo: "CLÁUSULA 6 — ISENÇÃO DA PLATAFORMA", itens: ["A MotoFast NÃO SE RESPONSABILIZA por:", "• Acidentes ou danos durante as entregas;", "• Atrasos por trânsito ou clima;", "• Qualidade dos produtos entregues;", "• Indisponibilidade temporária de motoboys;", "• Pedidos não aceitos por nenhum motoboy disponível."] },
     { titulo: "CLÁUSULA 7 — PERÍODO GRATUITO", itens: ["A Plataforma pode conceder período gratuito conforme acordado no cadastro.", "Ao término, cobrança inicia automaticamente.", "O não pagamento após o período gratuito resulta em bloqueio."] },
     { titulo: "CLÁUSULA 8 — OBRIGAÇÕES", itens: ["• Efetuar pagamentos nos prazos;", "• Tratar motoboys com respeito;", "• Manter dados de contato atualizados;", "• Não usar a plataforma para fins ilegais."] },
@@ -905,3 +908,4 @@ export default function AppCadastro() {
     </div>
   );
 }
+
