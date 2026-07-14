@@ -1447,6 +1447,20 @@ export default function AppEmpresario() {
     return ()=>timers.forEach(t=>clearTimeout(t));
   },[pedidos]);
 
+  // Dispara notificação push de verdade (via servidor), que chega mesmo com o app do motoboy fechado.
+  // Não trava o fluxo se falhar — a publicação do pedido já aconteceu de qualquer forma.
+  async function notificarMotoboysPush(titulo, corpo) {
+    try {
+      await fetch("/api/notificar-motoboys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ titulo, corpo }),
+      });
+    } catch (e) {
+      console.log("Erro ao notificar motoboys via push:", e);
+    }
+  }
+
   async function publicarPedido(pedido) {
     if (!empresa?.id) return;
 
@@ -1481,6 +1495,12 @@ export default function AppEmpresario() {
       valor_troco: pedido.troco,
       status: "aguardando",
     }).select().single();
+
+    // Notifica os motoboys via push real — chega mesmo com o app fechado
+    notificarMotoboysPush(
+      "🏍️ Novo Pedido MotoFast!",
+      `Entrega em ${pedido.bairro} — R$${pedido.taxaMotoboy || pedido.taxa}`
+    );
 
     // Recarrega a lista do banco, garantindo consistência total
     await carregarPedidos(empresa.id);
@@ -1617,6 +1637,10 @@ export default function AppEmpresario() {
                   status: "aguardando",
                 });
                 if (error) { console.error("Erro ao reenviar pedido:", error); return; }
+                notificarMotoboysPush(
+                  "🏍️ Novo Pedido MotoFast!",
+                  `Entrega em ${avisoSemMotoboy.bairro} — R$${avisoSemMotoboy.taxaMotoboy || avisoSemMotoboy.taxa}`
+                );
                 await carregarPedidos(empresa.id);
                 setAvisoSemMotoboy(null);
                 setAba("ativos");

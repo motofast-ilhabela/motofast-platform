@@ -833,6 +833,14 @@ export default function AppMotoboy() {
         if (error) console.error("Erro ao buscar motoboy:", error);
         if (mb) {
           setMotoboyId(mb.id);
+          // Associa este dispositivo ao ID do motoboy no OneSignal (não trava se falhar)
+          try {
+            if (window.OneSignalDeferred) {
+              window.OneSignalDeferred.push(async function(OneSignal) {
+                await OneSignal.login(String(mb.id));
+              });
+            }
+          } catch(e) { console.log("OneSignal login:", e); }
           setMotoboy({
             id: mb.id,
             nomeCompleto: mb.nome_completo,
