@@ -2006,8 +2006,20 @@ export default function App() {
     setLoadingPendentes(false);
   }
 
-  async function aprovar(tipo, id) {
+  async function aprovar(tipo, id, userId) {
     await supabase.from(tipo).update({aprovado:true, aprovado_em: new Date().toISOString()}).eq("id", id);
+    // Confirma o e-mail automaticamente no Supabase — a pessoa não precisa clicar em link nenhum
+    if (userId) {
+      try {
+        await fetch("/api/confirmar-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId }),
+        });
+      } catch (e) {
+        console.log("Erro ao confirmar e-mail automaticamente:", e);
+      }
+    }
     carregarPendentes();
     carregarTudo();
   }
@@ -2120,7 +2132,7 @@ export default function App() {
                         <div style={{color:"#4b5563",fontSize:11,marginTop:6}}>Cadastrado em: {new Date(mb.criado_em).toLocaleString("pt-BR")}</div>
                       </div>
                       <div style={{display:"flex",flexDirection:"column",gap:8,minWidth:120}}>
-                        <button onClick={()=>aprovar("motoboys",mb.id)} style={{padding:"10px 16px",borderRadius:8,background:"#10b981",border:"none",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>✅ Aprovar</button>
+                        <button onClick={()=>aprovar("motoboys",mb.id,mb.user_id)} style={{padding:"10px 16px",borderRadius:8,background:"#10b981",border:"none",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>✅ Aprovar</button>
                         <button onClick={()=>{setModalRejeitar({tipo:"motoboys",id:mb.id,nome:mb.nome_completo});setMotivoRejeicao("");}} style={{padding:"10px 16px",borderRadius:8,background:"#1f2937",border:"1px solid #ef4444",color:"#f87171",fontWeight:700,fontSize:13,cursor:"pointer"}}>❌ Rejeitar</button>
                       </div>
                     </div>
@@ -2146,7 +2158,7 @@ export default function App() {
                         <div style={{color:"#4b5563",fontSize:11,marginTop:6}}>Cadastrado em: {new Date(emp.criado_em).toLocaleString("pt-BR")}</div>
                       </div>
                       <div style={{display:"flex",flexDirection:"column",gap:8,minWidth:120}}>
-                        <button onClick={()=>aprovar("empresarios",emp.id)} style={{padding:"10px 16px",borderRadius:8,background:"#10b981",border:"none",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>✅ Aprovar</button>
+                        <button onClick={()=>aprovar("empresarios",emp.id,emp.user_id)} style={{padding:"10px 16px",borderRadius:8,background:"#10b981",border:"none",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>✅ Aprovar</button>
                         <button onClick={()=>{setModalRejeitar({tipo:"empresarios",id:emp.id,nome:emp.nome});setMotivoRejeicao("");}} style={{padding:"10px 16px",borderRadius:8,background:"#1f2937",border:"1px solid #ef4444",color:"#f87171",fontWeight:700,fontSize:13,cursor:"pointer"}}>❌ Rejeitar</button>
                       </div>
                     </div>
