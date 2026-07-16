@@ -567,6 +567,33 @@ function Motoboys({ motoboys, setMotoboys, historico }) {
               </div>
             ))}
           </div>
+          <Card style={{marginBottom:14,padding:"14px 16px",background:"#0f172a"}}>
+            <SectionTitle>🔑 Redefinir Senha</SectionTitle>
+            <div style={{color:"#6b7280",fontSize:11,marginBottom:8}}>Use quando o motoboy esquecer a senha e não conseguir entrar</div>
+            <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+              <input
+                type="text"
+                placeholder="Nova senha (mín. 6 caracteres)"
+                id={`nova-senha-mb-${mbDet.id}`}
+                style={{background:"#111827",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"9px 12px",flex:1,minWidth:180,fontSize:14,outline:"none"}}
+              />
+              <button onClick={async()=>{
+                const campo = document.getElementById(`nova-senha-mb-${mbDet.id}`);
+                const senha = campo.value.trim();
+                if (senha.length < 6) { alert("A senha precisa ter pelo menos 6 caracteres."); return; }
+                const resp = await fetch("/api/redefinir-senha", {
+                  method: "POST",
+                  headers: {"Content-Type":"application/json"},
+                  body: JSON.stringify({ userId: mbDet.userId, novaSenha: senha }),
+                });
+                const data = await resp.json();
+                if (data.success) { alert("✅ Senha redefinida! Já pode passar essa senha nova pro motoboy."); campo.value=""; }
+                else { alert("❌ Erro ao redefinir: " + (data.error||"desconhecido")); }
+              }} style={{padding:"9px 16px",borderRadius:8,background:"#7c3aed",border:"none",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+                🔑 Redefinir
+              </button>
+            </div>
+          </Card>
           <div style={{display:"flex",gap:8}}>
             <Btn cor={mbDet.ativo?"cinza":"amarelo"} onClick={()=>{bloquear(mbDet.id);setDetalhe(null);}}>{mbDet.ativo?"🔒 Bloquear":"🔓 Desbloquear"}</Btn>
             <Btn cor="perigo" onClick={()=>{setDetalhe(null);setModalBanir(mbDet.id);setMotivo("");}}>⛔ Banir</Btn>
@@ -985,6 +1012,33 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                   </button>
                 </div>
                 {!empSel.horarioFuncionamento && <div style={{color:"#fbbf24",fontSize:11,marginTop:6}}>⚠️ Sem horário cadastrado — preencha para seu controle interno</div>}
+              </Card>
+              <Card style={{marginBottom:14,padding:"14px 16px",background:"#0f172a"}}>
+                <SectionTitle>🔑 Redefinir Senha</SectionTitle>
+                <div style={{color:"#6b7280",fontSize:11,marginBottom:8}}>Use quando o empresário esquecer a senha e não conseguir entrar</div>
+                <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                  <input
+                    type="text"
+                    placeholder="Nova senha (mín. 6 caracteres)"
+                    id={`nova-senha-emp-${empSel.id}`}
+                    style={{background:"#111827",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"9px 12px",flex:1,minWidth:180,fontSize:14,outline:"none"}}
+                  />
+                  <button onClick={async()=>{
+                    const campo = document.getElementById(`nova-senha-emp-${empSel.id}`);
+                    const senha = campo.value.trim();
+                    if (senha.length < 6) { alert("A senha precisa ter pelo menos 6 caracteres."); return; }
+                    const resp = await fetch("/api/redefinir-senha", {
+                      method: "POST",
+                      headers: {"Content-Type":"application/json"},
+                      body: JSON.stringify({ userId: empSel.userId, novaSenha: senha }),
+                    });
+                    const data = await resp.json();
+                    if (data.success) { alert("✅ Senha redefinida! Já pode passar essa senha nova pro empresário."); campo.value=""; }
+                    else { alert("❌ Erro ao redefinir: " + (data.error||"desconhecido")); }
+                  }} style={{padding:"9px 16px",borderRadius:8,background:"#7c3aed",border:"none",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+                    🔑 Redefinir
+                  </button>
+                </div>
               </Card>
               <Card style={{padding:"14px 16px",background:"#0f172a"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -1831,6 +1885,7 @@ export default function App() {
 
       const mbs = (mbRes.data || []).map(m => ({
         id: m.id,
+        userId: m.user_id || null,
         nomeCompleto: m.nome_completo || "",
         tel: m.telefone || "",
         pix: m.pix || "",
@@ -1850,6 +1905,7 @@ export default function App() {
 
       const emps = (empRes.data || []).map(e => ({
         id: e.id,
+        userId: e.user_id || null,
         nome: e.nome || "",
         tel: e.telefone || "",
         bairro: e.bairro || "",
