@@ -47,6 +47,18 @@ function dataLocalISO(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+// Normaliza nome de bairro para comparação: remove acentos, deixa minúsculo,
+// e remove TODOS os espaços (não só as pontas). Assim "Água Branca", "agua branca",
+// "AGUA  BRANCA", "aguabranca" são todos reconhecidos como o MESMO bairro,
+// não importa como o empresário digitou na hora de cadastrar o cliente.
+function normalizarBairro(str) {
+  return (str || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, "");
+}
+
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
 function Card({ children, style={} }) {
   return <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"18px 22px",...style}}>{children}</div>;
@@ -126,13 +138,16 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
     : [];
 
   // Endereço e bairro efetivos
-  const taxasEmpresa = (empresa && empresa.taxas && Object.keys(empresa.taxas).length>0) ? empresa.taxas : EMPRESA.taxas;
+  // NUNCA usar dados de exemplo como fallback — se o estabelecimento não tiver taxa
+  // cadastrada, tem que ficar vazio mesmo, pra não emprestar taxa de outro lugar.
+  const taxasEmpresa = (empresa && empresa.taxas) ? empresa.taxas : {};
   const bairrosDisponiveis = Object.keys(taxasEmpresa);
   const endEfetivo = (clienteSel && modoEndereco==="salvo") ? {rua:clienteSel.rua,num:clienteSel.num,bairro:clienteSel.bairro,ref:clienteSel.ref} : novoEndereco;
   const bairroFinal = endEfetivo.bairro || bairrosDisponiveis[0] || "";
   // Busca taxa ignorando maiúsculas/minúsculas e espaços extras no início/fim
-  const taxaKey = Object.keys(taxasEmpresa).find(k => k.trim().toLowerCase() === bairroFinal.trim().toLowerCase()) || bairroFinal;
-  const taxa = taxasEmpresa[taxaKey] || {e:0,m:0};
+  const taxaKey = Object.keys(taxasEmpresa).find(k => normalizarBairro(k) === normalizarBairro(bairroFinal)) || bairroFinal;
+  const taxaEncontrada = Object.prototype.hasOwnProperty.call(taxasEmpresa, taxaKey);
+  const taxa = taxaEncontrada ? taxasEmpresa[taxaKey] : null;
   const nomeEfetivo = clienteSel ? clienteSel.nome : clienteNome;
   const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
 
@@ -326,6 +341,14 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         </div>
       )}
 
+      {/* Aviso — bairro sem taxa cadastrada. NUNCA publica pedido sem taxa definida. */}
+      {!taxa && (buscaCliente.length>=2) && bairroFinal && (
+        <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:10,padding:"14px 18px",marginBottom:14}}>
+          <div style={{color:"#f87171",fontWeight:800,fontSize:14,marginBottom:4}}>⚠️ Taxa não configurada para "{bairroFinal}"</div>
+          <div style={{color:"#9ca3af",fontSize:12}}>Esse bairro ainda não tem taxa cadastrada no seu perfil. Fale com o suporte MotoFast antes de publicar esse pedido.</div>
+        </div>
+      )}
+
       {/* Pagamento */}
       {buscaCliente.length>=2 && (
         <Card style={{marginBottom:14}}>
@@ -402,7 +425,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         </div>
       )}
 
-      <Btn onClick={publicar} full disabled={buscaCliente.length<2 || !empresa?.id}>
+      <Btn onClick={publicar} full disabled={buscaCliente.length<2 || !empresa?.id || !taxa}>
         🚀 Publicar Pedido
       </Btn>
     </div>
@@ -414,7 +437,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   const [buscaCliente, setBuscaCliente] = useState("");
   const [clienteSel, setClienteSel] = useState(null);
   const [modoEndereco, setModoEndereco] = useState("salvo");
-  const taxasEmpresa2 = (empresa && empresa.taxas && Object.keys(empresa.taxas).length>0) ? empresa.taxas : EMPRESA.taxas;
+  const taxasEmpresa2 = (empresa && empresa.taxas) ? empresa.taxas : {};
   const bairrosDisponiveis2 = Object.keys(taxasEmpresa2);
   const [novoEndereco, setNovoEndereco] = useState({rua:"",num:"",bairro:bairrosDisponiveis2[0]||"",ref:""});
   const [clienteNome, setClienteNome] = useState("");
@@ -431,8 +454,9 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
 
   const endEfetivo = (clienteSel && modoEndereco==="salvo") ? {rua:clienteSel.rua,num:clienteSel.num,bairro:clienteSel.bairro,ref:clienteSel.ref} : novoEndereco;
   const bairroFinal = endEfetivo.bairro || bairrosDisponiveis2[0] || "";
-  const taxaKey2 = Object.keys(taxasEmpresa2).find(k => k.trim().toLowerCase() === bairroFinal.trim().toLowerCase()) || bairroFinal;
-  const taxa = taxasEmpresa2[taxaKey2] || {e:0,m:0};
+  const taxaKey2 = Object.keys(taxasEmpresa2).find(k => normalizarBairro(k) === normalizarBairro(bairroFinal)) || bairroFinal;
+  const taxaEncontrada2 = Object.prototype.hasOwnProperty.call(taxasEmpresa2, taxaKey2);
+  const taxa = taxaEncontrada2 ? taxasEmpresa2[taxaKey2] : null;
   const nomeEfetivo = clienteSel ? clienteSel.nome : clienteNome;
   const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
 
@@ -595,6 +619,14 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         </div>
       )}
 
+      {/* Aviso — bairro sem taxa cadastrada. NUNCA adiciona pedido sem taxa definida. */}
+      {!taxa && buscaCliente.length>=2 && bairroFinal && (
+        <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:10,padding:"14px 18px",marginBottom:14}}>
+          <div style={{color:"#f87171",fontWeight:800,fontSize:14,marginBottom:4}}>⚠️ Taxa não configurada para "{bairroFinal}"</div>
+          <div style={{color:"#9ca3af",fontSize:12}}>Esse bairro ainda não tem taxa cadastrada no seu perfil. Fale com o suporte MotoFast antes de adicionar esse pedido.</div>
+        </div>
+      )}
+
       {/* Pagamento */}
       {buscaCliente.length>=2 && (
         <Card style={{marginBottom:14}}>
@@ -660,7 +692,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
       )}
 
-      <Btn onClick={salvar} full disabled={buscaCliente.length<2 || !empresa?.id}>
+      <Btn onClick={salvar} full disabled={buscaCliente.length<2 || !empresa?.id || !taxa}>
         ➕ Adicionar à Corrida
       </Btn>
     </Overlay>
