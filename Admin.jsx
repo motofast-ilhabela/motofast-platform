@@ -264,7 +264,11 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   async function marcarPago(mbId) {
     const idsParaMarcar = fonte.filter(e=>e.motoboyId===mbId).map(e=>e.id);
     if (idsParaMarcar.length===0) return;
-    await supabase.from("pedidos").update({ repasse_pago: true }).in("id", idsParaMarcar);
+    const { error } = await supabase.from("pedidos").update({ repasse_pago: true }).in("id", idsParaMarcar);
+    if (error) {
+      alert("❌ Erro ao salvar no banco de dados: " + error.message + "\n\nO pagamento NÃO foi registrado. Tenta de novo.");
+      return;
+    }
     setHistorico(p=>p.map(e=>idsParaMarcar.includes(e.id)?{...e,repasePago:true}:e));
   }
 
@@ -808,14 +812,22 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
 
   async function marcarMensalidade(id) {
     const agoraISO = new Date().toISOString();
-    await supabase.from("empresarios").update({mensalidade_paga:true, mensalidade_paga_em: agoraISO, bloqueado:false}).eq("id", id);
+    const { error } = await supabase.from("empresarios").update({mensalidade_paga:true, mensalidade_paga_em: agoraISO, bloqueado:false}).eq("id", id);
+    if (error) {
+      alert("❌ Erro ao salvar no banco de dados: " + error.message + "\n\nA mensalidade NÃO foi marcada como paga. Tenta de novo.");
+      return;
+    }
     setEmpresarios(p=>p.map(e=>e.id===id?{...e,mensalidadePaga:true,mensalidadePagaEm:agoraISO,bloqueado:false}:e));
   }
 
   async function toggleDia(id, dia) {
     const emp = empresarios.find(e=>e.id===id);
     const novoPag = {...(emp.pagamentosDiarios||{}),[dia]:!emp.pagamentosDiarios?.[dia]};
-    await supabase.from("empresarios").update({pagamentos_diarios: novoPag}).eq("id", id);
+    const { error } = await supabase.from("empresarios").update({pagamentos_diarios: novoPag}).eq("id", id);
+    if (error) {
+      alert("❌ Erro ao salvar o pagamento no banco de dados: " + error.message + "\n\nA marcação NÃO foi salva. Tenta de novo, e se continuar dando erro, me avisa.");
+      return;
+    }
     setEmpresarios(p=>p.map(e=>e.id===id?{...e,pagamentosDiarios:novoPag}:e));
   }
 
