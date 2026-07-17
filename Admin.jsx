@@ -214,6 +214,9 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   };
   const sem = sems[semana];
   const fonte = historico.filter(e=>e.status==="Entregue"&&e.mes===sem.mes&&e.semana===sem.s&&(semana==="atual"?!e.repasePago:e.repasePago));
+  // Fonte separada pros estabelecimentos — não depende de o motoboy já ter sido pago ou não.
+  // Cobrança do estabelecimento e pagamento do motoboy são duas coisas independentes.
+  const fonteTodasSemana = historico.filter(e=>e.status==="Entregue"&&e.mes===sem.mes&&e.semana===sem.s);
 
   const dadosMb = motoboys.filter(m=>!m.banido).map(mb=>{
     const ents = fonte.filter(e=>e.motoboyId===mb.id);
@@ -221,10 +224,19 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   }).filter(m=>m.qtd>0).sort((a,b)=>b.total-a.total);
 
   const dadosEmp = empresarios.map(emp=>{
-    const ents = fonte.filter(e=>e.empresarioId===emp.id);
+    const ents = fonteTodasSemana.filter(e=>e.empresarioId===emp.id);
     const valorPlano = emp.planoPagamento==="mensal" ? MENSALIDADE*4 : MENSALIDADE;
     const mens = (!emp.planoGratis&&!emp.mensalidadePaga)?valorPlano:0;
-    const taxas = +ents.reduce((s,e)=>s+e.taxaEmpresario,0).toFixed(2);
+    // Taxas de entrega ainda pendentes de cobrança do estabelecimento — checa se
+    // ele realmente já pagou (na tela de Pagamentos), não se o motoboy já recebeu.
+    let taxas;
+    if (emp.planoPagamentoMotoboy === "diario") {
+      taxas = ents.filter(e => !emp.pagamentosDiarios?.[e.data]).reduce((s,e)=>s+e.taxaEmpresario,0);
+    } else {
+      // Plano semanal — a taxa já vem junto com a cobrança semanal (mensalidade_paga)
+      taxas = (!emp.planoGratis && !emp.mensalidadePaga) ? ents.reduce((s,e)=>s+e.taxaEmpresario,0) : 0;
+    }
+    taxas = +taxas.toFixed(2);
     return {...emp, ents, qtd:ents.length, taxas, mensalidade:mens, total:+(taxas+mens).toFixed(2)};
   }).filter(e=>e.qtd>0||e.mensalidade>0);
 
@@ -232,8 +244,13 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   const totalPagar  = dadosMb.reduce((s,m)=>s+m.total,0).toFixed(2);
   const lucro = (totalCobrar-totalPagar).toFixed(2);
 
-  function marcarPago(mbId) {
-    setHistorico(p=>p.map(e=>e.motoboyId===mbId&&e.mes===sem.mes&&e.semana===sem.s?{...e,repasePago:true}:e));
+  // Marca como pago pro motoboy — salva de verdade no banco (antes só mudava na tela
+  // e sumia se atualizasse a página).
+  async function marcarPago(mbId) {
+    const idsParaMarcar = fonte.filter(e=>e.motoboyId===mbId).map(e=>e.id);
+    if (idsParaMarcar.length===0) return;
+    await supabase.from("pedidos").update({ repasse_pago: true }).in("id", idsParaMarcar);
+    setHistorico(p=>p.map(e=>idsParaMarcar.includes(e.id)?{...e,repasePago:true}:e));
   }
 
   const mbDet = detalhe ? motoboys.find(m=>m.id===detalhe) : null;
@@ -306,29 +323,64 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
         <div style={{flex:1,minWidth:280}}>
           <div style={{color:"#60a5fa",fontWeight:800,fontSize:14,marginBottom:10}}>📋 Cobrar dos Empresários</div>
           {dadosEmp.length===0 && <Card><div style={{color:"#4b5563"}}>Nenhum a cobrar.</div></Card>}
-          {dadosEmp.map(emp=>(
-            <Card key={emp.id} style={{marginBottom:10}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-                <div>
-                  <div style={{color:"#f9fafb",fontWeight:700,fontSize:14}}>{emp.nome}</div>
-                  <div style={{color:"#6b7280",fontSize:12}}>📞 {emp.tel} · {emp.qtd} entrega{emp.qtd!==1?"s":""}</div>
-                </div>
-                <div style={{color:"#60a5fa",fontWeight:900,fontSize:22}}>R${emp.total}</div>
-              </div>
-              <div style={{background:"#0f172a",borderRadius:8,padding:"8px 12px"}}>
-                <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
-                  <span style={{color:"#9ca3af"}}>Taxas de entrega</span>
-                  <span style={{color:"#60a5fa",fontWeight:700}}>R${emp.taxas}</span>
-                </div>
-                {emp.mensalidade>0 && (
-                  <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
-                    <span style={{color:"#ef4444"}}>Mensalidade pendente</span>
-                    <span style={{color:"#ef4444",fontWeight:700}}>R${emp.mensalidade}</span>
+
+          {dadosEmp.filter(e=>e.planoPagamentoMotoboy==="diario").length>0 && (
+            <div style={{marginBottom:16}}>
+              <div style={{color:"#fbbf24",fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>📅 Pagamento diário — cobrar agora</div>
+              {dadosEmp.filter(e=>e.planoPagamentoMotoboy==="diario").map(emp=>(
+                <Card key={emp.id} style={{marginBottom:10,border:"1px solid #f59e0b44"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                    <div>
+                      <div style={{color:"#f9fafb",fontWeight:700,fontSize:14}}>{emp.nome}</div>
+                      <div style={{color:"#6b7280",fontSize:12}}>📞 {emp.tel} · {emp.qtd} entrega{emp.qtd!==1?"s":""}</div>
+                    </div>
+                    <div style={{color:"#60a5fa",fontWeight:900,fontSize:22}}>R${emp.total}</div>
                   </div>
-                )}
-              </div>
-            </Card>
-          ))}
+                  <div style={{background:"#0f172a",borderRadius:8,padding:"8px 12px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+                      <span style={{color:"#9ca3af"}}>Taxas de entrega (dias não pagos)</span>
+                      <span style={{color:"#60a5fa",fontWeight:700}}>R${emp.taxas}</span>
+                    </div>
+                    {emp.mensalidade>0 && (
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
+                        <span style={{color:"#ef4444"}}>Mensalidade pendente</span>
+                        <span style={{color:"#ef4444",fontWeight:700}}>R${emp.mensalidade}</span>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {dadosEmp.filter(e=>e.planoPagamentoMotoboy==="semanal").length>0 && (
+            <div>
+              <div style={{color:"#60a5fa",fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>🗓️ Pagamento semanal — vence segunda</div>
+              {dadosEmp.filter(e=>e.planoPagamentoMotoboy==="semanal").map(emp=>(
+                <Card key={emp.id} style={{marginBottom:10,border:"1px solid #3b82f644"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                    <div>
+                      <div style={{color:"#f9fafb",fontWeight:700,fontSize:14}}>{emp.nome}</div>
+                      <div style={{color:"#6b7280",fontSize:12}}>📞 {emp.tel} · {emp.qtd} entrega{emp.qtd!==1?"s":""}</div>
+                    </div>
+                    <div style={{color:"#60a5fa",fontWeight:900,fontSize:22}}>R${emp.total}</div>
+                  </div>
+                  <div style={{background:"#0f172a",borderRadius:8,padding:"8px 12px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
+                      <span style={{color:"#9ca3af"}}>Taxas de entrega (semana toda)</span>
+                      <span style={{color:"#60a5fa",fontWeight:700}}>R${emp.taxas}</span>
+                    </div>
+                    {emp.mensalidade>0 && (
+                      <div style={{display:"flex",justifyContent:"space-between",fontSize:12}}>
+                        <span style={{color:"#ef4444"}}>Mensalidade pendente</span>
+                        <span style={{color:"#ef4444",fontWeight:700}}>R${emp.mensalidade}</span>
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
