@@ -678,7 +678,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   });
   const DNOMES = {};
   DIAS.forEach(d=>{
-    const dia = new Date(d);
+    const dia = new Date(d+"T12:00:00");
     DNOMES[d] = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][dia.getDay()];
   });
 
