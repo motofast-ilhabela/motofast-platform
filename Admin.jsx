@@ -289,7 +289,7 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
               <div style={{background:"#0f172a",borderRadius:8,padding:"8px 12px",marginBottom:10}}>
                 {mb.ents.slice(0,4).map(e=>(
                   <div key={e.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
-                    <span style={{color:"#9ca3af"}}>{e.data} · {e.bairro}</span>
+                    <span style={{color:"#9ca3af"}}>{e.data.split("-").reverse().join("/")} · {e.bairro}</span>
                     <span style={{color:"#34d399",fontWeight:700}}>R${e.taxaMotoboy}</span>
                   </div>
                 ))}
@@ -350,7 +350,7 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
             <tbody>
               {entsDet.map(e=>(
                 <tr key={e.id} style={{borderBottom:"1px solid #1a2035"}}>
-                  <td style={{padding:"8px 12px",color:"#9ca3af",fontSize:12}}>{e.data}</td>
+                  <td style={{padding:"8px 12px",color:"#9ca3af",fontSize:12}}>{e.data.split("-").reverse().join("/")}</td>
                   <td style={{padding:"8px 12px",color:"#fbbf24",fontSize:12,fontWeight:700}}>🏍️ {e.horaSaida||"—"}</td>
                   <td style={{padding:"8px 12px",color:"#34d399",fontSize:12,fontWeight:700}}>✅ {e.horaEntrega||"—"}</td>
                   <td style={{padding:"8px 12px",color:"#f9fafb"}}>{e.clienteNome}</td>
@@ -1630,7 +1630,7 @@ function Historico({ historico, motoboys, empresarios }) {
                 const entregue = e.status==="Entregue";
                 return (
                   <tr key={e.id} style={{borderBottom:"1px solid #1a2035"}} onMouseOver={ev=>ev.currentTarget.style.background="#0f172a"} onMouseOut={ev=>ev.currentTarget.style.background="transparent"}>
-                    <td style={{padding:"8px 12px",color:"#9ca3af",whiteSpace:"nowrap"}}>{e.data}</td>
+                    <td style={{padding:"8px 12px",color:"#9ca3af",whiteSpace:"nowrap"}}>{e.data.split("-").reverse().join("/")}</td>
                     <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700,whiteSpace:"nowrap"}}>🏍️ {e.horaSaida||"—"}</td>
                     <td style={{padding:"8px 12px",color:"#34d399",fontWeight:700,whiteSpace:"nowrap"}}>✅ {e.horaEntrega||"—"}</td>
                     <td style={{padding:"8px 12px",color:"#f9fafb",fontWeight:600}}>{e.clienteNome}</td>
