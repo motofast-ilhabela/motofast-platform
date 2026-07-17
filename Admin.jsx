@@ -1312,7 +1312,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                       <div key={dia} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:bg,border:`1px solid ${brd}`,borderRadius:8,padding:"9px 14px",marginBottom:6}}>
                         <div style={{display:"flex",alignItems:"center",gap:10}}>
                           <span style={{color:"#9ca3af",fontSize:12,minWidth:28}}>{DNOMES[dia]}</span>
-                          <span style={{color:"#6b7280",fontSize:12}}>{dia}</span>
+                          <span style={{color:"#6b7280",fontSize:12}}>{dia.split("-").reverse().join("/")}</span>
                           <span style={{color:"#60a5fa",fontWeight:700}}>R${total}</span>
                           <span style={{color:"#4b5563",fontSize:11}}>{ents.length} ent.</span>
                         </div>
