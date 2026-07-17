@@ -143,7 +143,9 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   const taxasEmpresa = (empresa && empresa.taxas) ? empresa.taxas : {};
   const bairrosDisponiveis = Object.keys(taxasEmpresa);
   const endEfetivo = (clienteSel && modoEndereco==="salvo") ? {rua:clienteSel.rua,num:clienteSel.num,bairro:clienteSel.bairro,ref:clienteSel.ref} : novoEndereco;
-  const bairroFinal = endEfetivo.bairro || bairrosDisponiveis[0] || "";
+  // NUNCA pré-seleciona um bairro sozinho — só calcula taxa depois que a pessoa
+  // realmente escolhe um bairro (evita mostrar taxa de um bairro que ninguém pediu).
+  const bairroFinal = endEfetivo.bairro || "";
   // Busca taxa ignorando maiúsculas/minúsculas e espaços extras no início/fim
   const taxaKey = Object.keys(taxasEmpresa).find(k => normalizarBairro(k) === normalizarBairro(bairroFinal)) || bairroFinal;
   const taxaEncontrada = Object.prototype.hasOwnProperty.call(taxasEmpresa, taxaKey);
@@ -314,6 +316,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
             </div>
           </div>
           <SelInput label="Bairro *" value={novoEndereco.bairro} onChange={v=>setNovoEndereco(p=>({...p,bairro:v}))}>
+            <option value="">Selecione o bairro</option>
             {bairrosDisponiveis.map(b=><option key={b}>{b}</option>)}
           </SelInput>
           {/* Preview + taxa */}
@@ -439,7 +442,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   const [modoEndereco, setModoEndereco] = useState("salvo");
   const taxasEmpresa2 = (empresa && empresa.taxas) ? empresa.taxas : {};
   const bairrosDisponiveis2 = Object.keys(taxasEmpresa2);
-  const [novoEndereco, setNovoEndereco] = useState({rua:"",num:"",bairro:bairrosDisponiveis2[0]||"",ref:""});
+  const [novoEndereco, setNovoEndereco] = useState({rua:"",num:"",bairro:"",ref:""});
   const [clienteNome, setClienteNome] = useState("");
   const [clienteTel, setClienteTel] = useState("");
   const [pagamento, setPagamento] = useState("pix");
@@ -453,7 +456,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
     : [];
 
   const endEfetivo = (clienteSel && modoEndereco==="salvo") ? {rua:clienteSel.rua,num:clienteSel.num,bairro:clienteSel.bairro,ref:clienteSel.ref} : novoEndereco;
-  const bairroFinal = endEfetivo.bairro || bairrosDisponiveis2[0] || "";
+  const bairroFinal = endEfetivo.bairro || "";
   const taxaKey2 = Object.keys(taxasEmpresa2).find(k => normalizarBairro(k) === normalizarBairro(bairroFinal)) || bairroFinal;
   const taxaEncontrada2 = Object.prototype.hasOwnProperty.call(taxasEmpresa2, taxaKey2);
   const taxa = taxaEncontrada2 ? taxasEmpresa2[taxaKey2] : null;
@@ -600,6 +603,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
             <div style={{flex:1}}><Inp label="Número *" value={novoEndereco.num} onChange={v=>setNovoEndereco(p=>({...p,num:v}))} placeholder="123"/></div>
           </div>
           <SelInput label="Bairro *" value={novoEndereco.bairro} onChange={v=>setNovoEndereco(p=>({...p,bairro:v}))}>
+            <option value="">Selecione o bairro</option>
             {bairrosDisponiveis2.map(b=><option key={b}>{b}</option>)}
           </SelInput>
           {novoEndereco.rua && novoEndereco.num && (
