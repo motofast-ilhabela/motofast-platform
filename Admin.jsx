@@ -238,15 +238,18 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
     const ents = fonteTodasSemana.filter(e=>e.empresarioId===emp.id);
     const mensalidadePagaEstaSemana = pagoNestaSemana(emp.mensalidadePagaEm);
     const valorPlano = emp.planoPagamento==="mensal" ? MENSALIDADE*4 : MENSALIDADE;
+    // O período GRÁTIS só isenta a MENSALIDADE da plataforma (a comissão do MotoFast).
+    // Nunca isenta a taxa de entrega — o motoboy tem que ser pago sempre, período de teste ou não.
     const mens = (!emp.planoGratis && !mensalidadePagaEstaSemana) ? valorPlano : 0;
     // Taxas de entrega ainda pendentes de cobrança do estabelecimento — checa se
-    // ele realmente já pagou (na tela de Pagamentos) NESTA semana, não se o motoboy já recebeu.
+    // ele realmente já pagou (na tela de Pagamentos) NESTA semana, não se o motoboy já recebeu,
+    // e NÃO depende de plano grátis (taxa nunca é grátis, é o dinheiro do motoboy).
     let taxas;
     if (emp.planoPagamentoMotoboy === "diario") {
       taxas = ents.filter(e => !emp.pagamentosDiarios?.[e.data]).reduce((s,e)=>s+e.taxaEmpresario,0);
     } else {
-      // Plano semanal — a taxa já vem junto com a cobrança semanal (mensalidade paga NESTA semana)
-      taxas = (!emp.planoGratis && !mensalidadePagaEstaSemana) ? ents.reduce((s,e)=>s+e.taxaEmpresario,0) : 0;
+      // Plano semanal — a taxa é cobrada junto com o pagamento semanal (mensalidade_paga NESTA semana)
+      taxas = (!mensalidadePagaEstaSemana) ? ents.reduce((s,e)=>s+e.taxaEmpresario,0) : 0;
     }
     taxas = +taxas.toFixed(2);
     return {...emp, ents, qtd:ents.length, taxas, mensalidade:mens, total:+(taxas+mens).toFixed(2)};
