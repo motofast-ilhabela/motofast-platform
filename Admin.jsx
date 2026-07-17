@@ -218,6 +218,17 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   // Cobrança do estabelecimento e pagamento do motoboy são duas coisas independentes.
   const fonteTodasSemana = historico.filter(e=>e.status==="Entregue"&&e.mes===sem.mes&&e.semana===sem.s);
 
+  // Verifica se um pagamento (mensalidade/taxa semanal) foi feito DENTRO da semana que está sendo
+  // vista agora — não só "alguma vez marcado true". Isso evita que uma marcação antiga (de uma
+  // semana passada) fique "presa" como paga pra sempre, escondendo cobranças de semanas novas.
+  function pagoNestaSemana(dataPagoISO) {
+    if (!dataPagoISO) return false;
+    const dt = new Date(dataPagoISO);
+    const diaDoMes = dt.getDate();
+    const semDoPagamento = diaDoMes<=7?1:diaDoMes<=14?2:diaDoMes<=21?3:4;
+    return (dt.getMonth()+1)===sem.mes && semDoPagamento===sem.s;
+  }
+
   const dadosMb = motoboys.filter(m=>!m.banido).map(mb=>{
     const ents = fonte.filter(e=>e.motoboyId===mb.id);
     return {...mb, ents, qtd:ents.length, total:+ents.reduce((s,e)=>s+e.taxaMotoboy,0).toFixed(2)};
@@ -225,16 +236,17 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
 
   const dadosEmp = empresarios.map(emp=>{
     const ents = fonteTodasSemana.filter(e=>e.empresarioId===emp.id);
+    const mensalidadePagaEstaSemana = pagoNestaSemana(emp.mensalidadePagaEm);
     const valorPlano = emp.planoPagamento==="mensal" ? MENSALIDADE*4 : MENSALIDADE;
-    const mens = (!emp.planoGratis&&!emp.mensalidadePaga)?valorPlano:0;
+    const mens = (!emp.planoGratis && !mensalidadePagaEstaSemana) ? valorPlano : 0;
     // Taxas de entrega ainda pendentes de cobrança do estabelecimento — checa se
-    // ele realmente já pagou (na tela de Pagamentos), não se o motoboy já recebeu.
+    // ele realmente já pagou (na tela de Pagamentos) NESTA semana, não se o motoboy já recebeu.
     let taxas;
     if (emp.planoPagamentoMotoboy === "diario") {
       taxas = ents.filter(e => !emp.pagamentosDiarios?.[e.data]).reduce((s,e)=>s+e.taxaEmpresario,0);
     } else {
-      // Plano semanal — a taxa já vem junto com a cobrança semanal (mensalidade_paga)
-      taxas = (!emp.planoGratis && !emp.mensalidadePaga) ? ents.reduce((s,e)=>s+e.taxaEmpresario,0) : 0;
+      // Plano semanal — a taxa já vem junto com a cobrança semanal (mensalidade paga NESTA semana)
+      taxas = (!emp.planoGratis && !mensalidadePagaEstaSemana) ? ents.reduce((s,e)=>s+e.taxaEmpresario,0) : 0;
     }
     taxas = +taxas.toFixed(2);
     return {...emp, ents, qtd:ents.length, taxas, mensalidade:mens, total:+(taxas+mens).toFixed(2)};
@@ -242,7 +254,10 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
 
   const totalCobrar = dadosEmp.reduce((s,e)=>s+e.total,0).toFixed(2);
   const totalPagar  = dadosMb.reduce((s,m)=>s+m.total,0).toFixed(2);
-  const lucro = (totalCobrar-totalPagar).toFixed(2);
+  // Lucro real da semana: soma direta das entregas (o que o cliente pagou menos o que o
+  // motoboy recebeu), sem depender de quem já cobrou/pagou ou não — assim nunca fica
+  // negativo à toa só porque uma cobrança ainda está pendente.
+  const lucro = fonteTodasSemana.reduce((s,e)=>s+e.lucro,0).toFixed(2);
 
   // Marca como pago pro motoboy — salva de verdade no banco (antes só mudava na tela
   // e sumia se atualizasse a página).
@@ -792,8 +807,9 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   }
 
   async function marcarMensalidade(id) {
-    await supabase.from("empresarios").update({mensalidade_paga:true, bloqueado:false}).eq("id", id);
-    setEmpresarios(p=>p.map(e=>e.id===id?{...e,mensalidadePaga:true,bloqueado:false}:e));
+    const agoraISO = new Date().toISOString();
+    await supabase.from("empresarios").update({mensalidade_paga:true, mensalidade_paga_em: agoraISO, bloqueado:false}).eq("id", id);
+    setEmpresarios(p=>p.map(e=>e.id===id?{...e,mensalidadePaga:true,mensalidadePagaEm:agoraISO,bloqueado:false}:e));
   }
 
   async function toggleDia(id, dia) {
@@ -1282,8 +1298,8 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                       <div style={{display:"flex",gap:6}}>
                         <Tag label="✅ Paga" cor="#34d399"/>
                         <Btn small cor="perigo" onClick={async()=>{
-                          await supabase.from("empresarios").update({mensalidade_paga:false}).eq("id",empSel.id);
-                          setEmpresarios(p=>p.map(e=>e.id===empSel.id?{...e,mensalidadePaga:false}:e));
+                          await supabase.from("empresarios").update({mensalidade_paga:false, mensalidade_paga_em:null}).eq("id",empSel.id);
+                          setEmpresarios(p=>p.map(e=>e.id===empSel.id?{...e,mensalidadePaga:false,mensalidadePagaEm:null}:e));
                         }}>❌ Desmarcar</Btn>
                       </div>
                     ) : (
@@ -1973,6 +1989,7 @@ export default function App() {
         dataFimGratis: e.data_fim_gratis || null,
         bloqueado: e.bloqueado || false,
         mensalidadePaga: e.mensalidade_paga !== false,
+        mensalidadePagaEm: e.mensalidade_paga_em || null,
         pagamentosDiarios: e.pagamentos_diarios || {},
         taxas: e.taxas || {},
         diaVencimento: e.dia_vencimento || new Date(e.criado_em||Date.now()).getDate(),
