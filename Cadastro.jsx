@@ -394,7 +394,7 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
   const [form, setForm] = useState({
     // Pessoal
     nomeCompleto:"", cpf:"", rg:"", nascimento:"",
-    nomePai:"", nomeMae:"", endereco:"",
+    nomePai:"", nomeMae:"", endereco:"", bairro:"",
     // Contato
     tel:"", pix:"",
     // Acesso
@@ -412,6 +412,7 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
     if (!form.nomePai.trim()) e.nomePai = "Campo obrigatório";
     if (!form.nomeMae.trim()) e.nomeMae = "Campo obrigatório";
     if (!form.endereco.trim()) e.endereco = "Campo obrigatório";
+    if (!form.bairro.trim()) e.bairro = "Campo obrigatório";
     setErros(e);
     return Object.keys(e).length===0;
   }
@@ -475,6 +476,7 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
       nome_pai: form.nomePai,
       nome_mae: form.nomeMae,
       endereco: form.endereco,
+      bairro_base: form.bairro,
       telefone: form.tel,
       pix: form.pix,
     });
@@ -527,6 +529,7 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
           <Inp label="Nome completo do pai" obrigatorio value={form.nomePai} onChange={v=>set("nomePai",v)} placeholder="Ex: José Antônio Silva" erro={erros.nomePai}/>
           <Inp label="Nome completo da mãe" obrigatorio value={form.nomeMae} onChange={v=>set("nomeMae",v)} placeholder="Ex: Maria das Graças Silva" erro={erros.nomeMae}/>
           <Inp label="Endereço residencial completo" obrigatorio value={form.endereco} onChange={v=>set("endereco",v)} placeholder="Ex: Rua das Flores, 45, Perequê, Ilhabela/SP" erro={erros.endereco}/>
+          <Inp label="Bairro onde mora" obrigatorio value={form.bairro} onChange={v=>set("bairro",v)} placeholder="Ex: Perequê, Vila, Barra Velha..." hint="Ajuda a saber de qual região você costuma sair pra trabalhar" erro={erros.bairro}/>
           <Btn onClick={avancar} full>Próximo →</Btn>
         </div>
       )}

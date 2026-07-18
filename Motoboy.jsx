@@ -1,6 +1,17 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient.js";
 
+// Retorna a data no formato AAAA-MM-DD usando o horário LOCAL (Brasil), nunca UTC.
+// IMPORTANTE: nunca usar date.toISOString().split("T")[0] para pegar "a data de hoje"
+// ou "a data de um pedido" — toISOString() converte pra UTC e desloca a data em
+// horários próximos da meia-noite (ex: pedido às 21h no Brasil vira dia seguinte em UTC).
+function dataLocalISO(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth()+1).padStart(2,"0");
+  const d = String(date.getDate()).padStart(2,"0");
+  return `${y}-${m}-${d}`;
+}
+
 // ─── DADOS DO MOTOBOY (carregados do banco) ──────────────────────────────────
 const MOTOBOY_VAZIO = {
   id: null,
@@ -568,6 +579,7 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
 // ─── GANHOS ───────────────────────────────────────────────────────────────────
 function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy }) {
   const [verTudo, setVerTudo] = useState(false);
+  const [dataSelecionada, setDataSelecionada] = useState(dataLocalISO());
 
   const agora = new Date();
   const mesAtual = agora.getMonth() + 1;
@@ -576,6 +588,8 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
   const nomesMes = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
   const nomeMesAtual = nomesMes[mesAtual-1];
   const hojeStr = agora.toLocaleDateString("pt-BR");
+  const hojeISO = dataLocalISO();
+  const ontemISO = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return dataLocalISO(d); })();
 
   const entregues = historico.filter(e=>e.status==="Entregue");
 
@@ -586,6 +600,24 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
   // Total histórico
   const totalHistorico = entregues.reduce((s,e)=>s+e.taxa,0).toFixed(2);
   const totalEntregas  = entregues.length;
+
+  // Taxa do dia selecionado (Hoje/Ontem/qualquer data) — usa TODAS as entregas do dia,
+  // independente de já ter sido paga ou não. Assim, mesmo depois do motoboy ser pago
+  // na terça, ele sempre consegue conferir quanto fez em qualquer dia específico,
+  // pra bater com o comprovante do PIX e não sobrar dúvida.
+  const entregasDoDia = entregues.filter(e=>e.dataISO===dataSelecionada);
+  const totalDoDia = entregasDoDia.reduce((s,e)=>s+e.taxa,0).toFixed(2);
+  const dataDoDiaFmt = new Date(dataSelecionada+"T12:00:00").toLocaleDateString("pt-BR");
+
+  // Resumo agrupado por dia — todos os dias que tiveram entrega, mais recente primeiro,
+  // sempre visível independente de status de pagamento.
+  const porDia = {};
+  entregues.forEach(e=>{
+    if (!porDia[e.dataISO]) porDia[e.dataISO] = {qtd:0, total:0};
+    porDia[e.dataISO].qtd++;
+    porDia[e.dataISO].total += e.taxa;
+  });
+  const diasOrdenados = Object.entries(porDia).sort((a,b)=>b[0].localeCompare(a[0]));
 
   // Este mês — dinâmico
   const mesMes = entregues.filter(e=>e.mes===mesAtual);
@@ -615,6 +647,55 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
         <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>💰 Meus Ganhos</div>
         <div style={{color:"#6b7280",fontSize:13}}>Repasse toda terça-feira</div>
       </div>
+
+      {/* Taxa por dia — sempre visível, mesmo depois de já ter sido pago */}
+      <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:12,padding:"16px 18px",marginBottom:14}}>
+        <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📅 Taxas por dia</div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+          <input type="date" value={dataSelecionada} onChange={e=>setDataSelecionada(e.target.value)}
+            style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"9px 12px",fontSize:14,outline:"none"}}/>
+          <button onClick={()=>setDataSelecionada(hojeISO)} style={{padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:12,background:dataSelecionada===hojeISO?"#0d3d2e":"#1f2937",border:dataSelecionada===hojeISO?"1px solid #34d399":"1px solid #374151",color:dataSelecionada===hojeISO?"#34d399":"#9ca3af"}}>Hoje</button>
+          <button onClick={()=>setDataSelecionada(ontemISO)} style={{padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:12,background:dataSelecionada===ontemISO?"#0d3d2e":"#1f2937",border:dataSelecionada===ontemISO?"1px solid #34d399":"1px solid #374151",color:dataSelecionada===ontemISO?"#34d399":"#9ca3af"}}>Ontem</button>
+        </div>
+        <div style={{color:"#6b7280",fontSize:12,marginBottom:4}}>{dataDoDiaFmt}</div>
+        <div style={{color:"#34d399",fontSize:32,fontWeight:900}}>R${totalDoDia}</div>
+        <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasDoDia.length} entrega{entregasDoDia.length!==1?"s":""} nesta data{entregasDoDia.length>0 && (entregasDoDia.every(e=>e.repasePago) ? " · ✅ já paga" : " · ⏳ ainda não paga")}</div>
+      </div>
+
+      {/* Lista de entregas do dia selecionado */}
+      {entregasDoDia.length>0 && (
+        <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"14px 16px",marginBottom:14}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Entregas de {dataDoDiaFmt}</div>
+          {entregasDoDia.map(e=>(
+            <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #1f2937"}}>
+              <div>
+                <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
+                <span style={{color:"#34d399",fontSize:12,marginLeft:8}}>{e.bairro}</span>
+              </div>
+              <span style={{color:"#fbbf24",fontWeight:700,fontSize:13}}>R${e.taxa}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Dias anteriores — nunca some, mesmo depois de pago */}
+      {diasOrdenados.length>0 && (
+        <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📆 Dias anteriores</div>
+          {diasOrdenados.slice(0,30).map(([data,info])=>{
+            const dFmt = new Date(data+"T12:00:00").toLocaleDateString("pt-BR");
+            const sel = data===dataSelecionada;
+            return (
+              <div key={data} onClick={()=>setDataSelecionada(data)}
+                style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:sel?"#0d3d2e":"#0f172a",border:sel?"1px solid #34d399":"1px solid #1f2937",borderRadius:8,padding:"9px 14px",marginBottom:6,cursor:"pointer"}}>
+                <span style={{color:sel?"#34d399":"#d1d5db",fontSize:13,fontWeight:600}}>{dFmt}</span>
+                <span style={{color:"#6b7280",fontSize:12}}>{info.qtd} entrega{info.qtd!==1?"s":""}</span>
+                <span style={{color:"#fbbf24",fontWeight:700,fontSize:14}}>R${info.total.toFixed(2)}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Cards de ganhos */}
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
@@ -901,9 +982,10 @@ export default function AppMotoboy() {
                 taxa: p.taxa_motoboy || p.taxa,
                 status: p.status==="entregue" ? "Entregue" : "Cancelada",
                 data: d.toLocaleDateString("pt-BR"),
+                dataISO: dataLocalISO(d),
                 hora: d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
                 semana: Math.ceil(d.getDate()/7), mes: d.getMonth()+1,
-                repasePago: false,
+                repasePago: p.repasse_pago || false,
               };
             }));
           }
