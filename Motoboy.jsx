@@ -613,9 +613,10 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
   // sempre visível independente de status de pagamento.
   const porDia = {};
   entregues.forEach(e=>{
-    if (!porDia[e.dataISO]) porDia[e.dataISO] = {qtd:0, total:0};
+    if (!porDia[e.dataISO]) porDia[e.dataISO] = {qtd:0, total:0, todasPagas:true};
     porDia[e.dataISO].qtd++;
     porDia[e.dataISO].total += e.taxa;
+    if (!e.repasePago) porDia[e.dataISO].todasPagas = false;
   });
   const diasOrdenados = Object.entries(porDia).sort((a,b)=>b[0].localeCompare(a[0]));
 
@@ -687,10 +688,11 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
             const sel = data===dataSelecionada;
             return (
               <div key={data} onClick={()=>setDataSelecionada(data)}
-                style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:sel?"#0d3d2e":"#0f172a",border:sel?"1px solid #34d399":"1px solid #1f2937",borderRadius:8,padding:"9px 14px",marginBottom:6,cursor:"pointer"}}>
+                style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:sel?"#0d3d2e":"#0f172a",border:sel?"1px solid #34d399":"1px solid #1f2937",borderRadius:8,padding:"9px 14px",marginBottom:6,cursor:"pointer",flexWrap:"wrap",gap:6}}>
                 <span style={{color:sel?"#34d399":"#d1d5db",fontSize:13,fontWeight:600}}>{dFmt}</span>
                 <span style={{color:"#6b7280",fontSize:12}}>{info.qtd} entrega{info.qtd!==1?"s":""}</span>
                 <span style={{color:"#fbbf24",fontWeight:700,fontSize:14}}>R${info.total.toFixed(2)}</span>
+                <span style={{background:info.todasPagas?"#0d3d2e":"#3d2a00",color:info.todasPagas?"#34d399":"#fbbf24",padding:"2px 8px",borderRadius:10,fontSize:10,fontWeight:700,border:`1px solid ${info.todasPagas?"#34d399":"#fbbf24"}44`}}>{info.todasPagas?"✅ Pago":"⏳ Pendente"}</span>
               </div>
             );
           })}
