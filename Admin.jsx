@@ -237,6 +237,7 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   const dadosEmp = empresarios.map(emp=>{
     const ents = fonteTodasSemana.filter(e=>e.empresarioId===emp.id);
     const mensalidadePagaEstaSemana = pagoNestaSemana(emp.mensalidadePagaEm);
+    const taxaSemanalPagaEstaSemana = pagoNestaSemana(emp.taxaSemanalPagaEm);
     const valorPlano = emp.planoPagamento==="mensal" ? MENSALIDADE*4 : MENSALIDADE;
     // O período GRÁTIS só isenta a MENSALIDADE da plataforma (a comissão do MotoFast).
     // Nunca isenta a taxa de entrega — o motoboy tem que ser pago sempre, período de teste ou não.
@@ -248,8 +249,8 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
     if (emp.planoPagamentoMotoboy === "diario") {
       taxas = ents.filter(e => !emp.pagamentosDiarios?.[e.data]).reduce((s,e)=>s+e.taxaEmpresario,0);
     } else {
-      // Plano semanal — a taxa é cobrada junto com o pagamento semanal (mensalidade_paga NESTA semana)
-      taxas = (!mensalidadePagaEstaSemana) ? ents.reduce((s,e)=>s+e.taxaEmpresario,0) : 0;
+      // Plano semanal — controle SEPARADO da mensalidade (taxa é dinheiro do motoboy, nunca se mistura com a comissão)
+      taxas = (!taxaSemanalPagaEstaSemana) ? ents.reduce((s,e)=>s+e.taxaEmpresario,0) : 0;
     }
     taxas = +taxas.toFixed(2);
     return {...emp, ents, qtd:ents.length, taxas, mensalidade:mens, total:+(taxas+mens).toFixed(2)};
@@ -821,6 +822,18 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
       return;
     }
     setEmpresarios(p=>p.map(e=>e.id===id?{...e,mensalidadePaga:true,mensalidadePagaEm:agoraISO,bloqueado:false}:e));
+  }
+
+  // Separado da mensalidade/comissão de propósito — taxa de entrega é dinheiro do motoboy,
+  // nunca deve se misturar com a comissão da plataforma.
+  async function marcarTaxaSemanalPaga(id) {
+    const agoraISO = new Date().toISOString();
+    const { error } = await supabase.from("empresarios").update({taxa_semanal_paga:true, taxa_semanal_paga_em: agoraISO}).eq("id", id);
+    if (error) {
+      alert("❌ Erro ao salvar no banco de dados: " + error.message + "\n\nA taxa semanal NÃO foi marcada como paga. Tenta de novo.");
+      return;
+    }
+    setEmpresarios(p=>p.map(e=>e.id===id?{...e,taxaSemanalPaga:true,taxaSemanalPagaEm:agoraISO}:e));
   }
 
   async function toggleDia(id, dia) {
@@ -1410,6 +1423,35 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                   })}
                 </div>
               )}
+              {empSel.planoPagamentoMotoboy==="semanal" && (()=>{
+                const agora3 = new Date();
+                const mes3 = agora3.getMonth()+1;
+                const dia3 = agora3.getDate();
+                const sem3 = dia3<=7?1:dia3<=14?2:dia3<=21?3:4;
+                const entsSemana = historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue"&&e.mes===mes3&&e.semana===sem3);
+                const totalSemanaTaxa = entsSemana.reduce((s,e)=>s+e.taxaEmpresario,0).toFixed(2);
+                const pagoEstaSemanaTaxa = (()=>{
+                  if (!empSel.taxaSemanalPagaEm) return false;
+                  const dt = new Date(empSel.taxaSemanalPagaEm);
+                  const diaP = dt.getDate();
+                  const semP = diaP<=7?1:diaP<=14?2:diaP<=21?3:4;
+                  return (dt.getMonth()+1)===mes3 && semP===sem3;
+                })();
+                return (
+                  <Card style={{padding:"14px 16px",background:"#0f172a"}}>
+                    <div style={{color:"#9ca3af",fontWeight:700,fontSize:13,marginBottom:6}}>💵 Taxa semanal (dinheiro do motoboy — separado da comissão)</div>
+                    <div style={{color:"#6b7280",fontSize:12,marginBottom:10}}>{entsSemana.length} entrega(s) essa semana · Total: <strong style={{color:"#60a5fa"}}>R${totalSemanaTaxa}</strong></div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                      {pagoEstaSemanaTaxa ? <Tag label="✅ Pago essa semana" cor="#34d399"/> : <Tag label="⚠️ Pendente" cor="#fbbf24"/>}
+                      {!pagoEstaSemanaTaxa && (
+                        <button onClick={()=>marcarTaxaSemanalPaga(empSel.id)} style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:6,color:"#34d399",padding:"6px 14px",cursor:"pointer",fontWeight:700,fontSize:12}}>
+                          ✅ Marcar taxa semanal como paga
+                        </button>
+                      )}
+                    </div>
+                  </Card>
+                );
+              })()}
             </div>
           )}
 
@@ -2005,6 +2047,8 @@ export default function App() {
         bloqueado: e.bloqueado || false,
         mensalidadePaga: e.mensalidade_paga !== false,
         mensalidadePagaEm: e.mensalidade_paga_em || null,
+        taxaSemanalPaga: e.taxa_semanal_paga || false,
+        taxaSemanalPagaEm: e.taxa_semanal_paga_em || null,
         pagamentosDiarios: e.pagamentos_diarios || {},
         taxas: e.taxas || {},
         diaVencimento: e.dia_vencimento || new Date(e.criado_em||Date.now()).getDate(),
