@@ -254,7 +254,9 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
     }
     taxas = +taxas.toFixed(2);
     return {...emp, ents, qtd:ents.length, taxas, mensalidade:mens, total:+(taxas+mens).toFixed(2)};
-  }).filter(e=>e.qtd>0||e.mensalidade>0);
+  }).filter(e=>e.qtd>0||e.mensalidade>0||!e.planoGratis);
+  const dadosEmpPendentes = dadosEmp.filter(e=>e.total>0);
+  const dadosEmpEmDia = dadosEmp.filter(e=>e.total===0&&(e.qtd>0||!e.planoGratis));
 
   const totalCobrar = dadosEmp.reduce((s,e)=>s+e.total,0).toFixed(2);
   const totalPagar  = dadosMb.reduce((s,m)=>s+m.total,0).toFixed(2);
@@ -345,12 +347,12 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
         </div>
         <div style={{flex:1,minWidth:280}}>
           <div style={{color:"#60a5fa",fontWeight:800,fontSize:14,marginBottom:10}}>📋 Cobrar dos Empresários</div>
-          {dadosEmp.length===0 && <Card><div style={{color:"#4b5563"}}>Nenhum a cobrar.</div></Card>}
+          {dadosEmpPendentes.length===0 && dadosEmpEmDia.length===0 && <Card><div style={{color:"#4b5563"}}>Nenhum a cobrar.</div></Card>}
 
-          {dadosEmp.filter(e=>e.planoPagamentoMotoboy==="diario").length>0 && (
+          {dadosEmpPendentes.filter(e=>e.planoPagamentoMotoboy==="diario").length>0 && (
             <div style={{marginBottom:16}}>
               <div style={{color:"#fbbf24",fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>📅 Pagamento diário — cobrar agora</div>
-              {dadosEmp.filter(e=>e.planoPagamentoMotoboy==="diario").map(emp=>(
+              {dadosEmpPendentes.filter(e=>e.planoPagamentoMotoboy==="diario").map(emp=>(
                 <Card key={emp.id} style={{marginBottom:10,border:"1px solid #f59e0b44"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                     <div>
@@ -376,10 +378,10 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
             </div>
           )}
 
-          {dadosEmp.filter(e=>e.planoPagamentoMotoboy==="semanal").length>0 && (
-            <div>
+          {dadosEmpPendentes.filter(e=>e.planoPagamentoMotoboy==="semanal").length>0 && (
+            <div style={{marginBottom:16}}>
               <div style={{color:"#60a5fa",fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>🗓️ Pagamento semanal — vence segunda</div>
-              {dadosEmp.filter(e=>e.planoPagamentoMotoboy==="semanal").map(emp=>(
+              {dadosEmpPendentes.filter(e=>e.planoPagamentoMotoboy==="semanal").map(emp=>(
                 <Card key={emp.id} style={{marginBottom:10,border:"1px solid #3b82f644"}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                     <div>
@@ -401,6 +403,21 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
                     )}
                   </div>
                 </Card>
+              ))}
+            </div>
+          )}
+
+          {dadosEmpEmDia.length>0 && (
+            <div>
+              <div style={{color:"#34d399",fontWeight:700,fontSize:12,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>✅ Tudo em dia — já pagaram</div>
+              {dadosEmpEmDia.map(emp=>(
+                <div key={emp.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0d3d2e",border:"1px solid #34d39944",borderRadius:8,padding:"9px 14px",marginBottom:6}}>
+                  <div>
+                    <span style={{color:"#f9fafb",fontWeight:600,fontSize:13}}>{emp.nome}</span>
+                    <span style={{color:"#6b7280",fontSize:11,marginLeft:8}}>{emp.planoPagamentoMotoboy==="diario"?"📅 diário":"🗓️ semanal"} · {emp.qtd} entrega{emp.qtd!==1?"s":""}</span>
+                  </div>
+                  <Tag label="✅ Pago" cor="#34d399"/>
+                </div>
               ))}
             </div>
           )}
