@@ -574,7 +574,7 @@ function Motoboys({ motoboys, setMotoboys, historico }) {
               <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
                 <div style={{textAlign:"center"}}><div style={{color:"#60a5fa",fontWeight:800,fontSize:18}}>{entsMes.length}</div><div style={{color:"#6b7280",fontSize:10}}>entregas este mês</div></div>
                 <div style={{textAlign:"center"}}><div style={{color:"#fbbf24",fontWeight:800,fontSize:16}}>R${saldo}</div><div style={{color:"#6b7280",fontSize:10}}>a receber esta semana</div></div>
-                <div style={{textAlign:"center"}}><div style={{color:"#a78bfa",fontWeight:700,fontSize:14}}>R${totalHist}</div><div style={{color:"#6b7280",fontSize:10}}>total a pagar a ele</div></div>
+                <div style={{textAlign:"center"}}><div style={{color:"#a78bfa",fontWeight:700,fontSize:14}}>R${totalHist}</div><div style={{color:"#6b7280",fontSize:10}}>total faturado (histórico)</div></div>
                 <div style={{textAlign:"center"}}><div style={{color:"#34d399",fontWeight:700,fontSize:14}}>{ents.length}</div><div style={{color:"#6b7280",fontSize:10}}>entregas desde o início</div></div>
               </div>
               <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
@@ -629,8 +629,9 @@ function Motoboys({ motoboys, setMotoboys, historico }) {
           </Card>
           <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap"}}>
             <Stat label="Total entregas" value={histDet.length} sub="desde o início" cor="#60a5fa"/>
-            <Stat label="Total já pago a ele" value={`R$${histDet.reduce((s,e)=>s+e.taxaMotoboy,0).toFixed(2)}`} sub="histórico acumulado" cor="#fbbf24"/>
-            <Stat label="A receber esta semana" value={`R$${histDet.filter(e=>!e.repasePago).reduce((s,e)=>s+e.taxaMotoboy,0).toFixed(2)}`} cor="#34d399"/>
+            <Stat label="Total faturado por ele" value={`R$${histDet.reduce((s,e)=>s+e.taxaMotoboy,0).toFixed(2)}`} sub="todas as entregas, pago ou não" cor="#a78bfa"/>
+            <Stat label="Total JÁ PAGO de verdade" value={`R$${histDet.filter(e=>e.repasePago).reduce((s,e)=>s+e.taxaMotoboy,0).toFixed(2)}`} sub="só o que você já marcou como pago" cor="#34d399"/>
+            <Stat label="A receber esta semana" value={`R$${histDet.filter(e=>!e.repasePago).reduce((s,e)=>s+e.taxaMotoboy,0).toFixed(2)}`} cor="#fbbf24"/>
           </div>
           <SectionTitle>Histórico Mensal</SectionTitle>
           <div style={{display:"flex",border:"1px solid #1f2937",borderRadius:10,overflow:"hidden",marginBottom:14}}>
