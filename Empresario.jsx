@@ -1359,6 +1359,7 @@ export default function AppEmpresario() {
             taxas: emp.taxas || {},
             mensalidadePaga: emp.mensalidade_paga,
             bloqueado: emp.bloqueado,
+            motivoBloqueio: emp.motivo_bloqueio || null,
           });
 
           // Carrega clientes desse empresário
@@ -1562,8 +1563,10 @@ export default function AppEmpresario() {
           <div style={{fontSize:64,marginBottom:16}}>⛔</div>
           <div style={{color:"#ef4444",fontWeight:900,fontSize:24,marginBottom:12}}>Conta Bloqueada</div>
           <div style={{background:"#1a0a0a",border:"1px solid #ef4444",borderRadius:12,padding:"20px 24px",marginBottom:20}}>
-            <div style={{color:"#f87171",fontSize:15,lineHeight:1.7,marginBottom:12}}>
-              Sua conta foi bloqueada por <strong>mensalidade pendente</strong>.
+            <div style={{color:"#f87171",fontSize:15,lineHeight:1.7,marginBottom:12,textAlign:"left"}}>
+              {empresa.motivoBloqueio
+                ? empresa.motivoBloqueio
+                : <>Sua conta foi bloqueada por <strong>mensalidade pendente</strong>.</>}
             </div>
             <div style={{color:"#9ca3af",fontSize:13,lineHeight:1.6}}>
               Para reativar sua conta, entre em contato com o MotoFast e regularize seu pagamento.
