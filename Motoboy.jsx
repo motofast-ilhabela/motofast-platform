@@ -12,6 +12,18 @@ function dataLocalISO(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+// Retorna a data (AAAA-MM-DD) da segunda-feira que inicia a semana REAL (segunda a domingo)
+// que contém a data informada. Usado pra agrupar "semana" de forma consistente com o
+// calendário de verdade, sem depender de blocos fixos de 7 dias do mês.
+function segundaFeiraDaSemana(date) {
+  const d = new Date(date);
+  const diaSemana = d.getDay(); // 0=domingo, 1=segunda, ..., 6=sábado
+  const diff = diaSemana === 0 ? -6 : 1 - diaSemana;
+  const segunda = new Date(d);
+  segunda.setDate(d.getDate() + diff);
+  return dataLocalISO(segunda);
+}
+
 // ─── DADOS DO MOTOBOY (carregados do banco) ──────────────────────────────────
 const MOTOBOY_VAZIO = {
   id: null,
@@ -583,8 +595,7 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
 
   const agora = new Date();
   const mesAtual = agora.getMonth() + 1;
-  const diaAtual = agora.getDate();
-  const semAtual = diaAtual<=7?1:diaAtual<=14?2:diaAtual<=21?3:diaAtual<=28?4:5;
+  const segundaAtual = segundaFeiraDaSemana(agora);
   const nomesMes = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
   const nomeMesAtual = nomesMes[mesAtual-1];
   const hojeStr = agora.toLocaleDateString("pt-BR");
@@ -593,8 +604,8 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
 
   const entregues = historico.filter(e=>e.status==="Entregue");
 
-  // Semana atual (não pago ainda) — usa mês e semana dinâmicos
-  const semanaAtual = entregues.filter(e=>e.mes===mesAtual&&e.semana===semAtual&&!e.repasePago);
+  // Semana atual (não pago ainda) — semana real, sempre segunda a domingo
+  const semanaAtual = entregues.filter(e=>e.semana===segundaAtual&&!e.repasePago);
   const saldoSemana = semanaAtual.reduce((s,e)=>s+e.taxa,0).toFixed(2);
 
   // Total histórico
@@ -986,7 +997,7 @@ export default function AppMotoboy() {
                 data: d.toLocaleDateString("pt-BR"),
                 dataISO: dataLocalISO(d),
                 hora: d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
-                semana: Math.ceil(d.getDate()/7), mes: d.getMonth()+1,
+                semana: segundaFeiraDaSemana(d), mes: d.getMonth()+1,
                 repasePago: p.repasse_pago || false,
               };
             }));
@@ -1287,10 +1298,8 @@ export default function AppMotoboy() {
   }
 
   const _agora = new Date();
-  const _mesAtual = _agora.getMonth()+1;
-  const _diaAtual = _agora.getDate();
-  const _semAtual = _diaAtual<=7?1:_diaAtual<=14?2:_diaAtual<=21?3:_diaAtual<=28?4:5;
-  const saldoSemana = historico.filter(e=>e.status==="Entregue"&&e.mes===_mesAtual&&e.semana===_semAtual&&!e.repasePago).reduce((s,e)=>s+e.taxa,0).toFixed(2);
+  const _segundaAtual = segundaFeiraDaSemana(_agora);
+  const saldoSemana = historico.filter(e=>e.status==="Entregue"&&e.semana===_segundaAtual&&!e.repasePago).reduce((s,e)=>s+e.taxa,0).toFixed(2);
 
   const ABAS = [
     {id:"home",   label:"🏠 Início"},

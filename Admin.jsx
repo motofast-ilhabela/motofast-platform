@@ -18,6 +18,19 @@ function dataLocalISO(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+// Retorna a data (AAAA-MM-DD) da segunda-feira que inicia a semana REAL (segunda a domingo)
+// que contém a data informada. Usado pra agrupar "semana" de forma consistente com o
+// calendário de verdade, sem depender de blocos fixos de 7 dias do mês (dia 1-7, 8-14...)
+// que não alinham com segunda-feira na maioria dos meses.
+function segundaFeiraDaSemana(date) {
+  const d = new Date(date);
+  const diaSemana = d.getDay(); // 0=domingo, 1=segunda, ..., 6=sábado
+  const diff = diaSemana === 0 ? -6 : 1 - diaSemana;
+  const segunda = new Date(d);
+  segunda.setDate(d.getDate() + diff);
+  return dataLocalISO(segunda);
+}
+
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
 function Card({ children, style={} }) {
   return <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"18px 22px",...style}}>{children}</div>;
@@ -202,31 +215,39 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   const [bonusDesc, setBonusDesc] = useState("");
 
   const agora = new Date();
-  const mesAtual = agora.getMonth()+1;
-  const dia = agora.getDate();
-  const semAtual = dia<=7?1:dia<=14?2:dia<=21?3:4;
-  const semAnterior = semAtual>1?semAtual-1:4;
-  const mesAnterior = semAtual>1?mesAtual:(mesAtual>1?mesAtual-1:12);
+
+  // Semana REAL — sempre segunda a domingo, identificada pela data da própria segunda-feira.
+  // Isso nunca desalinha com o calendário, nem quando a semana atravessa a virada do mês.
+  function fmtDiaMes(iso) {
+    const d = new Date(iso+"T12:00:00");
+    return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
+  }
+  const segundaAtualChave = segundaFeiraDaSemana(agora);
+  const segundaAnteriorData = new Date(segundaAtualChave+"T12:00:00");
+  segundaAnteriorData.setDate(segundaAnteriorData.getDate()-7);
+  const segundaAnteriorChave = dataLocalISO(segundaAnteriorData);
+  function labelDaSemana(chaveSegunda) {
+    const fimData = new Date(chaveSegunda+"T12:00:00");
+    fimData.setDate(fimData.getDate()+6);
+    return `Semana de ${fmtDiaMes(chaveSegunda)} a ${fmtDiaMes(dataLocalISO(fimData))}`;
+  }
 
   const sems = {
-    atual:{mes:mesAtual,s:semAtual,label:`Semana ${semAtual} — ${MESES[mesAtual-1]} ${agora.getFullYear()}`},
-    anterior:{mes:mesAnterior,s:semAnterior,label:`Semana ${semAnterior} — ${MESES[mesAnterior-1]} ${agora.getFullYear()}`}
+    atual:{s:segundaAtualChave,label:labelDaSemana(segundaAtualChave)},
+    anterior:{s:segundaAnteriorChave,label:labelDaSemana(segundaAnteriorChave)}
   };
   const sem = sems[semana];
-  const fonte = historico.filter(e=>e.status==="Entregue"&&e.mes===sem.mes&&e.semana===sem.s&&(semana==="atual"?!e.repasePago:e.repasePago));
+  const fonte = historico.filter(e=>e.status==="Entregue"&&e.semana===sem.s&&(semana==="atual"?!e.repasePago:e.repasePago));
   // Fonte separada pros estabelecimentos — não depende de o motoboy já ter sido pago ou não.
   // Cobrança do estabelecimento e pagamento do motoboy são duas coisas independentes.
-  const fonteTodasSemana = historico.filter(e=>e.status==="Entregue"&&e.mes===sem.mes&&e.semana===sem.s);
+  const fonteTodasSemana = historico.filter(e=>e.status==="Entregue"&&e.semana===sem.s);
 
   // Verifica se um pagamento (mensalidade/taxa semanal) foi feito DENTRO da semana que está sendo
   // vista agora — não só "alguma vez marcado true". Isso evita que uma marcação antiga (de uma
   // semana passada) fique "presa" como paga pra sempre, escondendo cobranças de semanas novas.
   function pagoNestaSemana(dataPagoISO) {
     if (!dataPagoISO) return false;
-    const dt = new Date(dataPagoISO);
-    const diaDoMes = dt.getDate();
-    const semDoPagamento = diaDoMes<=7?1:diaDoMes<=14?2:diaDoMes<=21?3:4;
-    return (dt.getMonth()+1)===sem.mes && semDoPagamento===sem.s;
+    return segundaFeiraDaSemana(new Date(dataPagoISO)) === sem.s;
   }
 
   const dadosMb = motoboys.filter(m=>!m.banido).map(mb=>{
@@ -898,11 +919,8 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   }
 
   function totalSemana(emp) {
-    const agora2 = new Date();
-    const mes = agora2.getMonth()+1;
-    const dia2 = agora2.getDate();
-    const sem = dia2<=7?1:dia2<=14?2:dia2<=21?3:4;
-    const ents = historico.filter(e=>e.empresarioId===emp.id&&e.status==="Entregue"&&e.mes===mes&&e.semana===sem&&!e.repasePago);
+    const segundaAtual2 = segundaFeiraDaSemana(new Date());
+    const ents = historico.filter(e=>e.empresarioId===emp.id&&e.status==="Entregue"&&e.semana===segundaAtual2&&!e.repasePago);
     const taxas = ents.reduce((s,e)=>s+e.taxaEmpresario,0);
     const valorPlano = emp.planoPagamento==="mensal" ? MENSALIDADE*4 : MENSALIDADE;
     const mens = emp.planoGratis||emp.mensalidadePaga?0:valorPlano;
@@ -1442,19 +1460,12 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                 </div>
               )}
               {empSel.planoPagamentoMotoboy==="semanal" && (()=>{
-                const agora3 = new Date();
-                const mes3 = agora3.getMonth()+1;
-                const dia3 = agora3.getDate();
-                const sem3 = dia3<=7?1:dia3<=14?2:dia3<=21?3:4;
-                const entsSemana = historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue"&&e.mes===mes3&&e.semana===sem3);
+                const segundaAtual3 = segundaFeiraDaSemana(new Date());
+                const entsSemana = historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue"&&e.semana===segundaAtual3);
                 const totalSemanaTaxa = entsSemana.reduce((s,e)=>s+e.taxaEmpresario,0).toFixed(2);
-                const pagoEstaSemanaTaxa = (()=>{
-                  if (!empSel.taxaSemanalPagaEm) return false;
-                  const dt = new Date(empSel.taxaSemanalPagaEm);
-                  const diaP = dt.getDate();
-                  const semP = diaP<=7?1:diaP<=14?2:diaP<=21?3:4;
-                  return (dt.getMonth()+1)===mes3 && semP===sem3;
-                })();
+                const pagoEstaSemanaTaxa = empSel.taxaSemanalPagaEm
+                  ? segundaFeiraDaSemana(new Date(empSel.taxaSemanalPagaEm)) === segundaAtual3
+                  : false;
                 return (
                   <Card style={{padding:"14px 16px",background:"#0f172a"}}>
                     <div style={{color:"#9ca3af",fontWeight:700,fontSize:13,marginBottom:6}}>💵 Taxa semanal (dinheiro do motoboy — separado da comissão)</div>
@@ -2090,8 +2101,7 @@ export default function App() {
         .map(p => {
           const criadoEm = new Date(p.criado_em);
           const mes = criadoEm.getMonth() + 1;
-          const dia = criadoEm.getDate();
-          const sem = dia<=7?1:dia<=14?2:dia<=21?3:4;
+          const semanaChave = segundaFeiraDaSemana(criadoEm);
           const dataStr = dataLocalISO(criadoEm);
           let horaSaida = "—";
           if (p.saiu_estabelecimento_em) {
@@ -2122,7 +2132,7 @@ export default function App() {
             horaSaida,
             horaEntrega,
             mes,
-            semana: sem,
+            semana: semanaChave,
             repasePago: p.repasse_pago || false,
           };
         });
