@@ -606,10 +606,10 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
 
   // Semana atual (não pago ainda) — semana real, sempre segunda a domingo
   const semanaAtual = entregues.filter(e=>e.semana===segundaAtual&&!e.repasePago);
-  const saldoSemana = semanaAtual.reduce((s,e)=>s+e.taxa,0).toFixed(2);
+  const saldoSemana = semanaAtual.reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
 
   // Total histórico
-  const totalHistorico = entregues.reduce((s,e)=>s+e.taxa,0).toFixed(2);
+  const totalHistorico = entregues.reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
   const totalEntregas  = entregues.length;
 
   // Taxa do dia selecionado (Hoje/Ontem/qualquer data) — usa TODAS as entregas do dia,
@@ -617,23 +617,24 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
   // na terça, ele sempre consegue conferir quanto fez em qualquer dia específico,
   // pra bater com o comprovante do PIX e não sobrar dúvida.
   const entregasDoDia = entregues.filter(e=>e.dataISO===dataSelecionada);
-  const totalDoDia = entregasDoDia.reduce((s,e)=>s+e.taxa,0).toFixed(2);
+  const totalDoDia = entregasDoDia.reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
   const dataDoDiaFmt = new Date(dataSelecionada+"T12:00:00").toLocaleDateString("pt-BR");
 
   // Resumo agrupado por dia — todos os dias que tiveram entrega, mais recente primeiro,
   // sempre visível independente de status de pagamento.
   const porDia = {};
   entregues.forEach(e=>{
+    if (!e.dataISO) return; // ignora entregas antigas sem data preenchida corretamente
     if (!porDia[e.dataISO]) porDia[e.dataISO] = {qtd:0, total:0, todasPagas:true};
     porDia[e.dataISO].qtd++;
-    porDia[e.dataISO].total += e.taxa;
+    porDia[e.dataISO].total += (Number(e.taxa)||0);
     if (!e.repasePago) porDia[e.dataISO].todasPagas = false;
   });
   const diasOrdenados = Object.entries(porDia).sort((a,b)=>b[0].localeCompare(a[0]));
 
   // Este mês — dinâmico
   const mesMes = entregues.filter(e=>e.mes===mesAtual);
-  const ganhosMes = mesMes.reduce((s,e)=>s+e.taxa,0).toFixed(2);
+  const ganhosMes = mesMes.reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
 
   // Entregas hoje — data dinâmica
   const entregasHoje = entregues.filter(e=>e.data===hojeStr).length;
@@ -715,7 +716,7 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
         <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"16px 18px",flex:1,minWidth:130}}>
           <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>A receber esta semana</div>
           <div style={{color:"#fbbf24",fontSize:28,fontWeight:900,lineHeight:1}}>R${saldoSemana}</div>
-          <div style={{color:"#6b7280",fontSize:11,marginTop:4}}>{semanaAtual.length} entrega{semanaAtual.length!==1?"s":""} — semana {semAtual}</div>
+          <div style={{color:"#6b7280",fontSize:11,marginTop:4}}>{semanaAtual.length} entrega{semanaAtual.length!==1?"s":""} — semana de {segundaAtual.split("-").reverse().join("/")}</div>
           <div style={{background:"#1f2937",borderRadius:4,height:4,marginTop:8}}>
             <div style={{background:"#fbbf24",borderRadius:4,height:4,width:"60%"}}/>
           </div>
@@ -895,7 +896,9 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
 
 // ─── APP MOTOBOY ──────────────────────────────────────────────────────────────
 export default function AppMotoboy() {
-  const [somAtivado, setSomAtivado] = useState(false);
+  const [somAtivado, setSomAtivado] = useState(()=>{
+    try { return localStorage.getItem("motofast_som_ativado") === "1"; } catch(e) { return false; }
+  });
   const audioCtxRef = useRef(null);
   const [online, setOnline] = useState(false);
   const [aba, setAba] = useState("home");
@@ -1299,7 +1302,7 @@ export default function AppMotoboy() {
 
   const _agora = new Date();
   const _segundaAtual = segundaFeiraDaSemana(_agora);
-  const saldoSemana = historico.filter(e=>e.status==="Entregue"&&e.semana===_segundaAtual&&!e.repasePago).reduce((s,e)=>s+e.taxa,0).toFixed(2);
+  const saldoSemana = historico.filter(e=>e.status==="Entregue"&&e.semana===_segundaAtual&&!e.repasePago).reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
 
   const ABAS = [
     {id:"home",   label:"🏠 Início"},
@@ -1424,17 +1427,18 @@ export default function AppMotoboy() {
               </Card>
             )}
 
-            {/* Ativar som — obrigatório por segurança do navegador */}
+            {/* Ativar som — reforço opcional, a notificação real (push) já funciona sem isso */}
             {!somAtivado && (
               <Card style={{marginBottom:14,background:"#1a1000",border:"1px solid #f59e0b"}}>
                 <div style={{textAlign:"center"}}>
                   <div style={{fontSize:32,marginBottom:8}}>🔔</div>
-                  <div style={{color:"#fbbf24",fontWeight:800,fontSize:15,marginBottom:6}}>Ativar notificações sonoras</div>
-                  <div style={{color:"#9ca3af",fontSize:13,marginBottom:12}}>Toque no botão abaixo para ativar o som dos pedidos. Obrigatório para receber alertas!</div>
+                  <div style={{color:"#fbbf24",fontWeight:800,fontSize:15,marginBottom:6}}>Ativar som extra dentro do app</div>
+                  <div style={{color:"#9ca3af",fontSize:13,marginBottom:12}}>Suas notificações de pedido já chegam normalmente, mesmo sem clicar aqui. Esse botão só liga um som extra, que toca enquanto o app está aberto na tela.</div>
                   <button onClick={async()=>{
                     getAudioCtx();
                     tocarSomEscolhido(tipoSom);
                     setSomAtivado(true);
+                    try { localStorage.setItem("motofast_som_ativado", "1"); } catch(e) {}
                     // Pede permissão via OneSignal (mais confiável que o nativo)
                     try {
                       if (window.OneSignalDeferred) {
@@ -1446,7 +1450,7 @@ export default function AppMotoboy() {
                       }
                     } catch(e) { console.log("Permissão push:", e); }
                   }} style={{background:"#f59e0b",border:"none",borderRadius:10,color:"#000",fontWeight:900,fontSize:16,padding:"12px 24px",cursor:"pointer",width:"100%"}}>
-                    🔔 Ativar Som dos Pedidos
+                    🔔 Ativar Som Extra (opcional)
                   </button>
                 </div>
               </Card>
