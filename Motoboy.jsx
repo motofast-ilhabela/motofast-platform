@@ -935,9 +935,14 @@ export default function AppMotoboy() {
             if (window.OneSignalDeferred) {
               window.OneSignalDeferred.push(async function(OneSignal) {
                 await OneSignal.login(String(mb.id));
+                // Pede a permissão de notificação automaticamente, assim que ele entra —
+                // não depende de nenhum clique em botão.
+                await OneSignal.Notifications.requestPermission();
               });
+            } else if ("Notification" in window && Notification.permission === "default") {
+              await Notification.requestPermission();
             }
-          } catch(e) { console.log("OneSignal login:", e); }
+          } catch(e) { console.log("OneSignal login/permissão:", e); }
           setMotoboy({
             id: mb.id,
             nomeCompleto: mb.nome_completo,
@@ -1425,42 +1430,6 @@ export default function AppMotoboy() {
                   <Btn small cor="verde" onClick={()=>setAba("corrida")}>Ver corrida →</Btn>
                 </div>
               </Card>
-            )}
-
-            {/* Ativar som — reforço opcional, a notificação real (push) já funciona sem isso */}
-            {!somAtivado && (
-              <Card style={{marginBottom:14,background:"#1a1000",border:"1px solid #f59e0b"}}>
-                <div style={{textAlign:"center"}}>
-                  <div style={{fontSize:32,marginBottom:8}}>🔔</div>
-                  <div style={{color:"#fbbf24",fontWeight:800,fontSize:15,marginBottom:6}}>Ativar som extra dentro do app</div>
-                  <div style={{color:"#9ca3af",fontSize:13,marginBottom:12}}>Suas notificações de pedido já chegam normalmente, mesmo sem clicar aqui. Esse botão só liga um som extra, que toca enquanto o app está aberto na tela.</div>
-                  <button onClick={async()=>{
-                    getAudioCtx();
-                    tocarSomEscolhido(tipoSom);
-                    setSomAtivado(true);
-                    try { localStorage.setItem("motofast_som_ativado", "1"); } catch(e) {}
-                    // Pede permissão via OneSignal (mais confiável que o nativo)
-                    try {
-                      if (window.OneSignalDeferred) {
-                        window.OneSignalDeferred.push(async function(OneSignal) {
-                          await OneSignal.Notifications.requestPermission();
-                        });
-                      } else if ("Notification" in window) {
-                        await Notification.requestPermission();
-                      }
-                    } catch(e) { console.log("Permissão push:", e); }
-                  }} style={{background:"#f59e0b",border:"none",borderRadius:10,color:"#000",fontWeight:900,fontSize:16,padding:"12px 24px",cursor:"pointer",width:"100%"}}>
-                    🔔 Ativar Som Extra (opcional)
-                  </button>
-                </div>
-              </Card>
-            )}
-
-            {somAtivado && (
-              <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"10px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
-                <span style={{fontSize:20}}>✅</span>
-                <span style={{color:"#34d399",fontWeight:700,fontSize:13}}>Som ativado — você vai ouvir o alerta quando chegar um pedido!</span>
-              </div>
             )}
 
             {/* Seletor de som */}
