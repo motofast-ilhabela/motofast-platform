@@ -268,7 +268,10 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
     // e NÃO depende de plano grátis (taxa nunca é grátis, é o dinheiro do motoboy).
     let taxas;
     if (emp.planoPagamentoMotoboy === "diario") {
-      taxas = ents.filter(e => !emp.pagamentosDiarios?.[e.data]).reduce((s,e)=>s+e.taxaEmpresario,0);
+      // NUNCA cobra a entrega de HOJE — no plano "paga sempre no dia seguinte",
+      // a entrega de hoje só vence amanhã, não pode aparecer como pendente ainda.
+      const hojeISORepasse = dataLocalISO();
+      taxas = ents.filter(e => e.data !== hojeISORepasse && !emp.pagamentosDiarios?.[e.data]).reduce((s,e)=>s+e.taxaEmpresario,0);
     } else {
       // Plano semanal — controle SEPARADO da mensalidade (taxa é dinheiro do motoboy, nunca se mistura com a comissão)
       taxas = (!taxaSemanalPagaEstaSemana) ? ents.reduce((s,e)=>s+e.taxaEmpresario,0) : 0;
