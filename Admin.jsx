@@ -242,6 +242,16 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   // Cobrança do estabelecimento e pagamento do motoboy são duas coisas independentes.
   const fonteTodasSemana = historico.filter(e=>e.status==="Entregue"&&e.semana===sem.s);
 
+  // Fonte separada PARA OS MOTOBOYS — na aba "Semana atual" mostra TUDO que ainda não foi pago,
+  // não importa de qual semana é a entrega. Isso evita que uma entrega de uma semana passada
+  // (ex: primeira semana usando a plataforma, ou um pagamento atrasado) "suma" da tela só porque
+  // não é da semana calendário atual. Pagamento pendente é pagamento pendente, sempre aparece.
+  // Na aba "Semana anterior" mantém o comportamento de mostrar o que já foi pago naquela semana,
+  // só pra consulta/histórico.
+  const fonteMb = semana==="atual"
+    ? historico.filter(e=>e.status==="Entregue"&&!e.repasePago)
+    : historico.filter(e=>e.status==="Entregue"&&e.semana===sem.s&&e.repasePago);
+
   // Verifica se um pagamento (mensalidade/taxa semanal) foi feito DENTRO da semana que está sendo
   // vista agora — não só "alguma vez marcado true". Isso evita que uma marcação antiga (de uma
   // semana passada) fique "presa" como paga pra sempre, escondendo cobranças de semanas novas.
@@ -251,7 +261,7 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   }
 
   const dadosMb = motoboys.filter(m=>!m.banido).map(mb=>{
-    const ents = fonte.filter(e=>e.motoboyId===mb.id);
+    const ents = fonteMb.filter(e=>e.motoboyId===mb.id);
     return {...mb, ents, qtd:ents.length, total:+ents.reduce((s,e)=>s+e.taxaMotoboy,0).toFixed(2)};
   }).filter(m=>m.qtd>0).sort((a,b)=>b.total-a.total);
 
@@ -292,7 +302,7 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   // Marca como pago pro motoboy — salva de verdade no banco (antes só mudava na tela
   // e sumia se atualizasse a página).
   async function marcarPago(mbId) {
-    const idsParaMarcar = fonte.filter(e=>e.motoboyId===mbId).map(e=>e.id);
+    const idsParaMarcar = fonteMb.filter(e=>e.motoboyId===mbId).map(e=>e.id);
     if (idsParaMarcar.length===0) return;
     const { error } = await supabase.from("pedidos").update({ repasse_pago: true }).in("id", idsParaMarcar);
     if (error) {
@@ -303,7 +313,7 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   }
 
   const mbDet = detalhe ? motoboys.find(m=>m.id===detalhe) : null;
-  const entsDet = detalhe ? fonte.filter(e=>e.motoboyId===detalhe) : [];
+  const entsDet = detalhe ? fonteMb.filter(e=>e.motoboyId===detalhe) : [];
   const totalDet = entsDet.reduce((s,e)=>s+e.taxaMotoboy,0).toFixed(2);
 
   return (
@@ -328,7 +338,7 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
         <Stat icon="📋" label="Cobrar empresários" value={`R$${totalCobrar}`} cor="#60a5fa"/>
         <Stat icon="🏍️" label="Pagar motoboys" value={`R$${totalPagar}`} cor="#fbbf24"/>
         <Stat icon="💵" label="Seu lucro semana" value={`R$${lucro}`} cor="#34d399"/>
-        <Stat icon="📦" label="Total entregas" value={fonte.length} cor="#9ca3af"/>
+        <Stat icon="📦" label="Total entregas" value={fonteTodasSemana.length} cor="#9ca3af"/>
       </div>
       {dadosMb.length===0&&dadosEmp.length===0 && (
         <Card style={{textAlign:"center",padding:30}}>
