@@ -31,21 +31,6 @@ function segundaFeiraDaSemana(date) {
   return dataLocalISO(segunda);
 }
 
-// Retorna a data (AAAA-MM-DD) do início do CICLO DE PAGAMENTO DO MOTOBOY que contém a
-// data informada. O ciclo do motoboy é TERÇA a SEGUNDA (pago toda terça-feira) — diferente
-// do ciclo do empresário, que é segunda a domingo. Uma entrega feita numa terça-feira já
-// pertence ao ciclo NOVO que começa naquele dia, nunca ao ciclo anterior que acabou de fechar
-// (que vai ser pago nessa mesma terça). Isso evita que o pagamento de uma terça-feira misture
-// entregas de dois ciclos diferentes.
-function inicioCicloMotoboy(dataISO) {
-  const d = new Date(dataISO+"T12:00:00");
-  const diaSemana = d.getDay(); // 0=domingo,1=segunda,2=terça,...
-  const diff = (diaSemana - 2 + 7) % 7; // 2 = terça-feira é o início do ciclo
-  const inicio = new Date(d);
-  inicio.setDate(d.getDate() - diff);
-  return dataLocalISO(inicio);
-}
-
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
 function Card({ children, style={} }) {
   return <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"18px 22px",...style}}>{children}</div>;
@@ -257,22 +242,20 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   // Cobrança do estabelecimento e pagamento do motoboy são duas coisas independentes.
   const fonteTodasSemana = historico.filter(e=>e.status==="Entregue"&&e.semana===sem.s);
 
-  // Fonte separada PARA OS MOTOBOYS — usa o CICLO REAL deles (terça a segunda, pago toda
-  // terça-feira), nunca o ciclo do empresário (segunda a domingo). Cada ciclo é somado
-  // separado do outro — nunca mistura o ciclo atual com um ciclo anterior ainda não pago.
-  const cicloAtualMbChave = inicioCicloMotoboy(dataLocalISO(agora));
-  const cicloAnteriorMbData = new Date(cicloAtualMbChave+"T12:00:00");
-  cicloAnteriorMbData.setDate(cicloAnteriorMbData.getDate()-7);
-  const cicloAnteriorMbChave = dataLocalISO(cicloAnteriorMbData);
-  const cicloMbSelecionado = semana==="atual" ? cicloAtualMbChave : cicloAnteriorMbChave;
-  function labelCiclo(chaveInicio) {
-    const fimData = new Date(chaveInicio+"T12:00:00");
-    fimData.setDate(fimData.getDate()+6);
-    return `Ciclo de ${fmtDiaMes(chaveInicio)} a ${fmtDiaMes(dataLocalISO(fimData))} (paga na terça seguinte)`;
-  }
-  const fonteMb = historico.filter(e=>
-    e.status==="Entregue" && !e.repasePago && inicioCicloMotoboy(e.data)===cicloMbSelecionado
-  );
+  // Fonte separada PARA OS MOTOBOYS — usa a MESMA semana real (segunda a domingo) que os
+  // empresários, só que o pagamento acontece na terça-feira seguinte ao fim dela.
+  // Na aba "Semana atual": só a semana em andamento (20/07 a 26/07, por exemplo), isolada.
+  // Na aba "Semana anterior": TODAS as semanas mais antigas que ainda estão pendentes — não
+  // só a semana imediatamente anterior. Isso evita que uma entrega de uma semana bem mais
+  // antiga (ex: início do uso da plataforma, ou pagamento esquecido há 2+ semanas) fique
+  // invisível pra sempre só porque não é "a semana logo antes" da atual.
+  const labelPagarMb = semana==="atual"
+    ? sem.label
+    : "Semanas anteriores — tudo que ainda não foi pago";
+  const fonteMb = historico.filter(e=>{
+    if (e.status!=="Entregue" || e.repasePago) return false;
+    return semana==="atual" ? e.semana===segundaAtualChave : e.semana<segundaAtualChave;
+  });
 
   // Verifica se um pagamento (mensalidade/taxa semanal) foi feito DENTRO da semana que está sendo
   // vista agora — não só "alguma vez marcado true". Isso evita que uma marcação antiga (de uma
@@ -370,7 +353,7 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
       <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:300}}>
           <div style={{color:"#fbbf24",fontWeight:800,fontSize:14,marginBottom:4}}>🏍️ Pagar aos Motoboys</div>
-          <div style={{color:"#6b7280",fontSize:11,marginBottom:10}}>{labelCiclo(cicloMbSelecionado)}</div>
+          <div style={{color:"#6b7280",fontSize:11,marginBottom:10}}>{labelPagarMb}</div>
           {dadosMb.length===0 && <Card><div style={{color:"#4b5563"}}>Nenhuma entrega pendente.</div></Card>}
           {dadosMb.map(mb=>(
             <Card key={mb.id} style={{marginBottom:10}}>
