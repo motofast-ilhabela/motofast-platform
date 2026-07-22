@@ -31,6 +31,21 @@ function segundaFeiraDaSemana(date) {
   return dataLocalISO(segunda);
 }
 
+// Retorna a data (AAAA-MM-DD) do início do CICLO DE PAGAMENTO DO MOTOBOY que contém a
+// data informada. O ciclo do motoboy é TERÇA a SEGUNDA (pago toda terça-feira) — diferente
+// do ciclo do empresário, que é segunda a domingo. Uma entrega feita numa terça-feira já
+// pertence ao ciclo NOVO que começa naquele dia, nunca ao ciclo anterior que acabou de fechar
+// (que vai ser pago nessa mesma terça). Isso evita que o pagamento de uma terça-feira misture
+// entregas de dois ciclos diferentes.
+function inicioCicloMotoboy(dataISO) {
+  const d = new Date(dataISO+"T12:00:00");
+  const diaSemana = d.getDay(); // 0=domingo,1=segunda,2=terça,...
+  const diff = (diaSemana - 2 + 7) % 7; // 2 = terça-feira é o início do ciclo
+  const inicio = new Date(d);
+  inicio.setDate(d.getDate() - diff);
+  return dataLocalISO(inicio);
+}
+
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
 function Card({ children, style={} }) {
   return <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"18px 22px",...style}}>{children}</div>;
@@ -242,15 +257,22 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   // Cobrança do estabelecimento e pagamento do motoboy são duas coisas independentes.
   const fonteTodasSemana = historico.filter(e=>e.status==="Entregue"&&e.semana===sem.s);
 
-  // Fonte separada PARA OS MOTOBOYS — na aba "Semana atual" mostra TUDO que ainda não foi pago,
-  // não importa de qual semana é a entrega. Isso evita que uma entrega de uma semana passada
-  // (ex: primeira semana usando a plataforma, ou um pagamento atrasado) "suma" da tela só porque
-  // não é da semana calendário atual. Pagamento pendente é pagamento pendente, sempre aparece.
-  // Na aba "Semana anterior" mantém o comportamento de mostrar o que já foi pago naquela semana,
-  // só pra consulta/histórico.
-  const fonteMb = semana==="atual"
-    ? historico.filter(e=>e.status==="Entregue"&&!e.repasePago)
-    : historico.filter(e=>e.status==="Entregue"&&e.semana===sem.s&&e.repasePago);
+  // Fonte separada PARA OS MOTOBOYS — usa o CICLO REAL deles (terça a segunda, pago toda
+  // terça-feira), nunca o ciclo do empresário (segunda a domingo). Cada ciclo é somado
+  // separado do outro — nunca mistura o ciclo atual com um ciclo anterior ainda não pago.
+  const cicloAtualMbChave = inicioCicloMotoboy(dataLocalISO(agora));
+  const cicloAnteriorMbData = new Date(cicloAtualMbChave+"T12:00:00");
+  cicloAnteriorMbData.setDate(cicloAnteriorMbData.getDate()-7);
+  const cicloAnteriorMbChave = dataLocalISO(cicloAnteriorMbData);
+  const cicloMbSelecionado = semana==="atual" ? cicloAtualMbChave : cicloAnteriorMbChave;
+  function labelCiclo(chaveInicio) {
+    const fimData = new Date(chaveInicio+"T12:00:00");
+    fimData.setDate(fimData.getDate()+6);
+    return `Ciclo de ${fmtDiaMes(chaveInicio)} a ${fmtDiaMes(dataLocalISO(fimData))} (paga na terça seguinte)`;
+  }
+  const fonteMb = historico.filter(e=>
+    e.status==="Entregue" && !e.repasePago && inicioCicloMotoboy(e.data)===cicloMbSelecionado
+  );
 
   // Verifica se um pagamento (mensalidade/taxa semanal) foi feito DENTRO da semana que está sendo
   // vista agora — não só "alguma vez marcado true". Isso evita que uma marcação antiga (de uma
@@ -347,7 +369,8 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
       )}
       <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
         <div style={{flex:1,minWidth:300}}>
-          <div style={{color:"#fbbf24",fontWeight:800,fontSize:14,marginBottom:10}}>🏍️ Pagar aos Motoboys</div>
+          <div style={{color:"#fbbf24",fontWeight:800,fontSize:14,marginBottom:4}}>🏍️ Pagar aos Motoboys</div>
+          <div style={{color:"#6b7280",fontSize:11,marginBottom:10}}>{labelCiclo(cicloMbSelecionado)}</div>
           {dadosMb.length===0 && <Card><div style={{color:"#4b5563"}}>Nenhuma entrega pendente.</div></Card>}
           {dadosMb.map(mb=>(
             <Card key={mb.id} style={{marginBottom:10}}>
