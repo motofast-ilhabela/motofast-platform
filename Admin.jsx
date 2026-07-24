@@ -1008,7 +1008,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
       )}
 
       <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:10,padding:"11px 16px",marginBottom:14}}>
-        <span style={{color:"#fbbf24",fontWeight:700,fontSize:13}}>🔒 Cobrança toda segunda · Bloqueio automático toda terça às 09h00 se não pagar · Mensalidade R${MENSALIDADE}/semana</span>
+        <span style={{color:"#fbbf24",fontWeight:700,fontSize:13}}>🔒 Cobrança toda segunda · Bloqueio automático toda terça às 23h30 se não pagar · Mensalidade R${MENSALIDADE}/semana</span>
       </div>
 
       {empresarios.length===0 && (
@@ -2039,14 +2039,31 @@ export default function App() {
       }
     }, 10000);
 
+    // Realtime — atualiza o Histórico/Repasse automaticamente quando um pedido novo é
+    // criado, aceito, entregue ou cancelado, sem precisar clicar no botão 🔄 manualmente.
+    const canalPedidos = supabase
+      .channel("pedidos-mudancas")
+      .on("postgres_changes", { event: "*", schema: "public", table: "pedidos" }, () => {
+        carregarTudo(true);
+      })
+      .subscribe();
+
+    // Polling de segurança a cada 60s — garante que o histórico nunca fique desatualizado
+    // mesmo se o realtime cair por instabilidade de conexão.
+    const pollingPedidos = setInterval(() => {
+      carregarTudo(true);
+    }, 60000);
+
     return () => {
       supabase.removeChannel(canal);
+      supabase.removeChannel(canalPedidos);
       clearInterval(pollingOnline);
+      clearInterval(pollingPedidos);
     };
   },[]);
 
-  async function carregarTudo() {
-    setCarregando(true);
+  async function carregarTudo(silencioso=false) {
+    if (!silencioso) setCarregando(true);
     try {
       const [mbRes, empRes, cliRes, pedRes, avalRes] = await Promise.all([
         supabase.from("motoboys").select("*").eq("aprovado", true),
@@ -2200,7 +2217,7 @@ export default function App() {
     } catch(err) {
       console.error("Erro ao carregar dados:", err);
     }
-    setCarregando(false);
+    if (!silencioso) setCarregando(false);
   }
 
   useEffect(()=>{
