@@ -1989,6 +1989,117 @@ function Avaliacoes({ avaliacoes, motoboys }) {
   );
 }
 
+// ─── CORRIDAS ATIVAS ──────────────────────────────────────────────────────────
+function CorridasAtivas({ corridasAtivas }) {
+  const [tick, setTick] = useState(0);
+  useEffect(()=>{
+    const t = setInterval(()=>setTick(x=>x+1), 1000);
+    return ()=>clearInterval(t);
+  },[]);
+
+  function formatTempo(ms) {
+    const s = Math.max(0, Math.floor(ms/1000));
+    const m = Math.floor(s/60), r = s%60;
+    return m>0?`${m}m ${r}s`:`${r}s`;
+  }
+
+  const aguardando = corridasAtivas.filter(p=>p.status==="aguardando");
+  const emRota = corridasAtivas.filter(p=>p.status==="aceito"||p.status==="saiu_estabelecimento");
+
+  // Agrupa por corrida (mesmo motoboy pode estar levando até 3 pedidos juntos)
+  const porCorrida = {};
+  emRota.forEach(p=>{
+    if (!porCorrida[p.corridaId]) porCorrida[p.corridaId] = [];
+    porCorrida[p.corridaId].push(p);
+  });
+  const corridas = Object.values(porCorrida).map(lista=>lista.slice().sort((a,b)=>a.criadoEm-b.criadoEm));
+
+  return (
+    <div>
+      <div style={{marginBottom:16}}>
+        <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>🛵 Corridas Ativas</div>
+        <div style={{color:"#6b7280",fontSize:13}}>Quem está entregando o quê, em tempo real</div>
+      </div>
+
+      {aguardando.length===0 && corridas.length===0 && (
+        <Card style={{textAlign:"center",padding:40}}>
+          <div style={{fontSize:48,marginBottom:12}}>😴</div>
+          <div style={{color:"#6b7280",fontSize:15}}>Nenhuma corrida em andamento agora</div>
+        </Card>
+      )}
+
+      {aguardando.length>0 && (
+        <div style={{marginBottom:20}}>
+          <div style={{color:"#fbbf24",fontWeight:700,fontSize:13,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>
+            ⏳ Aguardando algum motoboy aceitar — {aguardando.length}
+          </div>
+          {aguardando.map(p=>(
+            <Card key={p.id} style={{marginBottom:10,border:"1px solid #fbbf24"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                <div>
+                  <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{p.clienteNome}</div>
+                  <div style={{color:"#6b7280",fontSize:12}}>🏪 {p.empresaNome} · 📍 {p.bairro}</div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <Tag label="⏳ Ninguém aceitou ainda" cor="#fbbf24"/>
+                  <div style={{color:"#6b7280",fontSize:11,marginTop:4}}>{formatTempo(Date.now()-p.criadoEm)} atrás</div>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {corridas.length>0 && (
+        <div>
+          <div style={{color:"#34d399",fontWeight:700,fontSize:13,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>
+            🏍️ Motoboys em rota — {corridas.length}
+          </div>
+          {corridas.map(pedidosDaCorrida=>{
+            const primeiro = pedidosDaCorrida[0];
+            const totalMotoboy = pedidosDaCorrida.reduce((s,p)=>s+(p.taxaMotoboy||0),0).toFixed(2);
+            return (
+              <Card key={primeiro.corridaId} style={{marginBottom:10,border:"1px solid #34d399"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10,flexWrap:"wrap",gap:8}}>
+                  <div>
+                    <div style={{color:"#34d399",fontWeight:800,fontSize:16}}>🏍️ {primeiro.motoboyNome || "Motoboy"}</div>
+                    <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>
+                      {pedidosDaCorrida.length} pedido{pedidosDaCorrida.length!==1?"s":""} nesta corrida · saiu há {formatTempo(Date.now()-(primeiro.saiuEstabelecimentoEm||primeiro.criadoEm))}
+                    </div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{color:"#6b7280",fontSize:11}}>Vai receber</div>
+                    <div style={{color:"#fbbf24",fontWeight:800,fontSize:18}}>R${totalMotoboy}</div>
+                  </div>
+                </div>
+                {pedidosDaCorrida.map((p,i)=>(
+                  <div key={p.id} style={{background:"#0f172a",borderRadius:8,padding:"9px 12px",marginBottom:6}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
+                      <div>
+                        <span style={{color:"#60a5fa",fontSize:11,fontWeight:700}}>#{i+1} — {p.clienteNome}</span>
+                        <div style={{color:"#6b7280",fontSize:11,marginTop:1}}>🏪 {p.empresaNome} · 📍 {p.bairro}</div>
+                      </div>
+                      <Tag label={p.status==="saiu_estabelecimento"?"🚀 A caminho do cliente":"📦 Buscando no estabelecimento"} cor={p.status==="saiu_estabelecimento"?"#34d399":"#60a5fa"}/>
+                    </div>
+                  </div>
+                ))}
+                {primeiro.motoboyTel && (
+                  <div style={{display:"flex",gap:8,marginTop:8}}>
+                    <a href={`https://wa.me/55${primeiro.motoboyTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                      style={{background:"#0d3d2e",color:"#34d399",padding:"6px 12px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>
+                      💬 Falar com o motoboy
+                    </a>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [aba, setAba] = useState("dashboard");
@@ -1999,6 +2110,7 @@ export default function App() {
   const [carregando, setCarregando]   = useState(true);
 
   const [avaliacoes, setAvaliacoes] = useState([]);
+  const [corridasAtivas, setCorridasAtivas] = useState([]);
   const [pendentes, setPendentes] = useState({motoboys:[], empresarios:[]});
   const [loadingPendentes, setLoadingPendentes] = useState(false);
   const [modalRejeitar, setModalRejeitar] = useState(null);
@@ -2209,11 +2321,36 @@ export default function App() {
       // Adiciona contagem nas empresas
       const empsComMeta = emps.map(e => ({...e, entregasMes: contagemEntregas[e.id] || 0}));
 
+      // Busca pedidos EM ANDAMENTO agora (aguardando aceite, aceito, ou já saiu pro cliente) —
+      // separado do histórico, que só tem entregue/cancelado. É isso que monta o painel de
+      // "corridas ativas", mostrando em tempo real qual motoboy está com o quê e pra quem.
+      const { data: ativosDB } = await supabase
+        .from("pedidos")
+        .select("*, motoboys(nome_completo, telefone), empresarios(nome)")
+        .in("status", ["aguardando","aceito","saiu_estabelecimento"])
+        .order("criado_em", { ascending: true });
+
+      const ativosMapeados = (ativosDB || []).map(p => ({
+        id: p.id,
+        corridaId: p.corrida_id || p.id,
+        status: p.status,
+        clienteNome: p.cliente_nome || "",
+        bairro: p.bairro || "",
+        motoboyId: p.motoboy_id,
+        motoboyNome: p.motoboys?.nome_completo || null,
+        motoboyTel: p.motoboys?.telefone || null,
+        empresaNome: p.empresarios?.nome || "Estabelecimento",
+        criadoEm: new Date(p.criado_em).getTime(),
+        saiuEstabelecimentoEm: p.saiu_estabelecimento_em ? new Date(p.saiu_estabelecimento_em).getTime() : null,
+        taxaMotoboy: p.taxa_motoboy || 0,
+      }));
+
       setMotoboys(mbs);
       setEmpresarios(empsComMeta);
       setClientes(clis);
       setHistorico(hist);
       setAvaliacoes(avalRes.data || []);
+      setCorridasAtivas(ativosMapeados);
     } catch(err) {
       console.error("Erro ao carregar dados:", err);
     }
@@ -2287,6 +2424,7 @@ export default function App() {
 
   const ABAS = [
     {id:"dashboard",label:"📊 Dashboard"},
+    {id:"corridas",label:"🛵 Corridas Ativas", badge: corridasAtivas.length},
     {id:"pendentes",label:"⏳ Pendentes", badge: pendentes.motoboys.length + pendentes.empresarios.length},
     {id:"repasse",label:"💰 Repasse"},
     {id:"motoboys",label:"🏍️ Motoboys"},
@@ -2440,6 +2578,7 @@ export default function App() {
         )}
 
         {aba==="dashboard" && <Dashboard historico={historico} motoboys={motoboys} empresarios={empresarios}/> }
+        {aba==="corridas"         && <CorridasAtivas corridasAtivas={corridasAtivas}/>}
         {aba==="repasse"          && <Repasse historico={historico} setHistorico={setHistorico} motoboys={motoboys} empresarios={empresarios}/>}
         {aba==="motoboys"         && <Motoboys motoboys={motoboys} setMotoboys={setMotoboys} historico={historico}/>}
         {aba==="estabelecimentos" && <Estabelecimentos empresarios={empresarios} setEmpresarios={setEmpresarios} historico={historico} motoboys={motoboys} onRecarregar={carregarTudo}/>}

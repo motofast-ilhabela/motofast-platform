@@ -152,6 +152,9 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   const taxa = taxaEncontrada ? taxasEmpresa[taxaKey] : null;
   const nomeEfetivo = clienteSel ? clienteSel.nome : clienteNome;
   const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
+  // Telefone é ESSENCIAL pro motoboy conseguir falar com o cliente na entrega —
+  // nunca deixa publicar sem um telefone válido preenchido, seja de cliente salvo ou novo.
+  const telValido = !!(telEfetivo && telEfetivo.trim() && telEfetivo.trim().toLowerCase()!=="não informado" && telEfetivo.replace(/\D/g,"").length>=8);
 
   function detectarBairro(rua) {
     const l = rua.toLowerCase();
@@ -171,6 +174,10 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
     }
     if (!nomeEfetivo || !endEfetivo.rua || !endEfetivo.num) {
       setErro("Preencha o nome do cliente e o endereço completo."); return;
+    }
+    if (!telValido) {
+      setErro("Preencha o telefone/WhatsApp do cliente — é essencial pro motoboy conseguir falar com ele na entrega.");
+      return;
     }
     // Salva cliente novo automaticamente no Supabase
     if (!clienteSel) {
@@ -273,6 +280,14 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
               <button onClick={()=>{setClienteSel(null);setBuscaCliente("");}}
                 style={{background:"none",border:"none",color:"#6b7280",cursor:"pointer",fontSize:20,lineHeight:1}}>×</button>
             </div>
+            {/* Aviso se o cliente salvo não tem telefone válido cadastrado */}
+            {!telValido && (
+              <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"9px 12px",marginTop:10}}>
+                <div style={{color:"#f87171",fontSize:12,fontWeight:700,marginBottom:6}}>⚠️ Este cliente não tem telefone cadastrado — o motoboy precisa disso pra entregar</div>
+                <input value={clienteTel} onChange={e=>setClienteTel(e.target.value)} placeholder="(12) 99999-0000"
+                  style={{background:"#0f172a",border:"1px solid #ef4444",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+            )}
             {/* Endereço salvo */}
             <div style={{background:"#111827",borderRadius:8,padding:"9px 12px",marginTop:10}}>
               <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:4}}>📍 Endereço cadastrado:</div>
@@ -297,8 +312,9 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
             <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:10}}>📝 Novo cliente — será salvo automaticamente</div>
             <div style={{display:"flex",gap:10}}>
               <div style={{flex:2}}><Inp label="Nome completo *" value={clienteNome||buscaCliente} onChange={setClienteNome} placeholder="Nome do cliente"/></div>
-              <div style={{flex:1}}><Inp label="Telefone" value={clienteTel} onChange={setClienteTel} placeholder="(12) 99999-0000"/></div>
+              <div style={{flex:1}}><Inp label="Telefone / WhatsApp *" value={clienteTel} onChange={setClienteTel} placeholder="(12) 99999-0000"/></div>
             </div>
+            {!telValido && <div style={{color:"#f87171",fontSize:11,marginTop:-4,marginBottom:6}}>⚠️ Obrigatório — o motoboy precisa desse número pra falar com o cliente</div>}
           </div>
         )}
       </Card>
@@ -428,7 +444,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         </div>
       )}
 
-      <Btn onClick={publicar} full disabled={buscaCliente.length<2 || !empresa?.id || !taxa}>
+      <Btn onClick={publicar} full disabled={buscaCliente.length<2 || !empresa?.id || !taxa || !telValido}>
         🚀 Publicar Pedido
       </Btn>
     </div>
@@ -462,6 +478,9 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   const taxa = taxaEncontrada2 ? taxasEmpresa2[taxaKey2] : null;
   const nomeEfetivo = clienteSel ? clienteSel.nome : clienteNome;
   const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
+  // Telefone é ESSENCIAL pro motoboy conseguir falar com o cliente na entrega —
+  // nunca deixa adicionar pedido à corrida sem um telefone válido preenchido.
+  const telValido = !!(telEfetivo && telEfetivo.trim() && telEfetivo.trim().toLowerCase()!=="não informado" && telEfetivo.replace(/\D/g,"").length>=8);
 
   function detectarBairro(rua) {
     const l = rua.toLowerCase();
@@ -480,6 +499,10 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
     }
     if (!nomeEfetivo || !endEfetivo.rua || !endEfetivo.num) {
       setErro("Preencha o nome do cliente e o endereço completo."); return;
+    }
+    if (!telValido) {
+      setErro("Preencha o telefone/WhatsApp do cliente — é essencial pro motoboy conseguir falar com ele na entrega.");
+      return;
     }
     if (!clienteSel) {
       const { data, error } = await supabase.from("clientes").insert({
@@ -567,6 +590,14 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
               <button onClick={()=>{setClienteSel(null);setBuscaCliente("");}}
                 style={{background:"none",border:"none",color:"#6b7280",cursor:"pointer",fontSize:20,lineHeight:1}}>×</button>
             </div>
+            {/* Aviso se o cliente salvo não tem telefone válido cadastrado */}
+            {!telValido && (
+              <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"9px 12px",marginTop:10}}>
+                <div style={{color:"#f87171",fontSize:12,fontWeight:700,marginBottom:6}}>⚠️ Este cliente não tem telefone cadastrado — o motoboy precisa disso pra entregar</div>
+                <input value={clienteTel} onChange={e=>setClienteTel(e.target.value)} placeholder="(12) 99999-0000"
+                  style={{background:"#0f172a",border:"1px solid #ef4444",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+            )}
             <div style={{background:"#111827",borderRadius:8,padding:"9px 12px",marginTop:10}}>
               <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:4}}>📍 Endereço cadastrado:</div>
               <div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{clienteSel.rua}, {clienteSel.num} — {clienteSel.bairro}</div>
@@ -588,8 +619,9 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
             <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:10}}>📝 Novo cliente — será salvo automaticamente</div>
             <div style={{display:"flex",gap:10}}>
               <div style={{flex:2}}><Inp label="Nome completo *" value={clienteNome||buscaCliente} onChange={setClienteNome} placeholder="Nome do cliente"/></div>
-              <div style={{flex:1}}><Inp label="Telefone" value={clienteTel} onChange={setClienteTel} placeholder="(12) 99999-0000"/></div>
+              <div style={{flex:1}}><Inp label="Telefone / WhatsApp *" value={clienteTel} onChange={setClienteTel} placeholder="(12) 99999-0000"/></div>
             </div>
+            {!telValido && <div style={{color:"#f87171",fontSize:11,marginTop:-4,marginBottom:6}}>⚠️ Obrigatório — o motoboy precisa desse número pra falar com o cliente</div>}
           </div>
         )}
       </Card>
@@ -696,7 +728,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
       )}
 
-      <Btn onClick={salvar} full disabled={buscaCliente.length<2 || !empresa?.id || !taxa}>
+      <Btn onClick={salvar} full disabled={buscaCliente.length<2 || !empresa?.id || !taxa || !telValido}>
         ➕ Adicionar à Corrida
       </Btn>
     </Overlay>
