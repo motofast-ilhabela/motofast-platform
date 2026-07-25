@@ -112,7 +112,7 @@ function Dashboard({ historico, motoboys, empresarios }) {
   const agora = new Date();
   const mesAtual = agora.getMonth()+1;
   const anoAtual = agora.getFullYear();
-  const mAtu = ent.filter(e=>e.mes===mesAtual);
+  const mAtu = ent.filter(e=>e.mes===mesAtual&&e.ano===anoAtual);
   const lucroTotal = ent.reduce((s,e)=>s+e.lucro,0).toFixed(2);
   const lucroMes   = mAtu.reduce((s,e)=>s+e.lucro,0).toFixed(2);
   const taxasMes   = mAtu.reduce((s,e)=>s+e.taxaEmpresario,0).toFixed(2);
@@ -127,10 +127,27 @@ function Dashboard({ historico, motoboys, empresarios }) {
   }).sort((a,b)=>b.qtd-a.qtd);
   const maxQ = ranking[0]?.qtd || 1;
 
-  const porMes = MESES.slice(0,mesAtual).map((mes,i)=>{
-    const e = ent.filter(x=>x.mes===i+1);
-    return {mes, qtd:e.length, lucro:e.reduce((s,x)=>s+x.lucro,0).toFixed(2)};
+  // Agrupa por ANO+MÊS (nunca só por mês) — assim julho/2026 nunca se mistura com
+  // julho/2027 se um dia a plataforma tiver mais de um ano de histórico. Mostra TODOS
+  // os meses desde a primeira entrega registrada, não só o ano corrente — é isso que
+  // permite ver a evolução mês a mês desde o início, pra sempre.
+  const porMesMap = {};
+  ent.forEach(e=>{
+    const chave = `${e.ano}-${String(e.mes).padStart(2,"0")}`;
+    if (!porMesMap[chave]) porMesMap[chave] = {ano:e.ano, mes:e.mes, qtd:0, lucro:0, pago:0};
+    porMesMap[chave].qtd++;
+    porMesMap[chave].lucro += e.lucro;
+    porMesMap[chave].pago += e.taxaMotoboy;
   });
+  const porMes = Object.entries(porMesMap)
+    .sort((a,b)=>a[0].localeCompare(b[0]))
+    .map(([chave,v])=>({
+      chave,
+      label: `${MESES[v.mes-1]}/${String(v.ano).slice(2)}`,
+      qtd: v.qtd,
+      lucro: v.lucro.toFixed(2),
+      pago: v.pago.toFixed(2),
+    }));
   const maxMes = Math.max(...porMes.map(p=>p.qtd), 1);
 
   const porEmp = empresarios.map(emp=>{
@@ -159,10 +176,10 @@ function Dashboard({ historico, motoboys, empresarios }) {
           <SectionTitle>Entregas por mês</SectionTitle>
           {porMes.length===0 && <div style={{color:"#4b5563",fontSize:13}}>Nenhuma entrega registrada ainda.</div>}
           {porMes.map(p=>(
-            <div key={p.mes} style={{marginBottom:10}}>
-              <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
-                <span style={{color:"#d1d5db",fontSize:13,fontWeight:600}}>{p.mes}</span>
-                <span style={{color:"#34d399",fontSize:13,fontWeight:700}}>{p.qtd} entregas · <span style={{color:"#a78bfa"}}>R${p.lucro} lucro</span></span>
+            <div key={p.chave} style={{marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:2,flexWrap:"wrap",gap:4}}>
+                <span style={{color:"#d1d5db",fontSize:13,fontWeight:600}}>{p.label}</span>
+                <span style={{color:"#34d399",fontSize:13,fontWeight:700}}>{p.qtd} entregas · <span style={{color:"#a78bfa"}}>R${p.lucro} lucro</span> · <span style={{color:"#fbbf24"}}>R${p.pago} pago motoboys</span></span>
               </div>
               <Bar val={p.qtd} max={maxMes}/>
             </div>
@@ -2258,6 +2275,7 @@ export default function App() {
         .map(p => {
           const criadoEm = new Date(p.criado_em);
           const mes = criadoEm.getMonth() + 1;
+          const ano = criadoEm.getFullYear();
           const semanaChave = segundaFeiraDaSemana(criadoEm);
           const dataStr = dataLocalISO(criadoEm);
           let horaSaida = "—";
@@ -2289,6 +2307,7 @@ export default function App() {
             horaSaida,
             horaEntrega,
             mes,
+            ano,
             semana: semanaChave,
             repasePago: p.repasse_pago || false,
           };
