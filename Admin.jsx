@@ -1791,6 +1791,11 @@ function Historico({ historico, motoboys, empresarios }) {
       {historico.length===0 && <Card style={{textAlign:"center",padding:30}}><div style={{color:"#4b5563"}}>Nenhuma entrega registrada ainda.</div></Card>}
       {historico.length>0 && (
         <Card style={{padding:0,overflow:"hidden"}}>
+          {filtroMes==="Todos" && filtroMb==="Todos" && lista.length>100 && (
+            <div style={{background:"#1a1000",borderBottom:"1px solid #f59e0b",padding:"9px 14px"}}>
+              <span style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⚠️ Mostrando as 100 entregas mais recentes de {lista.length} no total. Escolha um mês ou motoboy no filtro acima pra ver o período completo, sem cortar nada.</span>
+            </div>
+          )}
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead>
               <tr style={{background:"#0f172a",borderBottom:"1px solid #1f2937"}}>
@@ -1800,7 +1805,7 @@ function Historico({ historico, motoboys, empresarios }) {
               </tr>
             </thead>
             <tbody>
-              {lista.slice(0,100).map(e=>{
+              {(filtroMes==="Todos" && filtroMb==="Todos" ? lista.slice(0,100) : lista).map(e=>{
                 const mb  = motoboys.find(m=>m.id===e.motoboyId);
                 const emp = empresarios.find(x=>x.id===e.empresarioId);
                 const pg  = PG[e.pagamento] || {icon:"•",cor:"#9ca3af"};
