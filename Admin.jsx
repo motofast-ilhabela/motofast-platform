@@ -1754,12 +1754,16 @@ function Historico({ historico, motoboys, empresarios }) {
 
   const mesesDisponiveis = [...new Set(historico.map(e=>MESES[e.mes-1]))];
 
+  // O "historico" já chega do banco ordenado do mais recente pro mais antigo —
+  // NUNCA inverter aqui. Inverter fazia a lista de baixo (slice 0-100) pegar as
+  // entregas mais ANTIGAS em vez das mais recentes, travando a tela num dia velho
+  // sempre que havia mais de 100 registros no total sem nenhum filtro aplicado.
   const lista = historico.filter(e=>{
     if (filtroStatus!=="Todos"&&e.status!==filtroStatus) return false;
     if (filtroMes!=="Todos"&&MESES[e.mes-1]!==filtroMes) return false;
     if (filtroMb!=="Todos"&&String(e.motoboyId)!==filtroMb) return false;
     return true;
-  }).slice().reverse();
+  });
 
   const ents = lista.filter(e=>e.status==="Entregue");
   const cobrado = ents.reduce((s,e)=>s+e.taxaEmpresario,0).toFixed(2);
