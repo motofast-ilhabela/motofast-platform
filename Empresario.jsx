@@ -1311,7 +1311,7 @@ function ModalEditarPedido({ pedido, onSalvar, onFechar }) {
     </Overlay>
   );
 }
-function HistoricoEmp({ historico }) {
+function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado, mesesDisponiveis }) {
   const [filtro, setFiltro] = useState("Todos");
   const [dataSelecionada, setDataSelecionada] = useState(dataLocalISO());
 
@@ -1344,8 +1344,26 @@ function HistoricoEmp({ historico }) {
     <div>
       <div style={{marginBottom:14}}>
         <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>📋 Histórico de Entregas</div>
-        <div style={{color:"#6b7280",fontSize:13}}>{lista.length} registros</div>
+        <div style={{color:"#6b7280",fontSize:13}}>{lista.length} registros no período selecionado</div>
       </div>
+
+      {/* Seletor de mês — busca só o período escolhido, pra tela nunca ficar pesada */}
+      <Card style={{marginBottom:14}}>
+        <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📅 Período</div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <select value={mesSelecionado} onChange={e=>setMesSelecionado(e.target.value)}
+            style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"9px 12px",fontSize:14,outline:"none"}}>
+            {mesesDisponiveis.map(m=><option key={m.chave} value={m.chave}>{m.label}</option>)}
+          </select>
+          <button onClick={()=>setMesSelecionado("todos")} style={{padding:"9px 16px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,background:mesSelecionado==="todos"?"#0d3d2e":"#1f2937",border:mesSelecionado==="todos"?"1px solid #34d399":"1px solid #374151",color:mesSelecionado==="todos"?"#34d399":"#9ca3af"}}>
+            🔍 Buscar tudo
+          </button>
+          {carregando && <span style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⏳ Carregando...</span>}
+        </div>
+        {mesSelecionado==="todos" && (
+          <div style={{color:"#6b7280",fontSize:11,marginTop:8}}>Mostrando as 500 entregas mais recentes de todos os períodos. Pra ver um mês específico bem antigo, escolha ele na lista acima.</div>
+        )}
+      </Card>
 
       {/* Seletor de data — mostra quanto tem que repassar pra plataforma em qualquer dia, hoje ou anterior */}
       <Card style={{marginBottom:14,background:"#0d3d2e",border:"1px solid #34d399"}}>
@@ -1359,6 +1377,9 @@ function HistoricoEmp({ historico }) {
         <div style={{color:"#6b7280",fontSize:12,marginBottom:4}}>{dataFmt}</div>
         <div style={{color:"#34d399",fontSize:32,fontWeight:900}}>R${totalDia}</div>
         <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasDia.length} entrega{entregasDia.length!==1?"s":""} nesta data</div>
+        {!entregasDia.length && dataSelecionada!==hojeISO && dataSelecionada!==ontemISO && mesSelecionado!=="todos" && !dataSelecionada.startsWith(mesSelecionado) && (
+          <div style={{color:"#fbbf24",fontSize:11,marginTop:6}}>⚠️ Essa data é de outro mês — escolha o mês certo no período acima, ou "Buscar tudo", pra ver o valor dela.</div>
+        )}
       </Card>
 
       {/* Lista das entregas do dia selecionado — cliente, bairro e valor */}
@@ -1396,20 +1417,15 @@ function HistoricoEmp({ historico }) {
         </Card>
       )}
 
-      {/* Resumo financeiro */}
+      {/* Resumo financeiro — sempre do período selecionado no seletor de mês acima */}
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
         <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"14px 18px",flex:1,minWidth:130}}>
-          <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>A pagar esta semana</div>
-          <div style={{color:"#fbbf24",fontSize:22,fontWeight:800}}>R${semana}</div>
-          <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>taxas de entrega</div>
-        </div>
-        <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"14px 18px",flex:1,minWidth:130}}>
-          <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Total histórico</div>
+          <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Total do período</div>
           <div style={{color:"#60a5fa",fontSize:22,fontWeight:800}}>R${totalTaxas}</div>
           <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>em taxas de entrega</div>
         </div>
         <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"14px 18px",flex:1,minWidth:130}}>
-          <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Total entregas</div>
+          <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Entregas no período</div>
           <div style={{color:"#34d399",fontSize:22,fontWeight:800}}>{todos.filter(e=>e.status==="Entregue").length}</div>
         </div>
       </div>
@@ -1628,21 +1644,20 @@ export default function AppEmpresario() {
   const [aba, setAba] = useState("nova");
   const [clientes, setClientes] = useState([]);
   const [pedidos, setPedidos] = useState([]);
-  const historico = pedidos.filter(p=>p.status==="entregue"||p.status==="cancelado").map(p=>({
-    id: p.id, clienteNome: p.clienteNome, bairro: p.bairro,
-    pagamento: p.pagamento, taxa: p.taxa,
-    status: p.status==="entregue" ? "Entregue" : "Cancelada",
-    motoboyNome: p.motoboyNome || "—",
-    data: new Date(p.criadoEm).toLocaleDateString("pt-BR"),
-    dataISO: dataLocalISO(new Date(p.criadoEm)),
-    hora: new Date(p.criadoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
-    horaSaida: p.saiuEstabelecimentoEm ? new Date(p.saiuEstabelecimentoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
-    horaEntrega: p.entregueEm ? new Date(p.entregueEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
-  }));
+  const pedidosRef = useRef([]);
+  useEffect(()=>{ pedidosRef.current = pedidos; },[pedidos]);
+  // Histórico agora é buscado separado, sob demanda, mês a mês — não fica mais
+  // pendurado na busca de pedidos ativos (que roda a cada 8s). Isso é o que evita
+  // a tela travar lá na frente, quando o estabelecimento acumular muitas entregas.
+  const [historicoData, setHistoricoData] = useState([]);
+  const [carregandoHistorico, setCarregandoHistorico] = useState(false);
+  const [mesHistorico, setMesHistorico] = useState(()=>{
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  });
   const [avisoSemMotoboy, setAvisoSemMotoboy] = useState(null);
   const [avisoCancelamentoMotoboy, setAvisoCancelamentoMotoboy] = useState(null);
   const notificadosCancelamento = useRef(new Set());
-  const primeiroCarregamentoPedidos = useRef(true);
   const [empresa, setEmpresa] = useState({...EMPRESA, id:null}); // começa SEM id até carregar o real do Supabase
   const [carregando, setCarregando] = useState(true);
 
@@ -1708,7 +1723,21 @@ export default function AppEmpresario() {
           // Escuta mudanças em tempo real (quando o motoboy aceita, sai, entrega, cancela)
           canal = supabase
             .channel("pedidos-empresario")
-            .on("postgres_changes", { event: "*", schema: "public", table: "pedidos", filter: `empresario_id=eq.${emp.id}` }, () => {
+            .on("postgres_changes", { event: "*", schema: "public", table: "pedidos", filter: `empresario_id=eq.${emp.id}` }, (payload) => {
+              // Detecta cancelamento feito pelo motoboy direto no dado que já veio no
+              // evento — não precisa buscar nada extra no banco pra isso.
+              const p = payload.new;
+              if (p && p.status==="cancelado" && p.cancelado_por_motoboy && !notificadosCancelamento.current.has(p.id)) {
+                notificadosCancelamento.current.add(p.id);
+                const pedidoConhecido = pedidosRef.current.find(x=>x.id===p.id);
+                setAvisoCancelamentoMotoboy({
+                  clienteNome: p.cliente_nome,
+                  bairro: p.bairro,
+                  motivo: p.motivo_cancelamento || "Não informado",
+                  motoboyNome: pedidoConhecido?.motoboyNome || "Motoboy",
+                  motoboyTel: pedidoConhecido?.motoboyTel || "",
+                });
+              }
               carregarPedidos(emp.id);
             })
             .subscribe();
@@ -1732,34 +1761,20 @@ export default function AppEmpresario() {
 
   async function carregarPedidos(empresaId) {
     if (!empresaId) return;
+    // Só busca pedidos ATIVOS agora (aguardando aceite, aceito, a caminho) — o
+    // histórico (entregue/cancelado) é buscado separado, sob demanda, por mês.
+    // Isso mantém essa busca sempre leve e rápida, não importa quantas entregas
+    // já foram feitas no total — ela nunca cresce com o tempo.
     const { data: pedidosDB, error } = await supabase
       .from("pedidos")
       .select("*, motoboys(nome_completo, telefone)")
       .eq("empresario_id", empresaId)
+      .in("status", ["aguardando","aceito","saiu_estabelecimento"])
       .order("criado_em", { ascending: true });
 
     if (error) { console.error("Erro ao carregar pedidos:", error); return; }
 
     if (pedidosDB) {
-      // Detecta cancelamentos feitos pelo motoboy (não pelo empresário) que ainda não foram avisados.
-      // No primeiro carregamento da página só marca como "já visto" — não dispara aviso de coisas antigas.
-      pedidosDB.forEach(p => {
-        const canceladoPeloMotoboy = p.status === "cancelado" && p.cancelado_por_motoboy;
-        if (canceladoPeloMotoboy && !notificadosCancelamento.current.has(p.id)) {
-          notificadosCancelamento.current.add(p.id);
-          if (!primeiroCarregamentoPedidos.current) {
-            setAvisoCancelamentoMotoboy({
-              clienteNome: p.cliente_nome,
-              bairro: p.bairro,
-              motivo: p.motivo_cancelamento || "Não informado",
-              motoboyNome: p.motoboys?.nome_completo || "Motoboy",
-              motoboyTel: p.motoboys?.telefone || "",
-            });
-          }
-        }
-      });
-      primeiroCarregamentoPedidos.current = false;
-
       setPedidos(pedidosDB.map(p=>({
         id: p.id,
         clienteNome: p.cliente_nome,
@@ -1780,6 +1795,67 @@ export default function AppEmpresario() {
       })));
     }
   }
+
+  // Gera a chave (AAAA-MM) do mês atual e dos últimos meses, pro seletor de mês do histórico
+  function chaveDoMes(date) {
+    return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`;
+  }
+  function gerarMesesDisponiveis(qtd=18) {
+    const nomesMes = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+    const lista = [];
+    const agora = new Date();
+    for (let i=0; i<qtd; i++) {
+      const d = new Date(agora.getFullYear(), agora.getMonth()-i, 1);
+      lista.push({ chave: chaveDoMes(d), label: `${nomesMes[d.getMonth()]}/${d.getFullYear()}` });
+    }
+    return lista;
+  }
+
+  // Busca o HISTÓRICO (entregue/cancelado) separado dos ativos, filtrado por mês —
+  // assim a tela nunca precisa carregar todas as entregas desde o início pra
+  // funcionar. "todos" busca tudo, com um limite de segurança de 500 registros
+  // mais recentes, pra nunca travar a tela mesmo depois de anos de uso.
+  async function carregarHistorico(mesChave) {
+    if (!empresa?.id) return;
+    setCarregandoHistorico(true);
+    let query = supabase
+      .from("pedidos")
+      .select("*, motoboys(nome_completo, telefone)")
+      .eq("empresario_id", empresa.id)
+      .in("status", ["entregue","cancelado"])
+      .order("criado_em", { ascending: false });
+
+    if (mesChave === "todos") {
+      query = query.limit(500);
+    } else {
+      const [ano, mes] = mesChave.split("-").map(Number);
+      const inicio = new Date(ano, mes-1, 1).toISOString();
+      const fim = new Date(ano, mes, 1).toISOString();
+      query = query.gte("criado_em", inicio).lt("criado_em", fim);
+    }
+
+    const { data, error } = await query;
+    if (error) { console.error("Erro ao carregar histórico:", error); setCarregandoHistorico(false); return; }
+
+    setHistoricoData((data||[]).map(p=>({
+      id: p.id, clienteNome: p.cliente_nome, bairro: p.bairro,
+      pagamento: p.forma_pagamento, taxa: p.taxa,
+      status: p.status==="entregue" ? "Entregue" : "Cancelada",
+      motoboyNome: p.motoboys?.nome_completo || "—",
+      data: new Date(p.criado_em).toLocaleDateString("pt-BR"),
+      dataISO: dataLocalISO(new Date(p.criado_em)),
+      hora: new Date(p.criado_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
+      horaSaida: p.saiu_estabelecimento_em ? new Date(p.saiu_estabelecimento_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
+      horaEntrega: p.entregue_em ? new Date(p.entregue_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
+    })));
+    setCarregandoHistorico(false);
+  }
+
+  // Busca o histórico só quando a aba é aberta, ou quando o mês selecionado muda —
+  // nunca fica recarregando isso sozinho de fundo, diferente dos pedidos ativos.
+  useEffect(()=>{
+    if (aba==="historico" && empresa?.id) carregarHistorico(mesHistorico);
+  },[aba, mesHistorico, empresa?.id]);
 
   // Após 5 minutos sem aceite → avisa empresário e cancela no banco
   useEffect(()=>{
@@ -1950,7 +2026,7 @@ export default function AppEmpresario() {
       <div style={{maxWidth:900,margin:"0 auto",padding:"24px 20px"}}>
         {aba==="nova"      && <SolicitarEntrega clientes={clientes} setClientes={setClientes} onPublicar={publicarPedido} empresa={empresa}/>}
         {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes} empresa={empresa} onRecarregar={()=>carregarPedidos(empresa.id)}/>}
-        {aba==="historico" && <HistoricoEmp historico={historico}/>}
+        {aba==="historico" && <HistoricoEmp historico={historicoData} carregando={carregandoHistorico} mesSelecionado={mesHistorico} setMesSelecionado={setMesHistorico} mesesDisponiveis={gerarMesesDisponiveis()}/>}
         {aba==="clientes"  && <ClientesSalvos clientes={clientes} setClientes={setClientes} empresaId={empresa.id}/>}
       </div>
 
