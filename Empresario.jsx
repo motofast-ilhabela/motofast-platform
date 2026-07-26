@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient.js";
 
 // ─── DADOS DO ESTABELECIMENTO (viriam do login) ───────────────────────────────
@@ -126,6 +126,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   const [distanciaKm, setDistanciaKm] = useState(null);
   const [calcKm, setCalcKm] = useState(false);
   const [taxaKm, setTaxaKm] = useState({e:0, m:0});
+  const [erroCalculo, setErroCalculo] = useState(false);
 
   function calcularTaxaPorKm(km) {
     if (km <= 2)  return {e:8,  m:6.5};
@@ -140,38 +141,45 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
     const rua = endEfetivo.rua;
     const num = endEfetivo.num;
     const bairro = endEfetivo.bairro;
-    if (!rua || !bairro || !empresa.endereco) {
+    // Só precisa do endereço do CLIENTE pra começar a calcular. O endereço do
+    // ESTABELECIMENTO é só um "extra" pra ter mais precisão — se não tiver cadastrado
+    // (empresa.endereco vazio), cai automaticamente pro bairro do estabelecimento.
+    // ANTES essa trava exigia `empresa.endereco` pra sequer começar o cálculo, e por
+    // isso a taxa nunca calculava pra estabelecimentos sem esse campo preenchido —
+    // mesmo já existindo o fallback por bairro no código, ele nunca era alcançado.
+    if (!rua || !bairro) {
       setDistanciaKm(null);
       setTaxaKm({e:0, m:0});
+      setErroCalculo(false);
       return;
     }
     let cancelado = false;
     setCalcKm(true);
+    setErroCalculo(false);
     (async()=>{
       try {
-        // Tenta com endereço completo primeiro
-        const endOrigem = encodeURIComponent(`${empresa.endereco}, Ilhabela, SP, Brasil`);
         const endDestino = encodeURIComponent(`${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil`);
-        const endOrigemBairro = encodeURIComponent(`${empresa.bairro}, Ilhabela, SP, Brasil`);
+        const endOrigemBairro = encodeURIComponent(`${empresa.bairro||""}, Ilhabela, SP, Brasil`);
         const endDestinoBairro = encodeURIComponent(`${bairro}, Ilhabela, SP, Brasil`);
 
-        const [rO, rD] = await Promise.all([
-          fetch(`https://nominatim.openstreetmap.org/search?q=${endOrigem}&format=json&limit=1`).then(r=>r.json()),
-          fetch(`https://nominatim.openstreetmap.org/search?q=${endDestino}&format=json&limit=1`).then(r=>r.json()),
-        ]);
-
-        let latO, lonO, latD, lonD;
-
-        if (rO[0]) { latO = rO[0].lat; lonO = rO[0].lon; }
-        else {
-          // Fallback: usa bairro do estabelecimento
+        // Origem: tenta o endereço completo do estabelecimento primeiro (se tiver
+        // cadastrado); se não tiver ou não encontrar, cai pro bairro do estabelecimento.
+        let latO, lonO;
+        if (empresa.endereco) {
+          const endOrigem = encodeURIComponent(`${empresa.endereco}, Ilhabela, SP, Brasil`);
+          const rO = await fetch(`https://nominatim.openstreetmap.org/search?q=${endOrigem}&format=json&limit=1`).then(r=>r.json());
+          if (rO[0]) { latO = rO[0].lat; lonO = rO[0].lon; }
+        }
+        if (!latO && empresa.bairro) {
           const rOB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endOrigemBairro}&format=json&limit=1`).then(r=>r.json());
           if (rOB[0]) { latO = rOB[0].lat; lonO = rOB[0].lon; }
         }
 
+        // Destino: tenta o endereço completo do cliente; se não encontrar, cai pro bairro dele.
+        const rD = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestino}&format=json&limit=1`).then(r=>r.json());
+        let latD, lonD;
         if (rD[0]) { latD = rD[0].lat; lonD = rD[0].lon; }
         else {
-          // Fallback: usa bairro do cliente
           const rDB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoBairro}&format=json&limit=1`).then(r=>r.json());
           if (rDB[0]) { latD = rDB[0].lat; lonD = rDB[0].lon; }
         }
@@ -183,19 +191,29 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
             const km = metros / 1000;
             setDistanciaKm(km.toFixed(1));
             setTaxaKm(calcularTaxaPorKm(km));
+          } else if (!cancelado) {
+            setDistanciaKm(null);
+            setErroCalculo(true);
           }
+        } else if (!cancelado) {
+          setDistanciaKm(null);
+          setErroCalculo(true);
         }
       } catch(e) {
         console.log("Erro ao calcular distância:", e);
+        if (!cancelado) { setDistanciaKm(null); setErroCalculo(true); }
       } finally {
         if (!cancelado) setCalcKm(false);
       }
     })();
     return () => { cancelado = true; };
-  }, [endEfetivo.rua, endEfetivo.num, endEfetivo.bairro, empresa.endereco]);
+  }, [endEfetivo.rua, endEfetivo.num, endEfetivo.bairro, empresa.endereco, empresa.bairro]);
 
   const nomeEfetivo = clienteSel ? clienteSel.nome : clienteNome;
   const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
+  // Telefone é ESSENCIAL pro motoboy conseguir falar com o cliente na entrega —
+  // nunca deixa publicar sem um telefone válido preenchido, seja de cliente salvo ou novo.
+  const telValido = !!(telEfetivo && telEfetivo.trim() && telEfetivo.trim().toLowerCase()!=="não informado" && telEfetivo.replace(/\D/g,"").length>=8);
 
   function detectarBairro(rua) {
     const l = rua.toLowerCase();
@@ -215,6 +233,10 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
     }
     if (!nomeEfetivo || !endEfetivo.rua || !endEfetivo.num) {
       setErro("Preencha o nome do cliente e o endereço completo."); return;
+    }
+    if (!telValido) {
+      setErro("Preencha o telefone/WhatsApp do cliente — é essencial pro motoboy conseguir falar com ele na entrega.");
+      return;
     }
     // Salva cliente novo automaticamente no Supabase
     if (!clienteSel) {
@@ -317,6 +339,14 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
               <button onClick={()=>{setClienteSel(null);setBuscaCliente("");}}
                 style={{background:"none",border:"none",color:"#6b7280",cursor:"pointer",fontSize:20,lineHeight:1}}>×</button>
             </div>
+            {/* Aviso se o cliente salvo não tem telefone válido cadastrado */}
+            {!telValido && (
+              <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"9px 12px",marginTop:10}}>
+                <div style={{color:"#f87171",fontSize:12,fontWeight:700,marginBottom:6}}>⚠️ Este cliente não tem telefone cadastrado — o motoboy precisa disso pra entregar</div>
+                <input value={clienteTel} onChange={e=>setClienteTel(e.target.value)} placeholder="(12) 99999-0000"
+                  style={{background:"#0f172a",border:"1px solid #ef4444",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+            )}
             {/* Endereço salvo */}
             <div style={{background:"#111827",borderRadius:8,padding:"9px 12px",marginTop:10}}>
               <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:4}}>📍 Endereço cadastrado:</div>
@@ -341,8 +371,9 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
             <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:10}}>📝 Novo cliente — será salvo automaticamente</div>
             <div style={{display:"flex",gap:10}}>
               <div style={{flex:2}}><Inp label="Nome completo *" value={clienteNome||buscaCliente} onChange={setClienteNome} placeholder="Nome do cliente"/></div>
-              <div style={{flex:1}}><Inp label="Telefone" value={clienteTel} onChange={setClienteTel} placeholder="(12) 99999-0000"/></div>
+              <div style={{flex:1}}><Inp label="Telefone / WhatsApp *" value={clienteTel} onChange={setClienteTel} placeholder="(12) 99999-0000"/></div>
             </div>
+            {!telValido && <div style={{color:"#f87171",fontSize:11,marginTop:-4,marginBottom:6}}>⚠️ Obrigatório — o motoboy precisa desse número pra falar com o cliente</div>}
           </div>
         )}
       </Card>
@@ -393,7 +424,12 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
               </div>
             </div>
           )}
-          {!calcKm && !distanciaKm && (
+          {!calcKm && !distanciaKm && erroCalculo && (
+            <div style={{color:"#f87171",fontSize:13}}>
+              ⚠️ Não conseguimos calcular a distância automaticamente pra esse endereço. Confira se a rua e o bairro estão certos, ou fale com o suporte MotoFast.
+            </div>
+          )}
+          {!calcKm && !distanciaKm && !erroCalculo && (
             <div style={{color:"#9ca3af",fontSize:13}}>
               Digite o endereço do cliente para calcular a taxa automaticamente.
             </div>
@@ -477,7 +513,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         </div>
       )}
 
-      <Btn onClick={publicar} full disabled={buscaCliente.length<2 || !empresa?.id}>
+      <Btn onClick={publicar} full disabled={buscaCliente.length<2 || !empresa?.id || !telValido}>
         🚀 Publicar Pedido
       </Btn>
     </div>
@@ -510,6 +546,9 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   const taxa = taxasEmpresa2[taxaKey2] || {e:0,m:0};
   const nomeEfetivo = clienteSel ? clienteSel.nome : clienteNome;
   const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
+  // Telefone é ESSENCIAL pro motoboy conseguir falar com o cliente na entrega —
+  // nunca deixa adicionar pedido à corrida sem um telefone válido preenchido.
+  const telValido = !!(telEfetivo && telEfetivo.trim() && telEfetivo.trim().toLowerCase()!=="não informado" && telEfetivo.replace(/\D/g,"").length>=8);
 
   function detectarBairro(rua) {
     const l = rua.toLowerCase();
@@ -528,6 +567,10 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
     }
     if (!nomeEfetivo || !endEfetivo.rua || !endEfetivo.num) {
       setErro("Preencha o nome do cliente e o endereço completo."); return;
+    }
+    if (!telValido) {
+      setErro("Preencha o telefone/WhatsApp do cliente — é essencial pro motoboy conseguir falar com ele na entrega.");
+      return;
     }
     if (!clienteSel) {
       const { data, error } = await supabase.from("clientes").insert({
@@ -557,7 +600,10 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       clienteNome:nomeEfetivo, clienteTel:telEfetivo,
       rua:endEfetivo.rua, num:endEfetivo.num,
       bairro:bairroFinal, ref:endEfetivo.ref,
-      pagamento, taxa:taxaKm?.e||taxa?.e||0, taxaMotoboy:taxaKm?.m||taxa?.m||0, obs,
+      // ATENÇÃO: aqui NUNCA usar "taxaKm" — esse modal não calcula taxa por km
+      // (só a tela de Nova Entrega faz isso). Usar taxaKm aqui quebrava a tela
+      // inteira com erro, porque essa variável não existe neste componente.
+      pagamento, taxa:taxa?.e||0, taxaMotoboy:taxa?.m||0, obs,
       valorPedido: valorPedido ? parseFloat(valorPedido) : null,
       valorReceber: valorReceber ? parseFloat(valorReceber) : null,
       troco: (valorPedido && valorReceber && parseFloat(valorReceber)>parseFloat(valorPedido))
@@ -615,6 +661,14 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
               <button onClick={()=>{setClienteSel(null);setBuscaCliente("");}}
                 style={{background:"none",border:"none",color:"#6b7280",cursor:"pointer",fontSize:20,lineHeight:1}}>×</button>
             </div>
+            {/* Aviso se o cliente salvo não tem telefone válido cadastrado */}
+            {!telValido && (
+              <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"9px 12px",marginTop:10}}>
+                <div style={{color:"#f87171",fontSize:12,fontWeight:700,marginBottom:6}}>⚠️ Este cliente não tem telefone cadastrado — o motoboy precisa disso pra entregar</div>
+                <input value={clienteTel} onChange={e=>setClienteTel(e.target.value)} placeholder="(12) 99999-0000"
+                  style={{background:"#0f172a",border:"1px solid #ef4444",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+            )}
             <div style={{background:"#111827",borderRadius:8,padding:"9px 12px",marginTop:10}}>
               <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:4}}>📍 Endereço cadastrado:</div>
               <div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{clienteSel.rua}, {clienteSel.num} — {clienteSel.bairro}</div>
@@ -636,8 +690,9 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
             <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:10}}>📝 Novo cliente — será salvo automaticamente</div>
             <div style={{display:"flex",gap:10}}>
               <div style={{flex:2}}><Inp label="Nome completo *" value={clienteNome||buscaCliente} onChange={setClienteNome} placeholder="Nome do cliente"/></div>
-              <div style={{flex:1}}><Inp label="Telefone" value={clienteTel} onChange={setClienteTel} placeholder="(12) 99999-0000"/></div>
+              <div style={{flex:1}}><Inp label="Telefone / WhatsApp *" value={clienteTel} onChange={setClienteTel} placeholder="(12) 99999-0000"/></div>
             </div>
+            {!telValido && <div style={{color:"#f87171",fontSize:11,marginTop:-4,marginBottom:6}}>⚠️ Obrigatório — o motoboy precisa desse número pra falar com o cliente</div>}
           </div>
         )}
       </Card>
@@ -735,7 +790,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
       )}
 
-      <Btn onClick={salvar} full disabled={buscaCliente.length<2 || !empresa?.id}>
+      <Btn onClick={salvar} full disabled={buscaCliente.length<2 || !empresa?.id || !telValido}>
         ➕ Adicionar à Corrida
       </Btn>
     </Overlay>
@@ -1293,6 +1348,9 @@ export default function AppEmpresario() {
     horaEntrega: p.entregueEm ? new Date(p.entregueEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
   }));
   const [avisoSemMotoboy, setAvisoSemMotoboy] = useState(null);
+  const [avisoCancelamentoMotoboy, setAvisoCancelamentoMotoboy] = useState(null);
+  const notificadosCancelamento = useRef(new Set());
+  const primeiroCarregamentoPedidos = useRef(true);
   const [empresa, setEmpresa] = useState({...EMPRESA, id:null}); // começa SEM id até carregar o real do Supabase
   const [carregando, setCarregando] = useState(true);
 
@@ -1328,6 +1386,7 @@ export default function AppEmpresario() {
             taxas: emp.taxas || {},
             mensalidadePaga: emp.mensalidade_paga,
             bloqueado: emp.bloqueado,
+            motivoBloqueio: emp.motivo_bloqueio || null,
           });
 
           // Carrega clientes desse empresário
@@ -1390,6 +1449,25 @@ export default function AppEmpresario() {
     if (error) { console.error("Erro ao carregar pedidos:", error); return; }
 
     if (pedidosDB) {
+      // Detecta cancelamentos feitos pelo motoboy (não pelo empresário) que ainda não foram avisados.
+      // No primeiro carregamento da página só marca como "já visto" — não dispara aviso de coisas antigas.
+      pedidosDB.forEach(p => {
+        const canceladoPeloMotoboy = p.status === "cancelado" && p.cancelado_por_motoboy;
+        if (canceladoPeloMotoboy && !notificadosCancelamento.current.has(p.id)) {
+          notificadosCancelamento.current.add(p.id);
+          if (!primeiroCarregamentoPedidos.current) {
+            setAvisoCancelamentoMotoboy({
+              clienteNome: p.cliente_nome,
+              bairro: p.bairro,
+              motivo: p.motivo_cancelamento || "Não informado",
+              motoboyNome: p.motoboys?.nome_completo || "Motoboy",
+              motoboyTel: p.motoboys?.telefone || "",
+            });
+          }
+        }
+      });
+      primeiroCarregamentoPedidos.current = false;
+
       setPedidos(pedidosDB.map(p=>({
         id: p.id,
         clienteNome: p.cliente_nome,
@@ -1397,6 +1475,7 @@ export default function AppEmpresario() {
         rua: p.rua, num: p.numero,
         bairro: p.bairro, ref: p.referencia, obs: p.observacao,
         pagamento: p.forma_pagamento, taxa: p.taxa,
+        taxaMotoboy: p.taxa_motoboy || 0,
         valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
         status: p.status==="aceito"||p.status==="saiu_estabelecimento" ? "em_rota" : p.status,
         criadoEm: new Date(p.criado_em).getTime(),
@@ -1431,6 +1510,20 @@ export default function AppEmpresario() {
 
     return ()=>timers.forEach(t=>clearTimeout(t));
   },[pedidos]);
+
+  // Dispara notificação push de verdade (via servidor), que chega mesmo com o app do motoboy fechado.
+  // Não trava o fluxo se falhar — a publicação do pedido já aconteceu de qualquer forma.
+  async function notificarMotoboysPush(titulo, corpo) {
+    try {
+      await fetch("/api/notificar-motoboys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ titulo, corpo }),
+      });
+    } catch (e) {
+      console.log("Erro ao notificar motoboys via push:", e);
+    }
+  }
 
   async function publicarPedido(pedido) {
     if (!empresa?.id) return;
@@ -1467,6 +1560,12 @@ export default function AppEmpresario() {
       status: "aguardando",
     }).select().single();
 
+    // Notifica os motoboys via push real — chega mesmo com o app fechado
+    notificarMotoboysPush(
+      "🏍️ Novo Pedido MotoFast!",
+      `Entrega em ${pedido.bairro} — R$${pedido.taxaMotoboy || pedido.taxa}`
+    );
+
     // Recarrega a lista do banco, garantindo consistência total
     await carregarPedidos(empresa.id);
     setAba("ativos");
@@ -1491,8 +1590,10 @@ export default function AppEmpresario() {
           <div style={{fontSize:64,marginBottom:16}}>⛔</div>
           <div style={{color:"#ef4444",fontWeight:900,fontSize:24,marginBottom:12}}>Conta Bloqueada</div>
           <div style={{background:"#1a0a0a",border:"1px solid #ef4444",borderRadius:12,padding:"20px 24px",marginBottom:20}}>
-            <div style={{color:"#f87171",fontSize:15,lineHeight:1.7,marginBottom:12}}>
-              Sua conta foi bloqueada por <strong>mensalidade pendente</strong>.
+            <div style={{color:"#f87171",fontSize:15,lineHeight:1.7,marginBottom:12,textAlign:"left"}}>
+              {empresa.motivoBloqueio
+                ? empresa.motivoBloqueio
+                : <>Sua conta foi bloqueada por <strong>mensalidade pendente</strong>.</>}
             </div>
             <div style={{color:"#9ca3af",fontSize:13,lineHeight:1.6}}>
               Para reativar sua conta, entre em contato com o MotoFast e regularize seu pagamento.
@@ -1594,12 +1695,18 @@ export default function AppEmpresario() {
                   observacao: avisoSemMotoboy.obs,
                   forma_pagamento: avisoSemMotoboy.pagamento,
                   taxa: avisoSemMotoboy.taxa,
+                  taxa_motoboy: avisoSemMotoboy.taxaMotoboy || 0,
+                  taxa_empresario: avisoSemMotoboy.taxa || 0,
                   valor_pedido: avisoSemMotoboy.valorPedido,
                   valor_receber: avisoSemMotoboy.valorReceber,
                   valor_troco: avisoSemMotoboy.troco,
                   status: "aguardando",
                 });
                 if (error) { console.error("Erro ao reenviar pedido:", error); return; }
+                notificarMotoboysPush(
+                  "🏍️ Novo Pedido MotoFast!",
+                  `Entrega em ${avisoSemMotoboy.bairro} — R$${avisoSemMotoboy.taxaMotoboy || avisoSemMotoboy.taxa}`
+                );
                 await carregarPedidos(empresa.id);
                 setAvisoSemMotoboy(null);
                 setAba("ativos");
@@ -1615,6 +1722,40 @@ export default function AppEmpresario() {
           </div>
         </div>
       )}
+      {avisoCancelamentoMotoboy && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"#111827",border:"2px solid #ef4444",borderRadius:16,width:"100%",maxWidth:440,padding:28,textAlign:"center"}}>
+            <div style={{fontSize:56,marginBottom:12}}>⚠️</div>
+            <div style={{color:"#f87171",fontWeight:900,fontSize:22,marginBottom:14}}>Motoboy cancelou a entrega</div>
+            <div style={{background:"#0f172a",borderRadius:10,padding:"14px 18px",marginBottom:16,textAlign:"left"}}>
+              <div style={{color:"#9ca3af",fontSize:12}}>Cliente</div>
+              <div style={{color:"#f9fafb",fontWeight:700,fontSize:15,marginBottom:8}}>{avisoCancelamentoMotoboy.clienteNome} — {avisoCancelamentoMotoboy.bairro}</div>
+              <div style={{color:"#9ca3af",fontSize:12}}>Motivo informado pelo motoboy</div>
+              <div style={{color:"#fbbf24",fontWeight:700,fontSize:15}}>{avisoCancelamentoMotoboy.motivo}</div>
+            </div>
+            <div style={{color:"#9ca3af",fontSize:13,marginBottom:18,lineHeight:1.6}}>
+              Entre em contato com <strong style={{color:"#f9fafb"}}>{avisoCancelamentoMotoboy.motoboyNome}</strong> para mais informações, se precisar.
+            </div>
+            {avisoCancelamentoMotoboy.motoboyTel && (
+              <div style={{display:"flex",gap:8,marginBottom:10}}>
+                <a href={`https://wa.me/55${avisoCancelamentoMotoboy.motoboyTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                  style={{flex:1,padding:"12px",borderRadius:10,background:"#10b981",color:"#fff",fontWeight:800,fontSize:14,textDecoration:"none"}}>
+                  💬 WhatsApp
+                </a>
+                <a href={`tel:${avisoCancelamentoMotoboy.motoboyTel.replace(/\D/g,"")}`}
+                  style={{flex:1,padding:"12px",borderRadius:10,background:"#3b82f6",color:"#fff",fontWeight:800,fontSize:14,textDecoration:"none"}}>
+                  📱 Ligar
+                </a>
+              </div>
+            )}
+            <button onClick={()=>setAvisoCancelamentoMotoboy(null)}
+              style={{width:"100%",padding:"12px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Suporte no rodapé */}
       <div style={{maxWidth:900,margin:"0 auto",padding:"0 20px 30px"}}>
         <a href={`https://wa.me/${SUPORTE_TEL}?text=Olá, sou empresário no MotoFast e preciso de suporte`}
