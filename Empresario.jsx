@@ -149,16 +149,34 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
     setCalcKm(true);
     (async()=>{
       try {
-        const ORS_KEY = "5b3ce3597851110001cf6248a8d6f2a3e7f44a0b8c1d2e3f4a5b6c7";
+        // Tenta com endereço completo primeiro
         const endOrigem = encodeURIComponent(`${empresa.endereco}, Ilhabela, SP, Brasil`);
         const endDestino = encodeURIComponent(`${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil`);
+        const endOrigemBairro = encodeURIComponent(`${empresa.bairro}, Ilhabela, SP, Brasil`);
+        const endDestinoBairro = encodeURIComponent(`${bairro}, Ilhabela, SP, Brasil`);
+
         const [rO, rD] = await Promise.all([
           fetch(`https://nominatim.openstreetmap.org/search?q=${endOrigem}&format=json&limit=1`).then(r=>r.json()),
           fetch(`https://nominatim.openstreetmap.org/search?q=${endDestino}&format=json&limit=1`).then(r=>r.json()),
         ]);
-        if (!cancelado && rO[0] && rD[0]) {
-          const latO = rO[0].lat, lonO = rO[0].lon;
-          const latD = rD[0].lat, lonD = rD[0].lon;
+
+        let latO, lonO, latD, lonD;
+
+        if (rO[0]) { latO = rO[0].lat; lonO = rO[0].lon; }
+        else {
+          // Fallback: usa bairro do estabelecimento
+          const rOB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endOrigemBairro}&format=json&limit=1`).then(r=>r.json());
+          if (rOB[0]) { latO = rOB[0].lat; lonO = rOB[0].lon; }
+        }
+
+        if (rD[0]) { latD = rD[0].lat; lonD = rD[0].lon; }
+        else {
+          // Fallback: usa bairro do cliente
+          const rDB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoBairro}&format=json&limit=1`).then(r=>r.json());
+          if (rDB[0]) { latD = rDB[0].lat; lonD = rDB[0].lon; }
+        }
+
+        if (!cancelado && latO && latD) {
           const rota = await fetch(`https://router.project-osrm.org/route/v1/driving/${lonO},${latO};${lonD},${latD}?overview=false`).then(r=>r.json());
           const metros = rota.routes?.[0]?.distance;
           if (metros && !cancelado) {
