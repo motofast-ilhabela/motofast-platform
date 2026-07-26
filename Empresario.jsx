@@ -188,8 +188,12 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         // Se não encontrar, tenta rua+número SEM o bairro — importante pra clientes
         // salvos há mais tempo, onde o campo "bairro" às vezes é o nome de um
         // condomínio ou ponto de referência (ex: "Gren Park") que não existe de
-        // verdade no mapa, e travava a busca mesmo com a rua certa. Só por último
-        // cai pro bairro sozinho.
+        // verdade no mapa, e travava a busca mesmo com a rua certa.
+        // Se ainda assim não achar, tenta o BAIRRO OFICIAL (o mesmo nome usado no
+        // cadastro de taxas do estabelecimento, ex: "Barra Velha") — que é sempre
+        // um lugar de verdade reconhecido no mapa, diferente do texto livre que às
+        // vezes está salvo no cliente. Só por último, em caso raro, cai pro bairro
+        // exatamente como está escrito no cadastro do cliente.
         const rD = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestino}&format=json&limit=1`).then(r=>r.json());
         let latD, lonD;
         if (rD[0]) { latD = rD[0].lat; lonD = rD[0].lon; }
@@ -198,8 +202,16 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
           const rDSemBairro = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoSemBairro}&format=json&limit=1`).then(r=>r.json());
           if (rDSemBairro[0]) { latD = rDSemBairro[0].lat; lonD = rDSemBairro[0].lon; }
           else {
-            const rDB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoBairro}&format=json&limit=1`).then(r=>r.json());
-            if (rDB[0]) { latD = rDB[0].lat; lonD = rDB[0].lon; }
+            let achouBairroOficial = false;
+            if (taxaKey && taxaKey.toLowerCase() !== bairro.toLowerCase()) {
+              const endDestinoOficial = encodeURIComponent(`${taxaKey}, Ilhabela, SP, Brasil`);
+              const rDOficial = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoOficial}&format=json&limit=1`).then(r=>r.json());
+              if (rDOficial[0]) { latD = rDOficial[0].lat; lonD = rDOficial[0].lon; achouBairroOficial = true; }
+            }
+            if (!achouBairroOficial) {
+              const rDB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoBairro}&format=json&limit=1`).then(r=>r.json());
+              if (rDB[0]) { latD = rDB[0].lat; lonD = rDB[0].lon; }
+            }
           }
         }
 
@@ -233,6 +245,10 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   // Telefone é ESSENCIAL pro motoboy conseguir falar com o cliente na entrega —
   // nunca deixa publicar sem um telefone válido preenchido, seja de cliente salvo ou novo.
   const telValido = !!(telEfetivo && telEfetivo.trim() && telEfetivo.trim().toLowerCase()!=="não informado" && telEfetivo.replace(/\D/g,"").length>=8);
+  // Só bloqueia publicar quando NÃO há preço nenhum disponível — nem pela distância
+  // (km falhou) nem pela reserva por bairro (também não cadastrada). Nesse caso
+  // publicar deixaria o pedido com taxa R$0, o que nunca pode acontecer.
+  const semPrecoDisponivel = erroCalculo && (!taxa || !(taxa.e>0));
 
   function detectarBairro(rua) {
     const l = rua.toLowerCase();
@@ -255,6 +271,10 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
     }
     if (!telValido) {
       setErro("Preencha o telefone/WhatsApp do cliente — é essencial pro motoboy conseguir falar com ele na entrega.");
+      return;
+    }
+    if (semPrecoDisponivel) {
+      setErro("Não foi possível calcular nenhuma taxa pra esse endereço (nem por distância, nem por bairro). Corrija o endereço ou fale com o suporte antes de publicar.");
       return;
     }
     // Salva cliente novo automaticamente no Supabase
@@ -444,8 +464,21 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
             </div>
           )}
           {!calcKm && !distanciaKm && erroCalculo && (
-            <div style={{color:"#f87171",fontSize:13}}>
-              ⚠️ Não conseguimos calcular a distância automaticamente pra esse endereço. Confira se a rua e o bairro estão certos, ou fale com o suporte MotoFast.
+            <div>
+              <div style={{color:"#f87171",fontSize:13,marginBottom:10}}>
+                ⚠️ Não conseguimos calcular a distância automaticamente pra esse endereço. Confira se a rua e o bairro estão certos, ou fale com o suporte MotoFast.
+              </div>
+              {taxa && taxa.e>0 ? (
+                <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"10px 14px"}}>
+                  <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:4}}>💡 Se você publicar assim mesmo, vamos usar o valor antigo (por bairro) como reserva:</div>
+                  <div style={{color:"#fbbf24",fontWeight:900,fontSize:22}}>R${taxa.e}</div>
+                  <div style={{color:"#9ca3af",fontSize:11,marginTop:4}}>Esse valor pode não refletir a distância real — corrija o endereço se puder, ou publique assim mesmo se preferir.</div>
+                </div>
+              ) : (
+                <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px"}}>
+                  <div style={{color:"#f87171",fontSize:12,fontWeight:700}}>❌ Esse bairro também não tem taxa de reserva cadastrada. Corrija o endereço antes de publicar, ou fale com o suporte.</div>
+                </div>
+              )}
             </div>
           )}
           {!calcKm && !distanciaKm && !erroCalculo && (
@@ -532,7 +565,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         </div>
       )}
 
-      <Btn onClick={publicar} full disabled={buscaCliente.length<2 || !empresa?.id || !telValido}>
+      <Btn onClick={publicar} full disabled={buscaCliente.length<2 || !empresa?.id || !telValido || semPrecoDisponivel}>
         🚀 Publicar Pedido
       </Btn>
     </div>
