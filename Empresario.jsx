@@ -36,6 +36,17 @@ const PG = {
 const SUPORTE_TEL = "5512991213656";
 const SUPORTE_HORARIO = "Seg-Sex 9h-22h • Sáb 9h-19h • Dom/feriados: fechado";
 
+// Retorna a data no formato AAAA-MM-DD usando o horário LOCAL (Brasil), nunca UTC.
+// IMPORTANTE: nunca usar date.toISOString().split("T")[0] pra pegar "a data de hoje"
+// ou "a data de um pedido" — toISOString() converte pra UTC e desloca a data em
+// horários próximos da meia-noite (ex: pedido às 21h no Brasil vira dia seguinte em UTC).
+function dataLocalISO(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth()+1).padStart(2,"0");
+  const d = String(date.getDate()).padStart(2,"0");
+  return `${y}-${m}-${d}`;
+}
+
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
 function Card({ children, style={} }) {
   return <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"18px 22px",...style}}>{children}</div>;
@@ -856,6 +867,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
   const [tick, setTick] = useState(0);
   const [modalMapa, setModalMapa] = useState(null);
   const [modalAddCorrida, setModalAddCorrida] = useState(null); // {corridaId, motoboyNome, motoboyTel, vagaNum}
+  const [modalEditar, setModalEditar] = useState(null); // pedido sendo editado
 
   // Link de rastreio público + mensagem pronta pro empresário enviar ao cliente
   function linkRastreio(p) {
@@ -891,6 +903,32 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
       motivo_cancelamento: "Cancelado pelo empresário",
     }).eq("id", id);
     await onRecarregar();
+  }
+
+  // Salva edições feitas num pedido já publicado (mesmo depois do motoboy aceitar).
+  // Permite corrigir dados errados sem precisar cancelar e recriar o pedido do zero.
+  async function salvarEdicaoPedido(pedidoId, dados) {
+    const { error } = await supabase.from("pedidos").update({
+      cliente_telefone: dados.clienteTel,
+      rua: dados.rua,
+      numero: dados.num,
+      bairro: dados.bairro,
+      referencia: dados.ref,
+      observacao: dados.obs,
+      forma_pagamento: dados.pagamento,
+      taxa: dados.taxa,
+      taxa_motoboy: dados.taxaMotoboy,
+      valor_pedido: dados.valorPedido,
+      valor_receber: dados.valorReceber,
+      valor_troco: dados.troco,
+    }).eq("id", pedidoId);
+    if (error) {
+      alert("❌ Erro ao salvar edição: " + error.message);
+      return false;
+    }
+    await onRecarregar();
+    setModalEditar(null);
+    return true;
   }
 
   async function adicionarPedidoCorrida(novoPedido) {
@@ -995,7 +1033,10 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
               <div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>💳 Entregue a maquininha ao motoboy antes de ele sair.</div>
             </div>}
 
-            <Btn small cor="perigo" onClick={()=>cancelar(p.id)}>❌ Cancelar pedido</Btn>
+            <div style={{display:"flex",gap:8}}>
+              <Btn small cor="cinza" onClick={()=>setModalEditar(p)}>✏️ Editar</Btn>
+              <Btn small cor="perigo" onClick={()=>cancelar(p.id)}>❌ Cancelar pedido</Btn>
+            </div>
           </Card>
         );
       })}
@@ -1064,6 +1105,9 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                       📲 Avisar cliente que o pedido saiu
                     </button>
                   )}
+                  <button onClick={()=>setModalEditar(p)} style={{marginTop:8,width:"100%",padding:"9px",borderRadius:8,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                    ✏️ Editar este pedido
+                  </button>
                 </div>
               );
             })}
@@ -1140,13 +1184,136 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
           empresa={empresa}
         />
       )}
+
+      {/* Modal editar pedido já publicado (mesmo depois do motoboy aceitar) */}
+      {modalEditar && (
+        <ModalEditarPedido
+          pedido={modalEditar}
+          onSalvar={(dados)=>salvarEdicaoPedido(modalEditar.id, dados)}
+          onFechar={()=>setModalEditar(null)}
+        />
+      )}
     </div>
   );
 }
 
-// ─── HISTÓRICO DO ESTABELECIMENTO ─────────────────────────────────────────────
+// ─── EDITAR PEDIDO JÁ PUBLICADO ───────────────────────────────────────────────
+function ModalEditarPedido({ pedido, onSalvar, onFechar }) {
+  const [clienteTel, setClienteTel] = useState(pedido.clienteTel || "");
+  const [rua, setRua] = useState(pedido.rua || "");
+  const [num, setNum] = useState(pedido.num || "");
+  const [bairro, setBairro] = useState(pedido.bairro || "");
+  const [ref, setRef] = useState(pedido.ref || "");
+  const [obs, setObs] = useState(pedido.obs || "");
+  const [pagamento, setPagamento] = useState(pedido.pagamento || "pix");
+  const [taxa, setTaxa] = useState(String(pedido.taxa ?? ""));
+  const [taxaMotoboy, setTaxaMotoboy] = useState(String(pedido.taxaMotoboy ?? ""));
+  const [valorPedido, setValorPedido] = useState(pedido.valorPedido!=null ? String(pedido.valorPedido) : "");
+  const [valorReceber, setValorReceber] = useState(pedido.valorReceber!=null ? String(pedido.valorReceber) : "");
+  const [salvando, setSalvando] = useState(false);
+
+  // Já tem motoboy vinculado nesse pedido (aceito ou a caminho) — se mudar o valor
+  // que ele recebe, precisa avisar ele direto, porque ele já pode ter se programado
+  // com o valor original mostrado quando aceitou a corrida.
+  const jaTemMotoboy = !!pedido.motoboyId;
+
+  async function salvar() {
+    setSalvando(true);
+    const troco = (valorPedido && valorReceber && parseFloat(valorReceber)>parseFloat(valorPedido))
+      ? parseFloat(valorReceber)-parseFloat(valorPedido) : null;
+    const ok = await onSalvar({
+      clienteTel, rua, num, bairro, ref, obs, pagamento,
+      taxa: parseFloat(taxa)||0,
+      taxaMotoboy: parseFloat(taxaMotoboy)||0,
+      valorPedido: valorPedido ? parseFloat(valorPedido) : null,
+      valorReceber: valorReceber ? parseFloat(valorReceber) : null,
+      troco,
+    });
+    setSalvando(false);
+    if (!ok) return;
+  }
+
+  return (
+    <Overlay onClose={onFechar} maxW={520} borderColor="#60a5fa">
+      <OvHeader titulo="✏️ Editar Pedido" sub={pedido.clienteNome} onClose={onFechar}/>
+
+      {jaTemMotoboy && (
+        <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px",marginBottom:14}}>
+          <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⚠️ Esse pedido já foi aceito por um motoboy. O valor dele está protegido e não muda. Mas se você alterar o endereço ou a forma de pagamento, avise ele direto pelo WhatsApp — ele já saiu com base nas informações originais.</div>
+        </div>
+      )}
+
+      <STitle>📍 Endereço</STitle>
+      <div style={{display:"flex",gap:10}}>
+        <div style={{flex:3}}><Inp label="Rua / Avenida" value={rua} onChange={setRua}/></div>
+        <div style={{flex:1}}><Inp label="Número" value={num} onChange={setNum}/></div>
+      </div>
+      <Inp label="Bairro" value={bairro} onChange={setBairro}/>
+      <Inp label="Referência" value={ref} onChange={setRef} placeholder="Casa de cor, portão..."/>
+      <Inp label="Telefone / WhatsApp do cliente" value={clienteTel} onChange={setClienteTel} placeholder="(12) 99999-0000"/>
+
+      <Divider/>
+      <STitle>💳 Forma de Pagamento</STitle>
+      <div style={{display:"flex",gap:8,marginBottom:10}}>
+        {Object.entries(PG).map(([k,p])=>(
+          <button key={k} onClick={()=>setPagamento(k)} style={{flex:1,padding:"10px 6px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,background:pagamento===k?"#1e293b":"#0f172a",border:pagamento===k?`2px solid ${p.cor}`:"2px solid #1f2937",color:pagamento===k?p.cor:"#6b7280"}}>
+            {p.icon}<br/>{p.label}
+          </button>
+        ))}
+      </div>
+      {pagamento==="dinheiro" && (
+        <div style={{display:"flex",gap:8,marginBottom:10}}>
+          <div style={{flex:1}}>
+            <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>Valor do pedido (R$)</div>
+            <input type="number" value={valorPedido} onChange={e=>setValorPedido(e.target.value)} placeholder="Ex: 15,00"
+              style={{background:"#0f172a",border:"1px solid #fbbf24",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+          </div>
+          <div style={{flex:1}}>
+            <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>Cliente paga com (R$)</div>
+            <input type="number" value={valorReceber} onChange={e=>setValorReceber(e.target.value)} placeholder="Ex: 20,00"
+              style={{background:"#0f172a",border:"1px solid #fbbf24",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+          </div>
+        </div>
+      )}
+      {pagamento==="cartao" && (
+        <div style={{marginBottom:10}}>
+          <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,marginBottom:4}}>Valor do pedido (R$)</div>
+          <input type="number" value={valorPedido} onChange={e=>setValorPedido(e.target.value)} placeholder="Ex: 15,00"
+            style={{background:"#0f172a",border:"1px solid #60a5fa",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+        </div>
+      )}
+
+      <Divider/>
+      <STitle>💰 Taxa de Entrega</STitle>
+      <div style={{display:"flex",gap:10}}>
+        <div style={{flex:1}}>
+          <div style={{color:"#34d399",fontSize:11,fontWeight:700,marginBottom:4}}>Cliente paga (R$)</div>
+          <input type="number" value={taxa} onChange={e=>setTaxa(e.target.value)}
+            style={{background:"#0f172a",border:"1px solid #34d399",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:14,fontWeight:700,outline:"none",boxSizing:"border-box"}}/>
+        </div>
+        <div style={{flex:1}}>
+          <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>🔒 Motoboy recebe (R$)</div>
+          <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:6,color:"#fbbf24",padding:"8px 10px",width:"100%",fontSize:14,fontWeight:700,boxSizing:"border-box"}}>
+            R${taxaMotoboy}
+          </div>
+        </div>
+      </div>
+      <div style={{color:"#6b7280",fontSize:11,marginTop:4,marginBottom:10}}>
+        🔒 O valor do motoboy é protegido e não pode ser alterado aqui — garante que ele sempre recebe o que já foi calculado, mesmo se o preço do cliente mudar. Precisa ajustar? Cancele o pedido e publique de novo, ou fale direto com o motoboy.
+      </div>
+
+      <Inp label="Observações" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
+
+      <div style={{display:"flex",gap:8,marginTop:8}}>
+        <Btn onClick={salvar} full disabled={salvando}>{salvando?"Salvando...":"💾 Salvar Alterações"}</Btn>
+        <Btn cor="cinza" onClick={onFechar}>Cancelar</Btn>
+      </div>
+    </Overlay>
+  );
+}
 function HistoricoEmp({ historico }) {
   const [filtro, setFiltro] = useState("Todos");
+  const [dataSelecionada, setDataSelecionada] = useState(dataLocalISO());
 
   // historico ja vem com status normalizado (Entregue / Cancelada) do App principal
   const todos = historico;
@@ -1154,12 +1321,80 @@ function HistoricoEmp({ historico }) {
   const totalTaxas = todos.filter(e=>e.status==="Entregue").reduce((s,e)=>s+e.taxa,0);
   const semana = todos.filter(e=>e.status==="Entregue").slice(0,5).reduce((s,e)=>s+e.taxa,0);
 
+  // Entregas do dia selecionado — o mesmo valor "taxa" que o cliente pagou é o
+  // valor que você repassa pra plataforma (a MotoFast fica com a margem dela e
+  // paga o motoboy a partir desse valor) — não são dois números diferentes.
+  const entregasDia = todos.filter(e=>e.status==="Entregue" && e.dataISO===dataSelecionada);
+  const totalDia = entregasDia.reduce((s,e)=>s+e.taxa,0);
+  const dataFmt = new Date(dataSelecionada+"T12:00:00").toLocaleDateString("pt-BR");
+  const hojeISO = dataLocalISO();
+  const ontemISO = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return dataLocalISO(d); })();
+
+  // Resumo agrupado por dia — todos os dias que tiveram entrega, mais recente primeiro
+  const porDia = {};
+  todos.filter(e=>e.status==="Entregue").forEach(e=>{
+    if (!e.dataISO) return;
+    if (!porDia[e.dataISO]) porDia[e.dataISO] = {qtd:0, total:0};
+    porDia[e.dataISO].qtd++;
+    porDia[e.dataISO].total += e.taxa;
+  });
+  const diasOrdenados = Object.entries(porDia).sort((a,b)=>b[0].localeCompare(a[0]));
+
   return (
     <div>
       <div style={{marginBottom:14}}>
         <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>📋 Histórico de Entregas</div>
         <div style={{color:"#6b7280",fontSize:13}}>{lista.length} registros</div>
       </div>
+
+      {/* Seletor de data — mostra quanto tem que repassar pra plataforma em qualquer dia, hoje ou anterior */}
+      <Card style={{marginBottom:14,background:"#0d3d2e",border:"1px solid #34d399"}}>
+        <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>💰 Taxas por dia — quanto repassar pra plataforma</div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:14}}>
+          <input type="date" value={dataSelecionada} onChange={e=>setDataSelecionada(e.target.value)}
+            style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"9px 12px",fontSize:14,outline:"none"}}/>
+          <button onClick={()=>setDataSelecionada(hojeISO)} style={{padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:12,background:dataSelecionada===hojeISO?"#0d3d2e":"#1f2937",border:dataSelecionada===hojeISO?"1px solid #34d399":"1px solid #374151",color:dataSelecionada===hojeISO?"#34d399":"#9ca3af"}}>Hoje</button>
+          <button onClick={()=>setDataSelecionada(ontemISO)} style={{padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:12,background:dataSelecionada===ontemISO?"#0d3d2e":"#1f2937",border:dataSelecionada===ontemISO?"1px solid #34d399":"1px solid #374151",color:dataSelecionada===ontemISO?"#34d399":"#9ca3af"}}>Ontem</button>
+        </div>
+        <div style={{color:"#6b7280",fontSize:12,marginBottom:4}}>{dataFmt}</div>
+        <div style={{color:"#34d399",fontSize:32,fontWeight:900}}>R${totalDia}</div>
+        <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasDia.length} entrega{entregasDia.length!==1?"s":""} nesta data</div>
+      </Card>
+
+      {/* Lista das entregas do dia selecionado — cliente, bairro e valor */}
+      {entregasDia.length>0 && (
+        <Card style={{marginBottom:14}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Entregas de {dataFmt}</div>
+          {entregasDia.map(e=>(
+            <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1f2937"}}>
+              <div>
+                <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
+                <span style={{color:"#34d399",fontSize:12,marginLeft:8}}>{e.bairro}</span>
+              </div>
+              <span style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>R${e.taxa}</span>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {/* Lista de todos os dias com entrega — clique pra ver o total daquele dia */}
+      {diasOrdenados.length>0 && (
+        <Card style={{marginBottom:14}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📅 Dias anteriores</div>
+          {diasOrdenados.slice(0,30).map(([data,info])=>{
+            const dFmt = new Date(data+"T12:00:00").toLocaleDateString("pt-BR");
+            const sel = data===dataSelecionada;
+            return (
+              <div key={data} onClick={()=>setDataSelecionada(data)}
+                style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:sel?"#0d3d2e":"#0f172a",border:sel?"1px solid #34d399":"1px solid #1f2937",borderRadius:8,padding:"9px 14px",marginBottom:6,cursor:"pointer"}}>
+                <span style={{color:sel?"#34d399":"#d1d5db",fontSize:13,fontWeight:600}}>{dFmt}</span>
+                <span style={{color:"#6b7280",fontSize:12}}>{info.qtd} entrega{info.qtd!==1?"s":""}</span>
+                <span style={{color:"#60a5fa",fontWeight:700,fontSize:14}}>R${info.total.toFixed(2)}</span>
+              </div>
+            );
+          })}
+        </Card>
+      )}
 
       {/* Resumo financeiro */}
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
@@ -1178,6 +1413,8 @@ function HistoricoEmp({ historico }) {
           <div style={{color:"#34d399",fontSize:22,fontWeight:800}}>{todos.filter(e=>e.status==="Entregue").length}</div>
         </div>
       </div>
+
+      <div style={{color:"#4b5563",fontSize:11,marginBottom:10}}>💡 O valor de cada entrega abaixo é o que o cliente pagou de taxa — e é esse mesmo valor que você repassa pra plataforma.</div>
 
       <div style={{display:"flex",gap:6,marginBottom:12}}>
         {["Todos","Entregue","Cancelada"].map(f=>(
@@ -1397,6 +1634,7 @@ export default function AppEmpresario() {
     status: p.status==="entregue" ? "Entregue" : "Cancelada",
     motoboyNome: p.motoboyNome || "—",
     data: new Date(p.criadoEm).toLocaleDateString("pt-BR"),
+    dataISO: dataLocalISO(new Date(p.criadoEm)),
     hora: new Date(p.criadoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
     horaSaida: p.saiuEstabelecimentoEm ? new Date(p.saiuEstabelecimentoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
     horaEntrega: p.entregueEm ? new Date(p.entregueEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
