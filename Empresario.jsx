@@ -163,7 +163,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         const endDestinoBairro = encodeURIComponent(`${bairro}, Ilhabela, SP, Brasil`);
 
         // Origem: tenta o endereço completo do estabelecimento primeiro (se tiver
-        // cadastrado); se não tiver ou não encontrar, cai pro bairro do estabelecimento.
+        // cadastrado); se não encontrar, cai pro bairro do estabelecimento.
         let latO, lonO;
         if (empresa.endereco) {
           const endOrigem = encodeURIComponent(`${empresa.endereco}, Ilhabela, SP, Brasil`);
@@ -175,13 +175,23 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
           if (rOB[0]) { latO = rOB[0].lat; lonO = rOB[0].lon; }
         }
 
-        // Destino: tenta o endereço completo do cliente; se não encontrar, cai pro bairro dele.
+        // Destino: tenta o endereço completo do cliente (rua+número+bairro) primeiro.
+        // Se não encontrar, tenta rua+número SEM o bairro — importante pra clientes
+        // salvos há mais tempo, onde o campo "bairro" às vezes é o nome de um
+        // condomínio ou ponto de referência (ex: "Gren Park") que não existe de
+        // verdade no mapa, e travava a busca mesmo com a rua certa. Só por último
+        // cai pro bairro sozinho.
         const rD = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestino}&format=json&limit=1`).then(r=>r.json());
         let latD, lonD;
         if (rD[0]) { latD = rD[0].lat; lonD = rD[0].lon; }
         else {
-          const rDB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoBairro}&format=json&limit=1`).then(r=>r.json());
-          if (rDB[0]) { latD = rDB[0].lat; lonD = rDB[0].lon; }
+          const endDestinoSemBairro = encodeURIComponent(`${rua}, ${num||""}, Ilhabela, SP, Brasil`);
+          const rDSemBairro = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoSemBairro}&format=json&limit=1`).then(r=>r.json());
+          if (rDSemBairro[0]) { latD = rDSemBairro[0].lat; lonD = rDSemBairro[0].lon; }
+          else {
+            const rDB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoBairro}&format=json&limit=1`).then(r=>r.json());
+            if (rDB[0]) { latD = rDB[0].lat; lonD = rDB[0].lon; }
+          }
         }
 
         if (!cancelado && latO && latD) {
