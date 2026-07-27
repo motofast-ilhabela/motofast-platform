@@ -252,6 +252,12 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
           <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏪 1º — Buscar no estabelecimento</div>
           <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{pedido.empresaNome}</div>
           <div style={{color:"#9ca3af",fontSize:13,marginTop:2}}>{pedido.empresaEndereco||"Perequê, Ilhabela/SP"}</div>
+          {pedido.empresaTel && (
+            <a href={`https://wa.me/55${pedido.empresaTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+              style={{display:"inline-block",marginTop:8,background:"#0f2540",color:"#60a5fa",padding:"5px 12px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>
+              💬 Falar com o estabelecimento
+            </a>
+          )}
         </div>
 
         <div style={{marginBottom:12}}>
@@ -392,6 +398,8 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
                     <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
                       <a href={`https://wa.me/55${p.empresaTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
                         style={{background:"#0f2540",color:"#60a5fa",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>💬 Falar com o estabelecimento</a>
+                      <a href={`tel:${p.empresaTel.replace(/\D/g,"")}`}
+                        style={{background:"#0f2540",color:"#60a5fa",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>📱 Ligar</a>
                     </div>
                   )}
                   <button onClick={()=>abrirGPSEstab(p)} style={{marginTop:8,width:"100%",padding:"9px",borderRadius:8,background:"#1e3a5f",border:"1px solid #3b82f6",color:"#60a5fa",fontWeight:700,fontSize:13,cursor:"pointer"}}>
@@ -404,7 +412,10 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
                   )}
                 </div>
 
-                {/* Endereço do cliente já visível, mesmo antes de sair — facilita a vida do motoboy */}
+                {/* Endereço do cliente já visível, mesmo antes de sair — facilita a vida do motoboy.
+                    O CONTATO do cliente (WhatsApp/Ligar) só aparece depois de clicar em "Saí do
+                    estabelecimento" — isso força o clique, que é o que libera o link de rastreio
+                    pro cliente e registra o horário de saída. */}
                 <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
                   <div style={{color:"#6b7280",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏠 2º — Depois, entregar para</div>
                   <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{p.clienteNome}</div>
@@ -412,6 +423,7 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
                   <div style={{color:"#9ca3af",fontSize:13,marginTop:2}}>{p.bairro} — Ilhabela/SP</div>
                   {p.ref && <div style={{color:"#fbbf24",fontSize:12,marginTop:3}}>📌 Ref: {p.ref}</div>}
                   {p.obs && <div style={{color:"#a78bfa",fontSize:12,marginTop:3,background:"#1a1a2e",borderRadius:6,padding:"5px 8px"}}>💬 Obs: {p.obs}</div>}
+                  <div style={{color:"#4b5563",fontSize:11,marginTop:6}}>📵 Contato do cliente libera depois que você clicar em "Saí do estabelecimento"</div>
                 </div>
 
                 {p.pagamento==="dinheiro" && (
