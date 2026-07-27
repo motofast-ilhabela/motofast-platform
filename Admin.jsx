@@ -1051,7 +1051,15 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                 {emp.horarioFuncionamento
                   ? <div style={{color:"#60a5fa",fontSize:12,marginTop:2}}>🕐 {emp.horarioFuncionamento}</div>
                   : <div style={{color:"#f59e0b",fontSize:12,marginTop:2}}>⚠️ Horário de funcionamento não cadastrado</div>}
-                {emp.cnpj && <div style={{color:"#4b5563",fontSize:11,marginTop:1}}>CNPJ: {emp.cnpj} · Dono: {emp.nomeDono}</div>}
+                {emp.enderecoEstab && <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>🏠 {emp.enderecoEstab}</div>}
+                {emp.cnpj && <div style={{color:"#4b5563",fontSize:11,marginTop:1}}>CNPJ: {emp.cnpj}</div>}
+                {emp.nomeDono && <div style={{color:"#4b5563",fontSize:11,marginTop:1}}>👤 Dono: {emp.nomeDono}{emp.telDono?` · 📞 ${emp.telDono}`:""}</div>}
+                {emp.nomeSocio && <div style={{color:"#4b5563",fontSize:11,marginTop:1}}>👥 Sócio: {emp.nomeSocio}{emp.telSocio?` · 📞 ${emp.telSocio}`:""}</div>}
+                <div style={{color:"#4b5563",fontSize:11,marginTop:1}}>
+                  {emp.aprovadoEm
+                    ? `✅ Na plataforma desde ${new Date(emp.aprovadoEm).toLocaleDateString("pt-BR")}`
+                    : "⏳ Ainda não aprovado"}
+                </div>
                 {/* Régua de meta de entregas */}
                 {(()=>{
                   const meta = 40;
@@ -2256,6 +2264,8 @@ export default function App() {
         taxas: e.taxas || {},
         diaVencimento: e.dia_vencimento || new Date(e.criado_em||Date.now()).getDate(),
         horarioFuncionamento: e.horario_funcionamento || "",
+        aprovadoEm: e.aprovado_em || null,
+        criadoEm: e.criado_em || null,
       }));
 
       const clis = (cliRes.data || []).map(c => ({
