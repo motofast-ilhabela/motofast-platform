@@ -225,7 +225,7 @@ function Dashboard({ historico, motoboys, empresarios }) {
 
 // ─── REPASSE ──────────────────────────────────────────────────────────────────
 function Repasse({ historico, setHistorico, motoboys, empresarios }) {
-  const [semana, setSemana] = useState("atual");
+  const [semana, setSemana] = useState("atual"); // "atual" | "pendentes" | uma chave de segunda-feira específica (AAAA-MM-DD)
   const [detalhe, setDetalhe] = useState(null);
   const [bonus, setBonus] = useState(null);
   const [bonusValor, setBonusValor] = useState("");
@@ -240,38 +240,57 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
     return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
   }
   const segundaAtualChave = segundaFeiraDaSemana(agora);
-  const segundaAnteriorData = new Date(segundaAtualChave+"T12:00:00");
-  segundaAnteriorData.setDate(segundaAnteriorData.getDate()-7);
-  const segundaAnteriorChave = dataLocalISO(segundaAnteriorData);
   function labelDaSemana(chaveSegunda) {
     const fimData = new Date(chaveSegunda+"T12:00:00");
     fimData.setDate(fimData.getDate()+6);
     return `Semana de ${fmtDiaMes(chaveSegunda)} a ${fmtDiaMes(dataLocalISO(fimData))}`;
   }
 
-  const sems = {
-    atual:{s:segundaAtualChave,label:labelDaSemana(segundaAtualChave)},
-    anterior:{s:segundaAnteriorChave,label:labelDaSemana(segundaAnteriorChave)}
+  // Gera a lista de semanas passadas disponíveis pro seletor (últimas 30 = ~7 meses).
+  // Assim, mesmo daqui a vários meses de plataforma, qualquer semana antiga continua
+  // acessível pra consulta — nada fica "perdido" só porque passou da semana anterior.
+  function gerarSemanasDisponiveis(qtd=30) {
+    const lista = [];
+    let cursor = segundaAtualChave;
+    for (let i=0; i<qtd; i++) {
+      lista.push({chave:cursor, label:labelDaSemana(cursor)});
+      const d = new Date(cursor+"T12:00:00");
+      d.setDate(d.getDate()-7);
+      cursor = dataLocalISO(d);
+    }
+    return lista;
+  }
+  const semanasDisponiveis = gerarSemanasDisponiveis();
+
+  // "atual" = semana em andamento, só pendente. "pendentes" = qualquer coisa mais antiga
+  // ainda não paga (backlog). Uma CHAVE ESPECÍFICA = consulta histórica daquela semana
+  // exata, mostrando tudo que teve nela (pago ou não), pra revisão a qualquer momento.
+  const semanaEspecifica = semana!=="atual" && semana!=="pendentes" ? semana : null;
+  const semanaChaveAtiva = semanaEspecifica || segundaAtualChave;
+  const sem = {
+    s: semanaChaveAtiva,
+    label: semana==="pendentes" ? "Pendências antigas — tudo que ainda não foi pago" : labelDaSemana(semanaChaveAtiva),
   };
-  const sem = sems[semana];
-  const fonte = historico.filter(e=>e.status==="Entregue"&&e.semana===sem.s&&(semana==="atual"?!e.repasePago:e.repasePago));
+  const fonte = historico.filter(e=>e.status==="Entregue"&&e.semana===sem.s&&(semana==="atual"?!e.repasePago:(semanaEspecifica?true:e.repasePago)));
   // Fonte separada pros estabelecimentos — não depende de o motoboy já ter sido pago ou não.
   // Cobrança do estabelecimento e pagamento do motoboy são duas coisas independentes.
   const fonteTodasSemana = historico.filter(e=>e.status==="Entregue"&&e.semana===sem.s);
 
   // Fonte separada PARA OS MOTOBOYS — usa a MESMA semana real (segunda a domingo) que os
   // empresários, só que o pagamento acontece na terça-feira seguinte ao fim dela.
-  // Na aba "Semana atual": só a semana em andamento (20/07 a 26/07, por exemplo), isolada.
-  // Na aba "Semana anterior": TODAS as semanas mais antigas que ainda estão pendentes — não
-  // só a semana imediatamente anterior. Isso evita que uma entrega de uma semana bem mais
-  // antiga (ex: início do uso da plataforma, ou pagamento esquecido há 2+ semanas) fique
-  // invisível pra sempre só porque não é "a semana logo antes" da atual.
+  // "atual": só a semana em andamento, pendente. "pendentes": todo backlog não pago de
+  // qualquer semana mais antiga. Semana ESPECÍFICA escolhida no seletor: mostra TUDO
+  // daquela semana exata, pago ou não — é a consulta histórica de verdade.
   const labelPagarMb = semana==="atual"
     ? sem.label
-    : "Semanas anteriores — tudo que ainda não foi pago";
+    : semana==="pendentes"
+      ? "Pendências antigas — tudo que ainda não foi pago"
+      : `${sem.label} (consulta histórica)`;
   const fonteMb = historico.filter(e=>{
-    if (e.status!=="Entregue" || e.repasePago) return false;
-    return semana==="atual" ? e.semana===segundaAtualChave : e.semana<segundaAtualChave;
+    if (e.status!=="Entregue") return false;
+    if (semana==="atual") return e.semana===segundaAtualChave && !e.repasePago;
+    if (semana==="pendentes") return e.semana<segundaAtualChave && !e.repasePago;
+    return e.semana===semana; // semana específica: mostra tudo, pago ou não
   });
 
   // Verifica se um pagamento (mensalidade/taxa semanal) foi feito DENTRO da semana que está sendo
@@ -284,7 +303,13 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
 
   const dadosMb = motoboys.filter(m=>!m.banido).map(mb=>{
     const ents = fonteMb.filter(e=>e.motoboyId===mb.id);
-    return {...mb, ents, qtd:ents.length, total:+ents.reduce((s,e)=>s+e.taxaMotoboy,0).toFixed(2)};
+    const totalPendente = ents.filter(e=>!e.repasePago).reduce((s,e)=>s+e.taxaMotoboy,0);
+    return {
+      ...mb, ents, qtd:ents.length,
+      total:+ents.reduce((s,e)=>s+e.taxaMotoboy,0).toFixed(2),
+      totalPendente: +totalPendente.toFixed(2),
+      totalmentePago: ents.length>0 && ents.every(e=>e.repasePago),
+    };
   }).filter(m=>m.qtd>0).sort((a,b)=>b.total-a.total);
 
   const dadosEmp = empresarios.map(emp=>{
@@ -324,7 +349,7 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   // Marca como pago pro motoboy — salva de verdade no banco (antes só mudava na tela
   // e sumia se atualizasse a página).
   async function marcarPago(mbId) {
-    const idsParaMarcar = fonteMb.filter(e=>e.motoboyId===mbId).map(e=>e.id);
+    const idsParaMarcar = fonteMb.filter(e=>e.motoboyId===mbId && !e.repasePago).map(e=>e.id);
     if (idsParaMarcar.length===0) return;
     const { error } = await supabase.from("pedidos").update({ repasse_pago: true }).in("id", idsParaMarcar);
     if (error) {
@@ -345,16 +370,24 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
           <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>💰 Repasse Semanal</div>
           <div style={{color:"#6b7280",fontSize:13}}>Segunda cobrar empresários · Terça pagar motoboys</div>
         </div>
-        <div style={{display:"flex",gap:6}}>
-          {["atual","anterior"].map(k=>(
-            <button key={k} onClick={()=>setSemana(k)} style={{padding:"7px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,background:semana===k?"#0d3d2e":"#1f2937",border:semana===k?"1px solid #34d399":"1px solid #374151",color:semana===k?"#34d399":"#6b7280"}}>
-              {k==="atual"?"Semana atual":"Semana anterior"}
-            </button>
-          ))}
+        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+          <button onClick={()=>setSemana("atual")} style={{padding:"7px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,background:semana==="atual"?"#0d3d2e":"#1f2937",border:semana==="atual"?"1px solid #34d399":"1px solid #374151",color:semana==="atual"?"#34d399":"#6b7280"}}>
+            Semana atual
+          </button>
+          <button onClick={()=>setSemana("pendentes")} style={{padding:"7px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,background:semana==="pendentes"?"#0d3d2e":"#1f2937",border:semana==="pendentes"?"1px solid #34d399":"1px solid #374151",color:semana==="pendentes"?"#34d399":"#6b7280"}}>
+            ⏳ Pendências antigas
+          </button>
+          <select value={semanaEspecifica || ""} onChange={e=>setSemana(e.target.value || "atual")}
+            style={{background:semanaEspecifica?"#0d3d2e":"#1f2937",border:semanaEspecifica?"1px solid #34d399":"1px solid #374151",borderRadius:8,color:semanaEspecifica?"#34d399":"#9ca3af",padding:"7px 12px",fontSize:13,fontWeight:700,outline:"none"}}>
+            <option value="">📅 Consultar semana específica...</option>
+            {semanasDisponiveis.map(s=>(
+              <option key={s.chave} value={s.chave}>{s.label}{s.chave===segundaAtualChave?" (atual)":""}</option>
+            ))}
+          </select>
         </div>
       </div>
       <div style={{background:"#0f172a",borderRadius:10,padding:"11px 16px",marginBottom:14}}>
-        <span style={{color:"#9ca3af",fontSize:12}}>📅 {sem.label}</span>
+        <span style={{color:"#9ca3af",fontSize:12}}>📅 {sem.label}{semanaEspecifica?" — consulta histórica (mostra tudo, pago ou não)":""}</span>
       </div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
         <Stat icon="📋" label="Cobrar empresários" value={`R$${totalCobrar}`} cor="#60a5fa"/>
@@ -381,22 +414,24 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
                   <div style={{color:"#9ca3af",fontSize:12}}>{mb.qtd} entrega{mb.qtd!==1?"s":""}</div>
                 </div>
                 <div style={{textAlign:"right"}}>
-                  <div style={{color:"#6b7280",fontSize:11}}>A pagar terça-feira</div>
-                  <div style={{color:"#fbbf24",fontWeight:900,fontSize:26}}>R${mb.total}</div>
+                  <div style={{color:"#6b7280",fontSize:11}}>{mb.totalmentePago ? "Total da semana" : "A pagar terça-feira"}</div>
+                  <div style={{color:mb.totalmentePago?"#34d399":"#fbbf24",fontWeight:900,fontSize:26}}>R${mb.total}</div>
                 </div>
               </div>
               <div style={{background:"#0f172a",borderRadius:8,padding:"8px 12px",marginBottom:10}}>
                 {mb.ents.slice(0,4).map(e=>(
                   <div key={e.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
-                    <span style={{color:"#9ca3af"}}>{e.data.split("-").reverse().join("/")} · {e.bairro}</span>
+                    <span style={{color:"#9ca3af"}}>{e.data.split("-").reverse().join("/")} · {e.bairro}{e.repasePago?" ✅":""}</span>
                     <span style={{color:"#34d399",fontWeight:700}}>R${e.taxaMotoboy}</span>
                   </div>
                 ))}
                 {mb.ents.length>4 && <div style={{color:"#4b5563",fontSize:11}}>+{mb.ents.length-4} entregas</div>}
               </div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
                 <Btn small cor="cinza" onClick={()=>setDetalhe(mb.id)}>📋 Extrato completo</Btn>
-                <Btn small cor="amarelo" onClick={()=>marcarPago(mb.id)}>✅ Paguei R${mb.total}</Btn>
+                {mb.totalmentePago
+                  ? <Tag label="✅ Já pago" cor="#34d399"/>
+                  : <Btn small cor="amarelo" onClick={()=>marcarPago(mb.id)}>✅ Paguei R${mb.totalPendente}</Btn>}
                 <Btn small cor="roxo" onClick={()=>{setBonus(mb.id);setBonusValor("");setBonusDesc("");}}>🏆 Bônus</Btn>
               </div>
             </Card>
