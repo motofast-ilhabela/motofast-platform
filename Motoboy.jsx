@@ -620,6 +620,14 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
   const semanaAtual = entregues.filter(e=>e.semana===segundaAtual&&!e.repasePago);
   const saldoSemana = semanaAtual.reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
 
+  // Pendente de SEMANAS ANTERIORES — tudo que ainda não foi pago de qualquer semana já
+  // fechada (normalmente só a de segunda a domingo passada, que cai pra pagar nesta
+  // terça). Fica separado do "esta semana" de propósito: assim que a nova semana começa
+  // (hoje, segunda), o "esta semana" zera do jeito certo, mas o valor que ainda falta
+  // receber da semana anterior não some — continua visível aqui até ser marcado como pago.
+  const semanasAnteriores = entregues.filter(e=>e.semana<segundaAtual&&!e.repasePago);
+  const saldoSemanasAnteriores = semanasAnteriores.reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
+
   // Total histórico
   const totalHistorico = entregues.reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
   const totalEntregas  = entregues.length;
@@ -734,6 +742,16 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
           </div>
           <div style={{color:"#4b5563",fontSize:10,marginTop:4}}>Pago toda terça-feira via PIX</div>
         </div>
+        {/* Só aparece quando tiver algo de semana(s) já fechada(s) ainda não pago —
+            some sozinho assim que o Admin marcar como pago, sem precisar fazer nada. */}
+        {semanasAnteriores.length>0 && (
+          <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:10,padding:"16px 18px",flex:1,minWidth:130}}>
+            <div style={{color:"#fbbf24",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>⏳ A receber semana passada</div>
+            <div style={{color:"#f59e0b",fontSize:28,fontWeight:900,lineHeight:1}}>R${saldoSemanasAnteriores}</div>
+            <div style={{color:"#6b7280",fontSize:11,marginTop:4}}>{semanasAnteriores.length} entrega{semanasAnteriores.length!==1?"s":""} ainda não paga{semanasAnteriores.length!==1?"s":""}</div>
+            <div style={{color:"#4b5563",fontSize:10,marginTop:8}}>Confere com o PIX que a plataforma te mandar — some daqui assim que for pago</div>
+          </div>
+        )}
         <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"16px 18px",flex:1,minWidth:130}}>
           <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Ganhos este mês</div>
           <div style={{color:"#60a5fa",fontSize:24,fontWeight:800,lineHeight:1}}>R${ganhosMes}</div>
