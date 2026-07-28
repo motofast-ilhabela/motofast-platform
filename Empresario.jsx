@@ -1311,9 +1311,19 @@ function ModalEditarPedido({ pedido, onSalvar, onFechar }) {
     </Overlay>
   );
 }
-function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado, mesesDisponiveis }) {
+function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado, mesesDisponiveis, empresa }) {
   const [filtro, setFiltro] = useState("Todos");
   const [dataSelecionada, setDataSelecionada] = useState(dataLocalISO());
+
+  // Status de pagamento por dia — só existe (e faz sentido) pra quem está no plano
+  // "diário" de repasse ao motoboy. É o MESMO campo que o Admin marca como pago na
+  // aba Pagamentos dele — aqui só espelha, pra você nunca ficar em dúvida se já
+  // acertou ou não com a plataforma.
+  const planoDiario = empresa?.planoPagamentoMotoboy === "diario";
+  function statusDoDia(dataISO) {
+    if (!planoDiario) return null;
+    return empresa?.pagamentosDiarios?.[dataISO] ? "pago" : "pendente";
+  }
 
   // historico ja vem com status normalizado (Entregue / Cancelada) do App principal
   const todos = historico;
@@ -1329,6 +1339,7 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
   const dataFmt = new Date(dataSelecionada+"T12:00:00").toLocaleDateString("pt-BR");
   const hojeISO = dataLocalISO();
   const ontemISO = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return dataLocalISO(d); })();
+  const statusDataSelecionada = statusDoDia(dataSelecionada);
 
   // Resumo agrupado por dia — todos os dias que tiveram entrega, mais recente primeiro
   const porDia = {};
@@ -1376,7 +1387,11 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
         </div>
         <div style={{color:"#6b7280",fontSize:12,marginBottom:4}}>{dataFmt}</div>
         <div style={{color:"#34d399",fontSize:32,fontWeight:900}}>R${totalDia}</div>
-        <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasDia.length} entrega{entregasDia.length!==1?"s":""} nesta data</div>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2,flexWrap:"wrap"}}>
+          <span style={{color:"#6b7280",fontSize:12}}>{entregasDia.length} entrega{entregasDia.length!==1?"s":""} nesta data</span>
+          {statusDataSelecionada==="pago" && <Tag label="✅ Pago" cor="#34d399"/>}
+          {statusDataSelecionada==="pendente" && <Tag label="⏳ Pendente" cor="#fbbf24"/>}
+        </div>
         {!entregasDia.length && dataSelecionada!==hojeISO && dataSelecionada!==ontemISO && mesSelecionado!=="todos" && !dataSelecionada.startsWith(mesSelecionado) && (
           <div style={{color:"#fbbf24",fontSize:11,marginTop:6}}>⚠️ Essa data é de outro mês — escolha o mês certo no período acima, ou "Buscar tudo", pra ver o valor dela.</div>
         )}
@@ -1405,12 +1420,15 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
           {diasOrdenados.slice(0,30).map(([data,info])=>{
             const dFmt = new Date(data+"T12:00:00").toLocaleDateString("pt-BR");
             const sel = data===dataSelecionada;
+            const status = statusDoDia(data);
             return (
               <div key={data} onClick={()=>setDataSelecionada(data)}
-                style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:sel?"#0d3d2e":"#0f172a",border:sel?"1px solid #34d399":"1px solid #1f2937",borderRadius:8,padding:"9px 14px",marginBottom:6,cursor:"pointer"}}>
+                style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:sel?"#0d3d2e":"#0f172a",border:sel?"1px solid #34d399":"1px solid #1f2937",borderRadius:8,padding:"9px 14px",marginBottom:6,cursor:"pointer",flexWrap:"wrap",gap:6}}>
                 <span style={{color:sel?"#34d399":"#d1d5db",fontSize:13,fontWeight:600}}>{dFmt}</span>
                 <span style={{color:"#6b7280",fontSize:12}}>{info.qtd} entrega{info.qtd!==1?"s":""}</span>
                 <span style={{color:"#60a5fa",fontWeight:700,fontSize:14}}>R${info.total.toFixed(2)}</span>
+                {status==="pago" && <Tag label="✅ Pago" cor="#34d399"/>}
+                {status==="pendente" && <Tag label="⏳ Pendente" cor="#fbbf24"/>}
               </div>
             );
           })}
@@ -1692,6 +1710,7 @@ export default function AppEmpresario() {
             dataFimGratis: emp.data_fim_gratis,
             taxas: emp.taxas || {},
             mensalidadePaga: emp.mensalidade_paga,
+            pagamentosDiarios: emp.pagamentos_diarios || {},
             bloqueado: emp.bloqueado,
             motivoBloqueio: emp.motivo_bloqueio || null,
           });
@@ -1853,8 +1872,16 @@ export default function AppEmpresario() {
 
   // Busca o histórico só quando a aba é aberta, ou quando o mês selecionado muda —
   // nunca fica recarregando isso sozinho de fundo, diferente dos pedidos ativos.
+  // Também atualiza os pagamentos diários nesse momento, pra sempre refletir o que
+  // o Admin marcou como pago mais recentemente, mesmo sem dar refresh na página.
   useEffect(()=>{
-    if (aba==="historico" && empresa?.id) carregarHistorico(mesHistorico);
+    if (aba==="historico" && empresa?.id) {
+      carregarHistorico(mesHistorico);
+      supabase.from("empresarios").select("pagamentos_diarios").eq("id", empresa.id).maybeSingle()
+        .then(({data})=>{
+          if (data) setEmpresa(prev=>({...prev, pagamentosDiarios: data.pagamentos_diarios || {}}));
+        });
+    }
   },[aba, mesHistorico, empresa?.id]);
 
   // Após 5 minutos sem aceite → avisa empresário e cancela no banco
@@ -2026,7 +2053,7 @@ export default function AppEmpresario() {
       <div style={{maxWidth:900,margin:"0 auto",padding:"24px 20px"}}>
         {aba==="nova"      && <SolicitarEntrega clientes={clientes} setClientes={setClientes} onPublicar={publicarPedido} empresa={empresa}/>}
         {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes} empresa={empresa} onRecarregar={()=>carregarPedidos(empresa.id)}/>}
-        {aba==="historico" && <HistoricoEmp historico={historicoData} carregando={carregandoHistorico} mesSelecionado={mesHistorico} setMesSelecionado={setMesHistorico} mesesDisponiveis={gerarMesesDisponiveis()}/>}
+        {aba==="historico" && <HistoricoEmp historico={historicoData} carregando={carregandoHistorico} mesSelecionado={mesHistorico} setMesSelecionado={setMesHistorico} mesesDisponiveis={gerarMesesDisponiveis()} empresa={empresa}/>}
         {aba==="clientes"  && <ClientesSalvos clientes={clientes} setClientes={setClientes} empresaId={empresa.id}/>}
       </div>
 
