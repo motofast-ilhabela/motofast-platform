@@ -854,18 +854,35 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   const [erroRegistro, setErroRegistro] = useState("");
   const FVAZIO = {nome:"",tel:"",bairro:"",planoPagamento:"semanal",planoPagamentoMotoboy:"diario",cnpj:"",nomeDono:"",telDono:"",nomeSocio:"",telSocio:"",enderecoEstab:"",horarioFuncionamento:""};
   const [form, setForm] = useState(FVAZIO);
+  // "pendentes" = mostra qualquer dia ainda não pago, não importa a idade (lista curta,
+  // já que não costuma acumular). Uma chave de segunda-feira específica = consulta
+  // histórica daquela semana exata (pago ou não), sem carregar tudo de uma vez.
+  const [semanaPagDiaria, setSemanaPagDiaria] = useState("pendentes");
 
   const agora = new Date();
   const mesAtual = agora.getMonth()+1;
-  const DIAS = Array.from({length:7},(_,i)=>{
-    const d = new Date(agora); d.setDate(agora.getDate()-i);
-    return dataLocalISO(d);
-  });
-  const DNOMES = {};
-  DIAS.forEach(d=>{
-    const dia = new Date(d+"T12:00:00");
-    DNOMES[d] = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"][dia.getDay()];
-  });
+  const segundaAtualPagDiaria = segundaFeiraDaSemana(agora);
+  function fmtDiaMesPagDiaria(iso) {
+    const d = new Date(iso+"T12:00:00");
+    return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
+  }
+  function labelSemanaPagDiaria(chaveSegunda) {
+    const fimData = new Date(chaveSegunda+"T12:00:00");
+    fimData.setDate(fimData.getDate()+6);
+    return `${fmtDiaMesPagDiaria(chaveSegunda)} a ${fmtDiaMesPagDiaria(dataLocalISO(fimData))}`;
+  }
+  function gerarSemanasPagDiaria(qtd=20) {
+    const lista = [];
+    let cursor = segundaAtualPagDiaria;
+    for (let i=0; i<qtd; i++) {
+      lista.push({chave:cursor, label:labelSemanaPagDiaria(cursor)});
+      const d = new Date(cursor+"T12:00:00");
+      d.setDate(d.getDate()-7);
+      cursor = dataLocalISO(d);
+    }
+    return lista;
+  }
+  const semanasPagDiariaDisponiveis = gerarSemanasPagDiaria();
 
   const empSel = empresarios.find(e=>e.id===sel);
 
@@ -1003,7 +1020,13 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
     const m = [];
     if (!emp.mensalidadePaga) m.push("mensalidade não paga");
     if (emp.planoPagamentoMotoboy==="diario") {
-      const pend = DIAS.filter(d=>!emp.pagamentosDiarios?.[d]);
+      // Usa os dias REAIS que tiveram entrega desse estabelecimento (sem limite de
+      // janela de 7 dias) — assim um dia antigo esquecido continua contando como
+      // pendente, em vez de sumir da conta só porque passou uma semana.
+      const diasComEntregaEmp = [...new Set(
+        historico.filter(e=>e.empresarioId===emp.id&&e.status==="Entregue").map(e=>e.data)
+      )];
+      const pend = diasComEntregaEmp.filter(d=>!emp.pagamentosDiarios?.[d]);
       if (pend.length>0) m.push(`${pend.length} dia(s) de taxas pendentes`);
     }
     return m.length>0 ? m.join(" · ") : null;
@@ -1510,19 +1533,46 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                   ))}
                 </div>
               </Card>
-              {empSel.planoPagamentoMotoboy==="diario" && (
+              {empSel.planoPagamentoMotoboy==="diario" && (()=>{
+                // Por padrão mostra só os dias PENDENTES (não importa a idade — lista curta,
+                // já que não costuma acumular). Pra rever uma semana específica por completo
+                // (paga ou não), usa o seletor — sem precisar carregar tudo de uma vez, o que
+                // evitaria a tela ficar pesada lá na frente com muitos meses de histórico.
+                const todosDiasComEntrega = [...new Set(
+                  historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue").map(e=>e.data)
+                )];
+                const semanaEspecificaPag = semanaPagDiaria!=="pendentes" ? semanaPagDiaria : null;
+                const diasComEntrega = (semanaEspecificaPag
+                  ? todosDiasComEntrega.filter(d=>segundaFeiraDaSemana(new Date(d+"T12:00:00"))===semanaEspecificaPag)
+                  : todosDiasComEntrega.filter(d=>!empSel.pagamentosDiarios?.[d])
+                ).sort((a,b)=>b.localeCompare(a));
+                const nomesDiaSemana = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
+                return (
                 <div>
-                  <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,marginBottom:8}}>Pagamentos diários desta semana:</div>
-                  {DIAS.map(dia=>{
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8,marginBottom:10}}>
+                    <div style={{color:"#9ca3af",fontSize:12,fontWeight:700}}>
+                      {semanaEspecificaPag ? `Semana de ${labelSemanaPagDiaria(semanaEspecificaPag)} — todos os dias` : "⚠️ Dias pendentes de pagamento:"}
+                    </div>
+                    <select value={semanaPagDiaria} onChange={e=>setSemanaPagDiaria(e.target.value)}
+                      style={{background:semanaEspecificaPag?"#0d3d2e":"#1f2937",border:semanaEspecificaPag?"1px solid #34d399":"1px solid #374151",borderRadius:8,color:semanaEspecificaPag?"#34d399":"#9ca3af",padding:"6px 10px",fontSize:12,fontWeight:700,outline:"none"}}>
+                      <option value="pendentes">⚠️ Só pendentes (qualquer data)</option>
+                      {semanasPagDiariaDisponiveis.map(s=>(
+                        <option key={s.chave} value={s.chave}>📅 Semana {s.label}{s.chave===segundaAtualPagDiaria?" (atual)":""}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {diasComEntrega.length===0 && <div style={{color:"#4b5563",fontSize:13}}>{semanaEspecificaPag ? "Nenhuma entrega nessa semana." : "Nenhum dia pendente — tudo em dia! ✅"}</div>}
+                  {diasComEntrega.map(dia=>{
                     const pago = empSel.pagamentosDiarios?.[dia];
                     const ents = historico.filter(e=>e.empresarioId===empSel.id&&e.data===dia&&e.status==="Entregue");
                     const total = ents.reduce((s,e)=>s+e.taxaEmpresario,0).toFixed(2);
                     const bg = pago?"#0d3d2e":"#0f172a";
                     const brd = pago?"#34d399":"#374151";
+                    const nomeDia = nomesDiaSemana[new Date(dia+"T12:00:00").getDay()];
                     return (
-                      <div key={dia} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:bg,border:`1px solid ${brd}`,borderRadius:8,padding:"9px 14px",marginBottom:6}}>
+                      <div key={dia} style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:bg,border:`1px solid ${brd}`,borderRadius:8,padding:"9px 14px",marginBottom:6,flexWrap:"wrap",gap:8}}>
                         <div style={{display:"flex",alignItems:"center",gap:10}}>
-                          <span style={{color:"#9ca3af",fontSize:12,minWidth:28}}>{DNOMES[dia]}</span>
+                          <span style={{color:"#9ca3af",fontSize:12,minWidth:28}}>{nomeDia}</span>
                           <span style={{color:"#6b7280",fontSize:12}}>{dia.split("-").reverse().join("/")}</span>
                           <span style={{color:"#60a5fa",fontWeight:700}}>R${total}</span>
                           <span style={{color:"#4b5563",fontSize:11}}>{ents.length} ent.</span>
@@ -1537,7 +1587,8 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                     );
                   })}
                 </div>
-              )}
+                );
+              })()}
               {empSel.planoPagamentoMotoboy==="semanal" && (()=>{
                 const segundaAtual3 = segundaFeiraDaSemana(new Date());
                 const entsSemana = historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue"&&e.semana===segundaAtual3);
