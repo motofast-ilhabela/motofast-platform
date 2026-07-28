@@ -1389,8 +1389,8 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
         <div style={{color:"#34d399",fontSize:32,fontWeight:900}}>R${totalDia}</div>
         <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2,flexWrap:"wrap"}}>
           <span style={{color:"#6b7280",fontSize:12}}>{entregasDia.length} entrega{entregasDia.length!==1?"s":""} nesta data</span>
-          {statusDataSelecionada==="pago" && <Tag label="✅ Pago" cor="#34d399"/>}
-          {statusDataSelecionada==="pendente" && <Tag label="⏳ Pendente" cor="#fbbf24"/>}
+          {entregasDia.length>0 && statusDataSelecionada==="pago" && <Tag label="✅ Pago" cor="#34d399"/>}
+          {entregasDia.length>0 && statusDataSelecionada==="pendente" && <Tag label="⏳ Pendente" cor="#fbbf24"/>}
         </div>
         {!entregasDia.length && dataSelecionada!==hojeISO && dataSelecionada!==ontemISO && mesSelecionado!=="todos" && !dataSelecionada.startsWith(mesSelecionado) && (
           <div style={{color:"#fbbf24",fontSize:11,marginTop:6}}>⚠️ Essa data é de outro mês — escolha o mês certo no período acima, ou "Buscar tudo", pra ver o valor dela.</div>
