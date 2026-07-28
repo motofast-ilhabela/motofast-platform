@@ -1257,14 +1257,25 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                   <button onClick={()=>setModalEditar(p)} style={{marginTop:8,width:"100%",padding:"9px",borderRadius:8,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:12,cursor:"pointer"}}>
                     ✏️ Editar este pedido
                   </button>
+                  <button onClick={async()=>{
+                    if (!window.confirm(`Cancelar só a entrega de ${p.clienteNome}? Os outros pedidos dessa corrida continuam normais. O motoboy será avisado.`)) return;
+                    await supabase.from("pedidos").update({
+                      status: "cancelado",
+                      motivo_cancelamento: "Cancelado pelo estabelecimento",
+                    }).eq("id", p.id);
+                    await onRecarregar();
+                  }} style={{marginTop:8,width:"100%",padding:"9px",borderRadius:8,background:"#3d1010",border:"1px solid #ef444466",color:"#f87171",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                    ❌ Cancelar este pedido
+                  </button>
                 </div>
               );
             })}
 
-            {/* Botão cancelar corrida mesmo depois de aceita */}
+            {/* Botão cancelar TODOS os pedidos da corrida de uma vez — diferente do
+                cancelar individual acima, que cancela só um cliente por vez. */}
             <div style={{marginTop:8,marginBottom:8}}>
               <button onClick={async()=>{
-                if (!window.confirm("Tem certeza que quer cancelar esta entrega? O motoboy será notificado.")) return;
+                if (!window.confirm("Tem certeza que quer cancelar TODOS os pedidos desta corrida (todos os clientes)? O motoboy será notificado.")) return;
                 for (const p of corrida.pedidos) {
                   await supabase.from("pedidos").update({
                     status: "cancelado",
@@ -1273,7 +1284,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                 }
                 await onRecarregar();
               }} style={{width:"100%",padding:"10px",borderRadius:8,background:"#3d1010",border:"1px solid #ef4444",color:"#f87171",fontWeight:700,fontSize:13,cursor:"pointer"}}>
-                ❌ Cancelar esta entrega
+                ❌ Cancelar TODOS os pedidos desta corrida
               </button>
             </div>
 
