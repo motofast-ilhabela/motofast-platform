@@ -428,8 +428,12 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
           </div>
         )}
 
-        {/* Cliente novo */}
-        {!clienteSel && buscaCliente.length>=2 && (
+        {/* Cliente novo — só aparece quando NENHUM resultado foi encontrado na busca.
+            Antes aparecia sempre que tinha 2+ letras digitadas, mesmo com resultados já
+            visíveis acima — o que confundia demais o empresário, fazendo ele preencher
+            esse formulário por engano em vez de clicar no cliente certo já existente,
+            e duplicando cadastros. */}
+        {!clienteSel && buscaCliente.length>=2 && resultados.length===0 && (
           <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:10,padding:"14px",marginTop:10}}>
             <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:10}}>📝 Novo cliente — será salvo automaticamente</div>
             <div style={{display:"flex",gap:10}}>
@@ -626,6 +630,109 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   // nunca deixa adicionar pedido à corrida sem um telefone válido preenchido.
   const telValido = !!(telEfetivo && telEfetivo.trim() && telEfetivo.trim().toLowerCase()!=="não informado" && telEfetivo.replace(/\D/g,"").length>=8);
 
+  // ─── TAXA POR KM ──────────────────────────────────────────────────────────────
+  // MESMA lógica do "Nova Entrega" — a taxa NUNCA é digitada manualmente, sempre
+  // calculada pela distância real. Faltava isso aqui antes, e por isso a tela pedia
+  // pra digitar o valor na mão quando o empresário adicionava um 2º/3º pedido na
+  // mesma corrida — o que abria brecha pra qualquer valor ser colocado, sem relação
+  // nenhuma com a distância de verdade.
+  const [distanciaKm, setDistanciaKm] = useState(null);
+  const [calcKm, setCalcKm] = useState(false);
+  const [taxaKm, setTaxaKm] = useState({e:0, m:0});
+  const [erroCalculo, setErroCalculo] = useState(false);
+
+  function calcularTaxaPorKm(km) {
+    const kmArred = Math.max(1, Math.ceil(km));
+    if (kmArred <= 2) return {e: 8, m: 6.50};
+    let bandeiradaCliente, bandeiradaMotoboy, valorKmMotoboy;
+    if (kmArred <= 5) { bandeiradaCliente=7; bandeiradaMotoboy=5.60; valorKmMotoboy=1.80; }
+    else              { bandeiradaCliente=8; bandeiradaMotoboy=6.30; valorKmMotoboy=1.90; }
+    const valorKmCliente = 2;
+    const e = bandeiradaCliente + valorKmCliente*kmArred;
+    const m = bandeiradaMotoboy + valorKmMotoboy*kmArred;
+    return {e: +e.toFixed(2), m: +m.toFixed(2)};
+  }
+
+  useEffect(()=>{
+    const rua = endEfetivo.rua;
+    const num = endEfetivo.num;
+    const bairro = endEfetivo.bairro;
+    if (!rua || !bairro) {
+      setDistanciaKm(null);
+      setTaxaKm({e:0, m:0});
+      setErroCalculo(false);
+      return;
+    }
+    let cancelado = false;
+    setCalcKm(true);
+    setErroCalculo(false);
+    (async()=>{
+      try {
+        const endDestino = encodeURIComponent(`${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil`);
+        const endOrigemBairro = encodeURIComponent(`${empresa.bairro||""}, Ilhabela, SP, Brasil`);
+        const endDestinoBairro = encodeURIComponent(`${bairro}, Ilhabela, SP, Brasil`);
+
+        let latO, lonO;
+        if (empresa.endereco) {
+          const endOrigem = encodeURIComponent(`${empresa.endereco}, Ilhabela, SP, Brasil`);
+          const rO = await fetch(`https://nominatim.openstreetmap.org/search?q=${endOrigem}&format=json&limit=1`).then(r=>r.json());
+          if (rO[0]) { latO = rO[0].lat; lonO = rO[0].lon; }
+        }
+        if (!latO && empresa.bairro) {
+          const rOB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endOrigemBairro}&format=json&limit=1`).then(r=>r.json());
+          if (rOB[0]) { latO = rOB[0].lat; lonO = rOB[0].lon; }
+        }
+
+        const rD = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestino}&format=json&limit=1`).then(r=>r.json());
+        let latD, lonD;
+        if (rD[0]) { latD = rD[0].lat; lonD = rD[0].lon; }
+        else {
+          const endDestinoSemBairro = encodeURIComponent(`${rua}, ${num||""}, Ilhabela, SP, Brasil`);
+          const rDSemBairro = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoSemBairro}&format=json&limit=1`).then(r=>r.json());
+          if (rDSemBairro[0]) { latD = rDSemBairro[0].lat; lonD = rDSemBairro[0].lon; }
+          else {
+            let achouBairroOficial = false;
+            if (taxaKey2 && taxaKey2.toLowerCase() !== bairro.toLowerCase()) {
+              const endDestinoOficial = encodeURIComponent(`${taxaKey2}, Ilhabela, SP, Brasil`);
+              const rDOficial = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoOficial}&format=json&limit=1`).then(r=>r.json());
+              if (rDOficial[0]) { latD = rDOficial[0].lat; lonD = rDOficial[0].lon; achouBairroOficial = true; }
+            }
+            if (!achouBairroOficial) {
+              const rDB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoBairro}&format=json&limit=1`).then(r=>r.json());
+              if (rDB[0]) { latD = rDB[0].lat; lonD = rDB[0].lon; }
+            }
+          }
+        }
+
+        if (!cancelado && latO && latD) {
+          const rota = await fetch(`https://router.project-osrm.org/route/v1/driving/${lonO},${latO};${lonD},${latD}?overview=false`).then(r=>r.json());
+          const metros = rota.routes?.[0]?.distance;
+          if (metros && !cancelado) {
+            const km = metros / 1000;
+            setDistanciaKm(km.toFixed(1));
+            setTaxaKm(calcularTaxaPorKm(km));
+          } else if (!cancelado) {
+            setDistanciaKm(null);
+            setErroCalculo(true);
+          }
+        } else if (!cancelado) {
+          setDistanciaKm(null);
+          setErroCalculo(true);
+        }
+      } catch(e) {
+        console.log("Erro ao calcular distância:", e);
+        if (!cancelado) { setDistanciaKm(null); setErroCalculo(true); }
+      } finally {
+        if (!cancelado) setCalcKm(false);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [endEfetivo.rua, endEfetivo.num, endEfetivo.bairro, empresa.endereco, empresa.bairro]);
+
+  // Só bloqueia adicionar quando NÃO há preço nenhum disponível (nem por km, nem
+  // pela reserva por bairro) — nunca adiciona um pedido com taxa R$0.
+  const semPrecoDisponivel = erroCalculo && (!taxa || !(taxa.e>0));
+
   function detectarBairro(rua) {
     const l = rua.toLowerCase();
     for (const b of bairrosDisponiveis2) if (l.includes(b.toLowerCase())) return b;
@@ -646,6 +753,10 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
     }
     if (!telValido) {
       setErro("Preencha o telefone/WhatsApp do cliente — é essencial pro motoboy conseguir falar com ele na entrega.");
+      return;
+    }
+    if (semPrecoDisponivel) {
+      setErro("Não foi possível calcular nenhuma taxa pra esse endereço (nem por distância, nem por bairro). Corrija o endereço ou fale com o suporte antes de adicionar.");
       return;
     }
     if (!clienteSel) {
@@ -676,10 +787,10 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       clienteNome:nomeEfetivo, clienteTel:telEfetivo,
       rua:endEfetivo.rua, num:endEfetivo.num,
       bairro:bairroFinal, ref:endEfetivo.ref,
-      // ATENÇÃO: aqui NUNCA usar "taxaKm" — esse modal não calcula taxa por km
-      // (só a tela de Nova Entrega faz isso). Usar taxaKm aqui quebrava a tela
-      // inteira com erro, porque essa variável não existe neste componente.
-      pagamento, taxa:taxa?.e||0, taxaMotoboy:taxa?.m||0, obs,
+      // A taxa é SEMPRE calculada pela distância real — nunca digitada na mão.
+      // Se o cálculo por km falhar (endereço não localizado), cai pra reserva
+      // por bairro como plano B, igual acontece na tela de Nova Entrega.
+      pagamento, taxa:taxaKm?.e||taxa?.e||0, taxaMotoboy:taxaKm?.m||taxa?.m||0, obs,
       valorPedido: valorPedido ? parseFloat(valorPedido) : null,
       valorReceber: valorReceber ? parseFloat(valorReceber) : null,
       troco: (valorPedido && valorReceber && parseFloat(valorReceber)>parseFloat(valorPedido))
@@ -761,7 +872,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
           </div>
         )}
 
-        {!clienteSel && buscaCliente.length>=2 && (
+        {!clienteSel && buscaCliente.length>=2 && resultados.length===0 && (
           <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:10,padding:"14px",marginTop:10}}>
             <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:10}}>📝 Novo cliente — será salvo automaticamente</div>
             <div style={{display:"flex",gap:10}}>
@@ -793,11 +904,38 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         </Card>
       )}
 
-      {/* Taxa */}
+      {/* Taxa — calculada por km, nunca fixa por bairro */}
       {taxa && buscaCliente.length>=2 && (
         <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"14px 18px",marginBottom:14}}>
-          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>💰 Taxa de entrega — {bairroFinal}</div>
-          <div style={{color:"#34d399",fontWeight:900,fontSize:28}}>R${taxa.e}</div>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>
+            💰 Taxa de entrega{distanciaKm ? ` — ${distanciaKm}km` : ""}
+          </div>
+          {calcKm && (
+            <div style={{color:"#fbbf24",fontSize:13}}>⏳ Calculando distância...</div>
+          )}
+          {!calcKm && distanciaKm && taxaKm.e > 0 && (
+            <div style={{color:"#34d399",fontWeight:900,fontSize:28}}>R${taxaKm.e.toFixed(2)}</div>
+          )}
+          {!calcKm && !distanciaKm && erroCalculo && (
+            <div>
+              <div style={{color:"#f87171",fontSize:13,marginBottom:10}}>
+                ⚠️ Não conseguimos calcular a distância automaticamente pra esse endereço. Confira se a rua e o bairro estão certos.
+              </div>
+              {taxa && taxa.e>0 ? (
+                <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"10px 14px"}}>
+                  <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:4}}>💡 Se adicionar assim mesmo, vamos usar o valor de reserva (por bairro):</div>
+                  <div style={{color:"#fbbf24",fontWeight:900,fontSize:22}}>R${taxa.e}</div>
+                </div>
+              ) : (
+                <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px"}}>
+                  <div style={{color:"#f87171",fontSize:12,fontWeight:700}}>❌ Esse bairro também não tem taxa de reserva. Corrija o endereço antes de adicionar.</div>
+                </div>
+              )}
+            </div>
+          )}
+          {!calcKm && !distanciaKm && !erroCalculo && (
+            <div style={{color:"#9ca3af",fontSize:13}}>Preencha o endereço do cliente para calcular a taxa automaticamente.</div>
+          )}
         </div>
       )}
 
@@ -866,7 +1004,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
       )}
 
-      <Btn onClick={salvar} full disabled={buscaCliente.length<2 || !empresa?.id || !telValido}>
+      <Btn onClick={salvar} full disabled={buscaCliente.length<2 || !empresa?.id || !telValido || semPrecoDisponivel}>
         ➕ Adicionar à Corrida
       </Btn>
     </Overlay>
@@ -1515,6 +1653,9 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
 
   const filtrados = clientes.filter(c=>!busca||normalizarTexto(c.nome).includes(normalizarTexto(busca))||c.tel.includes(busca));
   const editCli = editId ? clientes.find(c=>c.id===editId) : null;
+  // Telefone obrigatório aqui no cadastro — é o lugar certo pra essa exigência,
+  // diferente da tela de Nova Entrega (onde só atrapalhava a busca do cliente).
+  const telFormValido = !!(form.tel && form.tel.trim() && form.tel.replace(/\D/g,"").length>=8);
 
   function abrirEdicao(c) { setEditId(c.id); setForm({nome:c.nome,tel:c.tel,endereco:{rua:c.rua||"",num:c.num||"",bairro:c.bairro||"",ref:c.ref||""}}); }
 
@@ -1548,6 +1689,10 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
       return;
     }
     if (!form.nome.trim() || !form.endereco.rua.trim() || !form.endereco.num.trim()) return;
+    if (!telFormValido) {
+      setErro("Preencha o telefone/WhatsApp do cliente — é obrigatório, o motoboy precisa desse número pra fazer a entrega.");
+      return;
+    }
     const { data, error } = await supabase.from("clientes").insert({
       empresario_id: empresaId,
       nome: form.nome,
@@ -1615,7 +1760,8 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
           <OvHeader titulo="+ Cadastrar Novo Cliente" onClose={()=>setModalCad(false)}/>
           {erro && <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#f87171",fontSize:13}}>{erro}</div>}
           <Inp label="Nome completo *" value={form.nome} onChange={v=>setForm(f=>({...f,nome:v}))} placeholder="Ex: João da Silva"/>
-          <Inp label="Telefone / WhatsApp" value={form.tel} onChange={v=>setForm(f=>({...f,tel:v}))} placeholder="(12) 99999-0000"/>
+          <Inp label="Telefone / WhatsApp *" value={form.tel} onChange={v=>setForm(f=>({...f,tel:v}))} placeholder="(12) 99999-0000"/>
+          {!telFormValido && form.tel && <div style={{color:"#f87171",fontSize:11,marginTop:-4,marginBottom:6}}>⚠️ Número incompleto</div>}
           <Divider/>
           <STitle>Endereço</STitle>
           <div style={{display:"flex",gap:10}}>
@@ -1636,7 +1782,7 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
             </div>
           )}
           <div style={{display:"flex",gap:8,marginTop:8}}>
-            <Btn onClick={cadastrar} full disabled={!form.nome.trim()||!form.endereco.rua.trim()||!form.endereco.num.trim()||!empresaId}>
+            <Btn onClick={cadastrar} full disabled={!form.nome.trim()||!form.endereco.rua.trim()||!form.endereco.num.trim()||!telFormValido||!empresaId}>
               💾 Salvar Cliente
             </Btn>
             <Btn cor="cinza" onClick={()=>setModalCad(false)}>Cancelar</Btn>
