@@ -526,23 +526,27 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{background:"#0f172a"}}>
-                {["Data","Saiu às","Entregue às","Cliente","Bairro","Pgto","Valor"].map(h=>(
+                {["Data","Saiu às","Entregue às","Cliente","Estabelecimento","Bairro","Pgto","Valor"].map(h=>(
                   <th key={h} style={{padding:"8px 12px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"}}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {entsDet.map(e=>(
+              {entsDet.map(e=>{
+                const empDoPedido = empresarios.find(emp=>emp.id===e.empresarioId);
+                return (
                 <tr key={e.id} style={{borderBottom:"1px solid #1a2035"}}>
                   <td style={{padding:"8px 12px",color:"#9ca3af",fontSize:12}}>{e.data.split("-").reverse().join("/")}</td>
                   <td style={{padding:"8px 12px",color:"#fbbf24",fontSize:12,fontWeight:700}}>🏍️ {e.horaSaida||"—"}</td>
                   <td style={{padding:"8px 12px",color:"#34d399",fontSize:12,fontWeight:700}}>✅ {e.horaEntrega||"—"}</td>
                   <td style={{padding:"8px 12px",color:"#f9fafb"}}>{e.clienteNome}</td>
+                  <td style={{padding:"8px 12px",color:"#60a5fa",fontSize:12}}>🏪 {empDoPedido?.nome || "—"}</td>
                   <td style={{padding:"8px 12px",color:"#34d399"}}>{e.bairro}</td>
                   <td style={{padding:"8px 12px"}}><span style={{color:PG[e.pagamento]?.cor,fontWeight:700}}>{PG[e.pagamento]?.icon}</span></td>
                   <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700}}>R${e.taxaMotoboy}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           <div style={{marginTop:14,background:"#0f172a",borderRadius:8,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
