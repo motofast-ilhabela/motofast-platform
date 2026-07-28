@@ -47,6 +47,17 @@ function dataLocalISO(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+// Normaliza texto pra comparação: remove acentos e deixa minúsculo. Usado na busca de
+// clientes salvos — sem isso, digitar "Fabio" (sem acento, o mais comum na pressa) não
+// encontrava um cliente salvo como "Fábio", fazendo o sistema tratar como cliente novo
+// e pedir todos os dados de novo, mesmo já estando tudo salvo.
+function normalizarTexto(str) {
+  return (str || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+}
+
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
 function Card({ children, style={} }) {
   return <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"18px 22px",...style}}>{children}</div>;
@@ -122,7 +133,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
 
   // Busca cliente
   const resultados = buscaCliente.length>=2
-    ? clientes.filter(c=>c.nome.toLowerCase().includes(buscaCliente.toLowerCase())||c.tel.includes(buscaCliente))
+    ? clientes.filter(c=>normalizarTexto(c.nome).includes(normalizarTexto(buscaCliente))||c.tel.includes(buscaCliente))
     : [];
 
   // Endereço e bairro efetivos
@@ -602,7 +613,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   const [valorReceber, setValorReceber] = useState("");
 
   const resultados = buscaCliente.length>=2
-    ? clientes.filter(c=>c.nome.toLowerCase().includes(buscaCliente.toLowerCase())||c.tel.includes(buscaCliente))
+    ? clientes.filter(c=>normalizarTexto(c.nome).includes(normalizarTexto(buscaCliente))||c.tel.includes(buscaCliente))
     : [];
 
   const endEfetivo = (clienteSel && modoEndereco==="salvo") ? {rua:clienteSel.rua,num:clienteSel.num,bairro:clienteSel.bairro,ref:clienteSel.ref} : novoEndereco;
@@ -1502,7 +1513,7 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
   const [form, setForm] = useState({nome:"",tel:"",endereco:{rua:"",num:"",bairro:"",ref:""}});
   const [erro, setErro] = useState("");
 
-  const filtrados = clientes.filter(c=>!busca||c.nome.toLowerCase().includes(busca.toLowerCase())||c.tel.includes(busca));
+  const filtrados = clientes.filter(c=>!busca||normalizarTexto(c.nome).includes(normalizarTexto(busca))||c.tel.includes(busca));
   const editCli = editId ? clientes.find(c=>c.id===editId) : null;
 
   function abrirEdicao(c) { setEditId(c.id); setForm({nome:c.nome,tel:c.tel,endereco:{rua:c.rua||"",num:c.num||"",bairro:c.bairro||"",ref:c.ref||""}}); }
