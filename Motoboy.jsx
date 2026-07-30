@@ -555,6 +555,7 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
                 {id:"gasolina",icon:"⛽", label:"Acabou a gasolina"},
                 {id:"acidente",icon:"🤕", label:"Acidente / queda"},
                 {id:"saude",   icon:"🏥", label:"Problema de saúde"},
+                {id:"longe",   icon:"📍", label:"Muito longe pra buscar"},
                 {id:"outro",   icon:"📝", label:"Outro motivo"},
               ].map(m=>(
                 <button key={m.id} onClick={()=>setMotivoCancelamento(m.id)} style={{
@@ -578,7 +579,7 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
             </div>
             <div style={{display:"flex",gap:8}}>
               <button onClick={()=>{
-                const motivo = motivoCancelamento==="outro" ? motivoCustom : {pneu:"Pneu furado",gasolina:"Acabou a gasolina",acidente:"Acidente / queda",saude:"Problema de saúde"}[motivoCancelamento];
+                const motivo = motivoCancelamento==="outro" ? motivoCustom : {pneu:"Pneu furado",gasolina:"Acabou a gasolina",acidente:"Acidente / queda",saude:"Problema de saúde",longe:"Muito longe pra buscar"}[motivoCancelamento];
                 if (!motivo) return;
                 onCancelar(motivo);
                 setModalCancelar(false);
