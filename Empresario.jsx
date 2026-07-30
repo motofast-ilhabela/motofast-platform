@@ -170,9 +170,11 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   // fique mais barata que a bandeirada mínima, cobrindo o custo do motoboy sair.
   function calcularTaxaPorKm(km) {
     const kmArred = Math.max(1, Math.ceil(km));
-    // 1 a 2km é valor FIXO — não usa a fórmula bandeirada+km, é sempre o mesmo
-    // valor pra qualquer distância dentro dessa faixa (300m, 1km ou 1,9km).
-    if (kmArred <= 2) return {e: 8, m: 6.50};
+    // Até 1km e de 1 a 2km agora são DUAS faixas fixas separadas (não uma só) —
+    // uma entrega bem curtinha (dentro do mesmo bairro) paga menos que uma que já
+    // atravessa pra outro bairro, mesmo as duas caindo dentro de até 2km de distância.
+    if (kmArred === 1) return {e: 8, m: 6.50};
+    if (kmArred === 2) return {e: 10, m: 8.20};
     let bandeiradaCliente, bandeiradaMotoboy, valorKmMotoboy;
     if (kmArred <= 5) { bandeiradaCliente=7; bandeiradaMotoboy=5.60; valorKmMotoboy=1.80; }
     else              { bandeiradaCliente=8; bandeiradaMotoboy=6.30; valorKmMotoboy=1.90; }
@@ -662,7 +664,8 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
 
   function calcularTaxaPorKm(km) {
     const kmArred = Math.max(1, Math.ceil(km));
-    if (kmArred <= 2) return {e: 8, m: 6.50};
+    if (kmArred === 1) return {e: 8, m: 6.50};
+    if (kmArred === 2) return {e: 10, m: 8.20};
     let bandeiradaCliente, bandeiradaMotoboy, valorKmMotoboy;
     if (kmArred <= 5) { bandeiradaCliente=7; bandeiradaMotoboy=5.60; valorKmMotoboy=1.80; }
     else              { bandeiradaCliente=8; bandeiradaMotoboy=6.30; valorKmMotoboy=1.90; }
