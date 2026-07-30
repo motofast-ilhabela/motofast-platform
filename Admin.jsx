@@ -526,7 +526,7 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
             <thead>
               <tr style={{background:"#0f172a"}}>
-                {["Data","Saiu às","Entregue às","Cliente","Estabelecimento","Bairro","Pgto","Valor"].map(h=>(
+                {["Data","Saiu às","Entregue às","Cliente","Estabelecimento","Bairro","Km","Pgto","Valor"].map(h=>(
                   <th key={h} style={{padding:"8px 12px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"}}>{h}</th>
                 ))}
               </tr>
@@ -542,6 +542,9 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
                   <td style={{padding:"8px 12px",color:"#f9fafb"}}>{e.clienteNome}</td>
                   <td style={{padding:"8px 12px",color:"#60a5fa",fontSize:12}}>🏪 {empDoPedido?.nome || "—"}</td>
                   <td style={{padding:"8px 12px",color:"#34d399"}}>{e.bairro}</td>
+                  <td style={{padding:"8px 12px",color:"#a78bfa",fontSize:12}} title={e.metodoCalculoKm||"Sem registro do método de cálculo"}>
+                    {e.distanciaKm ? `${e.distanciaKm}km` : "—"}
+                  </td>
                   <td style={{padding:"8px 12px"}}><span style={{color:PG[e.pagamento]?.cor,fontWeight:700}}>{PG[e.pagamento]?.icon}</span></td>
                   <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700}}>R${e.taxaMotoboy}</td>
                 </tr>
@@ -1944,7 +1947,7 @@ function Historico({ historico, motoboys, empresarios }) {
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead>
               <tr style={{background:"#0f172a",borderBottom:"1px solid #1f2937"}}>
-                {["Data","Saiu às","Entregue às","Cliente","Bairro","Motoboy","Estabelecimento","Pgto","Cobrado","Motoboy","Lucro","Status"].map(h=>(
+                {["Data","Saiu às","Entregue às","Cliente","Bairro","Km","Motoboy","Estabelecimento","Pgto","Cobrado","Motoboy","Lucro","Status"].map(h=>(
                   <th key={h} style={{padding:"10px 12px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
@@ -1962,6 +1965,7 @@ function Historico({ historico, motoboys, empresarios }) {
                     <td style={{padding:"8px 12px",color:"#34d399",fontWeight:700,whiteSpace:"nowrap"}}>✅ {e.horaEntrega||"—"}</td>
                     <td style={{padding:"8px 12px",color:"#f9fafb",fontWeight:600}}>{e.clienteNome}</td>
                     <td style={{padding:"8px 12px",color:"#34d399"}}>{e.bairro}</td>
+                    <td style={{padding:"8px 12px",color:"#a78bfa"}} title={e.metodoCalculoKm||"Sem registro do método de cálculo"}>{e.distanciaKm?`${e.distanciaKm}km`:"—"}</td>
                     <td style={{padding:"8px 12px",color:"#d1d5db"}}>{mb?.nomeCompleto?.split(" ")[0]||"—"}</td>
                     <td style={{padding:"8px 12px",color:"#d1d5db",fontSize:11}}>{emp?.nome?.split(" ").slice(0,2).join(" ")||"—"}</td>
                     <td style={{padding:"8px 12px"}}><span style={{color:pg.cor,fontWeight:700}}>{pg.icon}</span></td>
@@ -2441,6 +2445,8 @@ export default function App() {
             ano,
             semana: semanaChave,
             repasePago: p.repasse_pago || false,
+            distanciaKm: p.distancia_km || null,
+            metodoCalculoKm: p.metodo_calculo_km || null,
           };
         });
 

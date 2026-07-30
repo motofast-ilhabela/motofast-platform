@@ -161,6 +161,10 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   const [calcKm, setCalcKm] = useState(false);
   const [taxaKm, setTaxaKm] = useState({e:0, m:0});
   const [erroCalculo, setErroCalculo] = useState(false);
+  // Guarda qual caminho o cálculo usou (endereço completo, bairro oficial, etc) —
+  // salvo junto com o pedido, pra dar pra investigar depois se algum valor parecer
+  // estranho, sem precisar pedir print de mapa pro empresário de novo.
+  const [metodoCalculoKm, setMetodoCalculoKm] = useState(null);
 
   // Fórmula final aprovada:
   // CLIENTE — 1-2km: R$8 FIXO (não sobe nada dentro dessa faixa) · 3-5km: R$7 + R$2/km · 6km+: R$8 + R$2/km
@@ -222,15 +226,15 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
 
         // Origem: tenta o endereço completo do estabelecimento primeiro (se tiver
         // cadastrado); se não encontrar, cai pro bairro do estabelecimento.
-        let latO, lonO;
+        let latO, lonO, metodoOrigem = "não encontrado";
         if (empresa.endereco) {
           const endOrigem = encodeURIComponent(`${empresa.endereco}, Ilhabela, SP, Brasil`);
           const rO = await fetch(`https://nominatim.openstreetmap.org/search?q=${endOrigem}&format=json&limit=1`).then(r=>r.json());
-          if (rO[0]) { latO = rO[0].lat; lonO = rO[0].lon; }
+          if (rO[0]) { latO = rO[0].lat; lonO = rO[0].lon; metodoOrigem = "endereço completo"; }
         }
         if (!latO && empresa.bairro) {
           const rOB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endOrigemBairro}&format=json&limit=1`).then(r=>r.json());
-          if (rOB[0]) { latO = rOB[0].lat; lonO = rOB[0].lon; }
+          if (rOB[0]) { latO = rOB[0].lat; lonO = rOB[0].lon; metodoOrigem = "bairro do estabelecimento"; }
         }
 
         // Destino: tenta o endereço completo do cliente (rua+número+bairro) primeiro.
@@ -244,22 +248,22 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         // vezes está salvo no cliente. Só por último, em caso raro, cai pro bairro
         // exatamente como está escrito no cadastro do cliente.
         const rD = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestino}&format=json&limit=1`).then(r=>r.json());
-        let latD, lonD;
-        if (rD[0]) { latD = rD[0].lat; lonD = rD[0].lon; }
+        let latD, lonD, metodoDestino = "não encontrado";
+        if (rD[0]) { latD = rD[0].lat; lonD = rD[0].lon; metodoDestino = "endereço completo do cliente"; }
         else {
           const endDestinoSemBairro = encodeURIComponent(`${rua}, ${num||""}, Ilhabela, SP, Brasil`);
           const rDSemBairro = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoSemBairro}&format=json&limit=1`).then(r=>r.json());
-          if (rDSemBairro[0]) { latD = rDSemBairro[0].lat; lonD = rDSemBairro[0].lon; }
+          if (rDSemBairro[0]) { latD = rDSemBairro[0].lat; lonD = rDSemBairro[0].lon; metodoDestino = "rua do cliente sem bairro"; }
           else {
             let achouBairroOficial = false;
             if (taxaKey && taxaKey.toLowerCase() !== bairro.toLowerCase()) {
               const endDestinoOficial = encodeURIComponent(`${taxaKey}, Ilhabela, SP, Brasil`);
               const rDOficial = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoOficial}&format=json&limit=1`).then(r=>r.json());
-              if (rDOficial[0]) { latD = rDOficial[0].lat; lonD = rDOficial[0].lon; achouBairroOficial = true; }
+              if (rDOficial[0]) { latD = rDOficial[0].lat; lonD = rDOficial[0].lon; achouBairroOficial = true; metodoDestino = "bairro oficial (nome corrigido)"; }
             }
             if (!achouBairroOficial) {
               const rDB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoBairro}&format=json&limit=1`).then(r=>r.json());
-              if (rDB[0]) { latD = rDB[0].lat; lonD = rDB[0].lon; }
+              if (rDB[0]) { latD = rDB[0].lat; lonD = rDB[0].lon; metodoDestino = "bairro do cliente (texto do cadastro)"; }
             }
           }
         }
@@ -271,17 +275,20 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
             const km = metros / 1000;
             setDistanciaKm(km.toFixed(1));
             setTaxaKm(calcularTaxaPorKm(km));
+            setMetodoCalculoKm(`Origem: ${metodoOrigem} · Destino: ${metodoDestino}`);
           } else if (!cancelado) {
             setDistanciaKm(null);
             setErroCalculo(true);
+            setMetodoCalculoKm(null);
           }
         } else if (!cancelado) {
           setDistanciaKm(null);
           setErroCalculo(true);
+          setMetodoCalculoKm(null);
         }
       } catch(e) {
         console.log("Erro ao calcular distância:", e);
-        if (!cancelado) { setDistanciaKm(null); setErroCalculo(true); }
+        if (!cancelado) { setDistanciaKm(null); setErroCalculo(true); setMetodoCalculoKm(null); }
       } finally {
         if (!cancelado) setCalcKm(false);
       }
@@ -350,6 +357,8 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       rua:endEfetivo.rua, num:endEfetivo.num,
       bairro:bairroFinal, ref:endEfetivo.ref,
       pagamento, taxa:taxaKm?.e||taxa?.e||0, taxaMotoboy:taxaKm?.m||taxa?.m||0, obs,
+      distanciaKm: distanciaKm ? parseFloat(distanciaKm) : null,
+      metodoCalculoKm: metodoCalculoKm,
       valorPedido: valorPedido ? parseFloat(valorPedido) : null,
       valorReceber: valorReceber ? parseFloat(valorReceber) : null,
       troco: (valorPedido && valorReceber && parseFloat(valorReceber)>parseFloat(valorPedido))
@@ -661,6 +670,10 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   const [calcKm, setCalcKm] = useState(false);
   const [taxaKm, setTaxaKm] = useState({e:0, m:0});
   const [erroCalculo, setErroCalculo] = useState(false);
+  // Guarda qual caminho o cálculo usou (endereço completo, bairro oficial, etc) —
+  // salvo junto com o pedido, pra dar pra investigar depois se algum valor parecer
+  // estranho, sem precisar pedir print de mapa pro empresário de novo.
+  const [metodoCalculoKm, setMetodoCalculoKm] = useState(null);
 
   function calcularTaxaPorKm(km) {
     const kmArred = Math.max(1, Math.ceil(km));
@@ -703,34 +716,34 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         const endOrigemBairro = encodeURIComponent(`${empresa.bairro||""}, Ilhabela, SP, Brasil`);
         const endDestinoBairro = encodeURIComponent(`${bairro}, Ilhabela, SP, Brasil`);
 
-        let latO, lonO;
+        let latO, lonO, metodoOrigem = "não encontrado";
         if (empresa.endereco) {
           const endOrigem = encodeURIComponent(`${empresa.endereco}, Ilhabela, SP, Brasil`);
           const rO = await fetch(`https://nominatim.openstreetmap.org/search?q=${endOrigem}&format=json&limit=1`).then(r=>r.json());
-          if (rO[0]) { latO = rO[0].lat; lonO = rO[0].lon; }
+          if (rO[0]) { latO = rO[0].lat; lonO = rO[0].lon; metodoOrigem = "endereço completo"; }
         }
         if (!latO && empresa.bairro) {
           const rOB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endOrigemBairro}&format=json&limit=1`).then(r=>r.json());
-          if (rOB[0]) { latO = rOB[0].lat; lonO = rOB[0].lon; }
+          if (rOB[0]) { latO = rOB[0].lat; lonO = rOB[0].lon; metodoOrigem = "bairro do estabelecimento"; }
         }
 
         const rD = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestino}&format=json&limit=1`).then(r=>r.json());
-        let latD, lonD;
-        if (rD[0]) { latD = rD[0].lat; lonD = rD[0].lon; }
+        let latD, lonD, metodoDestino = "não encontrado";
+        if (rD[0]) { latD = rD[0].lat; lonD = rD[0].lon; metodoDestino = "endereço completo do cliente"; }
         else {
           const endDestinoSemBairro = encodeURIComponent(`${rua}, ${num||""}, Ilhabela, SP, Brasil`);
           const rDSemBairro = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoSemBairro}&format=json&limit=1`).then(r=>r.json());
-          if (rDSemBairro[0]) { latD = rDSemBairro[0].lat; lonD = rDSemBairro[0].lon; }
+          if (rDSemBairro[0]) { latD = rDSemBairro[0].lat; lonD = rDSemBairro[0].lon; metodoDestino = "rua do cliente sem bairro"; }
           else {
             let achouBairroOficial = false;
             if (taxaKey2 && taxaKey2.toLowerCase() !== bairro.toLowerCase()) {
               const endDestinoOficial = encodeURIComponent(`${taxaKey2}, Ilhabela, SP, Brasil`);
               const rDOficial = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoOficial}&format=json&limit=1`).then(r=>r.json());
-              if (rDOficial[0]) { latD = rDOficial[0].lat; lonD = rDOficial[0].lon; achouBairroOficial = true; }
+              if (rDOficial[0]) { latD = rDOficial[0].lat; lonD = rDOficial[0].lon; achouBairroOficial = true; metodoDestino = "bairro oficial (nome corrigido)"; }
             }
             if (!achouBairroOficial) {
               const rDB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoBairro}&format=json&limit=1`).then(r=>r.json());
-              if (rDB[0]) { latD = rDB[0].lat; lonD = rDB[0].lon; }
+              if (rDB[0]) { latD = rDB[0].lat; lonD = rDB[0].lon; metodoDestino = "bairro do cliente (texto do cadastro)"; }
             }
           }
         }
@@ -742,17 +755,20 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
             const km = metros / 1000;
             setDistanciaKm(km.toFixed(1));
             setTaxaKm(calcularTaxaPorKm(km));
+            setMetodoCalculoKm(`Origem: ${metodoOrigem} · Destino: ${metodoDestino}`);
           } else if (!cancelado) {
             setDistanciaKm(null);
             setErroCalculo(true);
+            setMetodoCalculoKm(null);
           }
         } else if (!cancelado) {
           setDistanciaKm(null);
           setErroCalculo(true);
+          setMetodoCalculoKm(null);
         }
       } catch(e) {
         console.log("Erro ao calcular distância:", e);
-        if (!cancelado) { setDistanciaKm(null); setErroCalculo(true); }
+        if (!cancelado) { setDistanciaKm(null); setErroCalculo(true); setMetodoCalculoKm(null); }
       } finally {
         if (!cancelado) setCalcKm(false);
       }
@@ -815,6 +831,8 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       // Se o cálculo por km falhar (endereço não localizado), cai pra reserva
       // por bairro como plano B, igual acontece na tela de Nova Entrega.
       pagamento, taxa:taxaKm?.e||taxa?.e||0, taxaMotoboy:taxaKm?.m||taxa?.m||0, obs,
+      distanciaKm: distanciaKm ? parseFloat(distanciaKm) : null,
+      metodoCalculoKm: metodoCalculoKm,
       valorPedido: valorPedido ? parseFloat(valorPedido) : null,
       valorReceber: valorReceber ? parseFloat(valorReceber) : null,
       troco: (valorPedido && valorReceber && parseFloat(valorReceber)>parseFloat(valorPedido))
@@ -1125,6 +1143,8 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
       valor_pedido: novoPedido.valorPedido,
       valor_receber: novoPedido.valorReceber,
       valor_troco: novoPedido.troco,
+      distancia_km: novoPedido.distanciaKm,
+      metodo_calculo_km: novoPedido.metodoCalculoKm,
       status: "aceito", // já entra direto na corrida do motoboy, sem precisar aceitar de novo
     }).select().single();
 
@@ -2078,6 +2098,8 @@ export default function AppEmpresario() {
         corridaId: p.corrida_id,
         saiuEstabelecimentoEm: p.saiu_estabelecimento_em || null,
         entregueEm: p.entregue_em || null,
+        distanciaKm: p.distancia_km || null,
+        metodoCalculoKm: p.metodo_calculo_km || null,
       })));
     }
   }
@@ -2219,6 +2241,8 @@ export default function AppEmpresario() {
       valor_pedido: pedido.valorPedido,
       valor_receber: pedido.valorReceber,
       valor_troco: pedido.troco,
+      distancia_km: pedido.distanciaKm,
+      metodo_calculo_km: pedido.metodoCalculoKm,
       status: "aguardando",
     }).select().single();
 
@@ -2362,6 +2386,8 @@ export default function AppEmpresario() {
                   valor_pedido: avisoSemMotoboy.valorPedido,
                   valor_receber: avisoSemMotoboy.valorReceber,
                   valor_troco: avisoSemMotoboy.troco,
+                  distancia_km: avisoSemMotoboy.distanciaKm,
+                  metodo_calculo_km: avisoSemMotoboy.metodoCalculoKm,
                   status: "aguardando",
                 });
                 if (error) { console.error("Erro ao reenviar pedido:", error); return; }
