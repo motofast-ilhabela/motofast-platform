@@ -315,6 +315,10 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       setErro("Ainda carregando seus dados — aguarde alguns segundos e tente novamente.");
       return;
     }
+    if (!clienteSel) {
+      setErro("Selecione um cliente da lista de busca. Se ele ainda não está cadastrado, cadastre primeiro na aba \"Clientes\".");
+      return;
+    }
     if (!nomeEfetivo || !endEfetivo.rua || !endEfetivo.num) {
       setErro("Preencha o nome do cliente e o endereço completo."); return;
     }
@@ -326,25 +330,13 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       setErro("Não foi possível calcular nenhuma taxa pra esse endereço (nem por distância, nem por bairro). Corrija o endereço ou fale com o suporte antes de publicar.");
       return;
     }
-    // Salva cliente novo automaticamente no Supabase
-    if (!clienteSel) {
-      const { data, error } = await supabase.from("clientes").insert({
-        empresario_id: empresa.id,
-        nome: clienteNome||buscaCliente,
-        telefone: clienteTel || "Não informado",
-        rua: novoEndereco.rua,
-        numero: novoEndereco.num,
-        bairro: novoEndereco.bairro,
-        referencia: novoEndereco.ref,
-      }).select().single();
-      if (error) {
-        setErro("Erro ao salvar cliente: " + error.message);
-        return;
-      }
-      if (data) {
-        setClientes(p=>[...p, {id:data.id, nome:data.nome, tel:data.telefone, rua:data.rua, num:data.numero, bairro:data.bairro, ref:data.referencia}]);
-      }
-    } else if (modoEndereco==="novo") {
+    // Se o telefone foi corrigido/adicionado aqui (cliente salvo sem telefone), ou o
+    // endereço foi trocado pra "diferente do cadastrado", atualiza o cadastro salvo.
+    if (telEfetivo && telEfetivo!==clienteSel.tel) {
+      await supabase.from("clientes").update({ telefone: telEfetivo }).eq("id", clienteSel.id);
+      setClientes(p=>p.map(c=>c.id===clienteSel.id?{...c,tel:telEfetivo}:c));
+    }
+    if (modoEndereco==="novo") {
       await supabase.from("clientes").update({
         rua: novoEndereco.rua, numero: novoEndereco.num, bairro: novoEndereco.bairro, referencia: novoEndereco.ref,
       }).eq("id", clienteSel.id);
@@ -412,7 +404,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
 
         {buscaCliente.length>=2 && resultados.length===0 && !clienteSel && (
           <div style={{background:"#1a2035",borderRadius:8,padding:"9px 14px",marginTop:6}}>
-            <div style={{color:"#9ca3af",fontSize:12}}>Cliente não encontrado — preencha abaixo para cadastrar</div>
+            <div style={{color:"#9ca3af",fontSize:12}}>Cliente não encontrado. Cadastre ele primeiro na aba "👤 Clientes", depois volte aqui pra buscar de novo.</div>
           </div>
         )}
 
@@ -452,26 +444,13 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
             </div>
           </div>
         )}
-
-        {/* Cliente novo — só aparece quando NENHUM resultado foi encontrado na busca.
-            Antes aparecia sempre que tinha 2+ letras digitadas, mesmo com resultados já
-            visíveis acima — o que confundia demais o empresário, fazendo ele preencher
-            esse formulário por engano em vez de clicar no cliente certo já existente,
-            e duplicando cadastros. */}
-        {!clienteSel && buscaCliente.length>=2 && resultados.length===0 && (
-          <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:10,padding:"14px",marginTop:10}}>
-            <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:10}}>📝 Novo cliente — será salvo automaticamente</div>
-            <div style={{display:"flex",gap:10}}>
-              <div style={{flex:2}}><Inp label="Nome completo *" value={clienteNome||buscaCliente} onChange={setClienteNome} placeholder="Nome do cliente"/></div>
-              <div style={{flex:1}}><Inp label="Telefone / WhatsApp *" value={clienteTel} onChange={setClienteTel} placeholder="(12) 99999-0000"/></div>
-            </div>
-            {!telValido && <div style={{color:"#f87171",fontSize:11,marginTop:-4,marginBottom:6}}>⚠️ Obrigatório — o motoboy precisa desse número pra falar com o cliente</div>}
-          </div>
-        )}
       </Card>
 
-      {/* Endereço de entrega */}
-      {(modoEndereco==="novo" || !clienteSel) && buscaCliente.length>=2 && (
+      {/* Endereço de entrega — só aparece se o cliente JÁ selecionado escolher "endereço
+          diferente" do cadastrado. Não existe mais cadastro de cliente novo aqui dentro
+          — isso agora é feito só na aba "Clientes", pra manter essa tela sempre limpa,
+          só com busca e seleção, sem formulário nenhum pra preencher na correria. */}
+      {clienteSel && modoEndereco==="novo" && buscaCliente.length>=2 && (
         <Card style={{marginBottom:14}}>
           <STitle>📍 Endereço de Entrega</STitle>
           <div style={{display:"flex",gap:10}}>
@@ -496,7 +475,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       )}
 
       {/* Taxa automática */}
-      {taxa && (buscaCliente.length>=2) && (
+      {taxa && (clienteSel) && (
         <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"14px 18px",marginBottom:14}}>
           {empresa.modeloPrecificacao === "bairro" ? (
             <div>
@@ -558,7 +537,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       )}
 
       {/* Pagamento */}
-      {buscaCliente.length>=2 && (
+      {clienteSel && (
         <Card style={{marginBottom:14}}>
           <STitle>💳 Forma de Pagamento do Cliente</STitle>
           <div style={{display:"flex",gap:8,marginBottom:10}}>
@@ -620,12 +599,12 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       )}
 
       {/* Obs */}
-      {buscaCliente.length>=2 && (
+      {clienteSel && (
         <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
       )}
 
       {/* Botão publicar */}
-      {buscaCliente.length>=2 && (
+      {clienteSel && (
         <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,padding:"12px 16px",marginBottom:14}}>
           <div style={{color:"#9ca3af",fontSize:12}}>
             🔔 O pedido será enviado para <strong style={{color:"#f9fafb"}}>todos os motoboys online</strong>. O primeiro que aceitar faz a entrega.
@@ -633,7 +612,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         </div>
       )}
 
-      <Btn onClick={publicar} full disabled={buscaCliente.length<2 || !empresa?.id || !telValido || semPrecoDisponivel}>
+      <Btn onClick={publicar} full disabled={!clienteSel || !empresa?.id || !telValido || semPrecoDisponivel}>
         🚀 Publicar Pedido
       </Btn>
     </div>
@@ -799,6 +778,10 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       setErro("Ainda carregando seus dados — aguarde alguns segundos e tente novamente.");
       return;
     }
+    if (!clienteSel) {
+      setErro("Selecione um cliente da lista de busca. Se ele ainda não está cadastrado, cadastre primeiro na aba \"Clientes\".");
+      return;
+    }
     if (!nomeEfetivo || !endEfetivo.rua || !endEfetivo.num) {
       setErro("Preencha o nome do cliente e o endereço completo."); return;
     }
@@ -810,24 +793,11 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       setErro("Não foi possível calcular nenhuma taxa pra esse endereço (nem por distância, nem por bairro). Corrija o endereço ou fale com o suporte antes de adicionar.");
       return;
     }
-    if (!clienteSel) {
-      const { data, error } = await supabase.from("clientes").insert({
-        empresario_id: empresa.id,
-        nome: clienteNome||buscaCliente,
-        telefone: clienteTel || "Não informado",
-        rua: novoEndereco.rua,
-        numero: novoEndereco.num,
-        bairro: novoEndereco.bairro,
-        referencia: novoEndereco.ref,
-      }).select().single();
-      if (error) {
-        setErro("Erro ao salvar cliente: " + error.message);
-        return;
-      }
-      if (data) {
-        setClientes(p=>[...p, {id:data.id, nome:data.nome, tel:data.telefone, rua:data.rua, num:data.numero, bairro:data.bairro, ref:data.referencia}]);
-      }
-    } else if (modoEndereco==="novo") {
+    if (telEfetivo && telEfetivo!==clienteSel.tel) {
+      await supabase.from("clientes").update({ telefone: telEfetivo }).eq("id", clienteSel.id);
+      setClientes(p=>p.map(c=>c.id===clienteSel.id?{...c,tel:telEfetivo}:c));
+    }
+    if (modoEndereco==="novo") {
       await supabase.from("clientes").update({
         rua: novoEndereco.rua, numero: novoEndereco.num, bairro: novoEndereco.bairro, referencia: novoEndereco.ref,
       }).eq("id", clienteSel.id);
@@ -885,7 +855,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
 
         {buscaCliente.length>=2 && resultados.length===0 && !clienteSel && (
           <div style={{background:"#1a2035",borderRadius:8,padding:"9px 14px",marginTop:6}}>
-            <div style={{color:"#9ca3af",fontSize:12}}>Cliente não encontrado — preencha abaixo para cadastrar</div>
+            <div style={{color:"#9ca3af",fontSize:12}}>Cliente não encontrado. Cadastre ele primeiro na aba "👤 Clientes", depois volte aqui pra buscar de novo.</div>
           </div>
         )}
 
@@ -922,21 +892,11 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
             </div>
           </div>
         )}
-
-        {!clienteSel && buscaCliente.length>=2 && resultados.length===0 && (
-          <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:10,padding:"14px",marginTop:10}}>
-            <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:10}}>📝 Novo cliente — será salvo automaticamente</div>
-            <div style={{display:"flex",gap:10}}>
-              <div style={{flex:2}}><Inp label="Nome completo *" value={clienteNome||buscaCliente} onChange={setClienteNome} placeholder="Nome do cliente"/></div>
-              <div style={{flex:1}}><Inp label="Telefone / WhatsApp *" value={clienteTel} onChange={setClienteTel} placeholder="(12) 99999-0000"/></div>
-            </div>
-            {!telValido && <div style={{color:"#f87171",fontSize:11,marginTop:-4,marginBottom:6}}>⚠️ Obrigatório — o motoboy precisa desse número pra falar com o cliente</div>}
-          </div>
-        )}
       </Card>
 
-      {/* Endereço */}
-      {(modoEndereco==="novo" || !clienteSel) && buscaCliente.length>=2 && (
+      {/* Endereço — só aparece se o cliente selecionado escolher "endereço diferente".
+          Sem cadastro de cliente novo aqui — isso agora é só na aba Clientes. */}
+      {clienteSel && modoEndereco==="novo" && buscaCliente.length>=2 && (
         <Card style={{marginBottom:14}}>
           <STitle>📍 Endereço de Entrega</STitle>
           <div style={{display:"flex",gap:10}}>
@@ -956,7 +916,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       )}
 
       {/* Taxa — por km (padrão) ou por bairro, dependendo da configuração do estabelecimento */}
-      {taxa && buscaCliente.length>=2 && (
+      {taxa && clienteSel && (
         <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"14px 18px",marginBottom:14}}>
           {empresa.modeloPrecificacao === "bairro" ? (
             <div>
@@ -1004,7 +964,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       )}
 
       {/* Pagamento */}
-      {buscaCliente.length>=2 && (
+      {clienteSel && (
         <Card style={{marginBottom:14}}>
           <STitle>💳 Forma de Pagamento</STitle>
           <div style={{display:"flex",gap:8,marginBottom:10}}>
@@ -1064,11 +1024,11 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         </Card>
       )}
 
-      {buscaCliente.length>=2 && (
+      {clienteSel && (
         <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
       )}
 
-      <Btn onClick={salvar} full disabled={buscaCliente.length<2 || !empresa?.id || !telValido || semPrecoDisponivel}>
+      <Btn onClick={salvar} full disabled={!clienteSel || !empresa?.id || !telValido || semPrecoDisponivel}>
         ➕ Adicionar à Corrida
       </Btn>
     </Overlay>
