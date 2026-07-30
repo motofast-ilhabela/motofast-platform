@@ -6,6 +6,7 @@ import Admin from './Admin.jsx'
 import Empresario from './Empresario.jsx'
 import Motoboy from './Motoboy.jsx'
 import Rastreio from './Rastreio.jsx'
+import RedefinirSenha from './RedefinirSenha.jsx'
 import TermosMotoboy from './TermosMotoboy.jsx'
 import TermosEmpresario from './TermosEmpresario.jsx'
 
@@ -259,6 +260,8 @@ export default function App() {
 
         {/* Rastreio público — sem login */}
         <Route path="/rastreio" element={<Rastreio />} />
+        {/* Redefinir senha — pra onde o link do e-mail de recuperação leva */}
+        <Route path="/redefinir-senha" element={<RedefinirSenha />} />
 
         {/* Termos de uso */}
         <Route path="/termos-motoboy" element={<TermosMotoboy />} />
