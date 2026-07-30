@@ -1538,6 +1538,8 @@ function ModalEditarPedido({ pedido, onSalvar, onFechar }) {
 function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado, mesesDisponiveis, empresa }) {
   const [filtro, setFiltro] = useState("Todos");
   const [dataSelecionada, setDataSelecionada] = useState(dataLocalISO());
+  const [semanaEntregasRaw, setSemanaEntregasRaw] = useState([]);
+  const [carregandoSemana, setCarregandoSemana] = useState(false);
 
   // Status de pagamento por dia — só existe (e faz sentido) pra quem está no plano
   // "diário" de repasse ao motoboy. É o MESMO campo que o Admin marca como pago na
@@ -1564,16 +1566,46 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
   const ontemISO = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return dataLocalISO(d); })();
   const statusDataSelecionada = statusDoDia(dataSelecionada);
 
-  // Total da SEMANA (segunda a domingo) que contém a data selecionada — soma tudo de
-  // uma vez, pro empresário que paga toda segunda-feira não precisar ir dia por dia
-  // na calculadora. Usa a mesma semana real (segunda a domingo) do resto da plataforma.
+  // Total da SEMANA (segunda a domingo) que contém a data selecionada. IMPORTANTE:
+  // esse total busca direto do banco, independente do filtro de mês escolhido lá em
+  // cima — assim ele NUNCA vem incompleto, mesmo quando a semana atravessa a virada
+  // de um mês pro outro (ex: 27/07 a 02/08). O empresário não precisa lembrar de
+  // trocar filtro nenhum — o valor já chega certo, pronto pra pagar.
   const semanaChaveSelecionada = segundaFeiraDaSemana(new Date(dataSelecionada+"T12:00:00"));
   function fmtDiaMesCurto(iso) {
     const d = new Date(iso+"T12:00:00");
     return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
   }
   const fimSemanaSelecionada = (()=>{ const d=new Date(semanaChaveSelecionada+"T12:00:00"); d.setDate(d.getDate()+6); return dataLocalISO(d); })();
-  const todasEntregasSemana = todos.filter(e=>e.status==="Entregue" && segundaFeiraDaSemana(new Date(e.dataISO+"T12:00:00"))===semanaChaveSelecionada);
+
+  useEffect(()=>{
+    if (!empresa?.id) return;
+    let cancelado = false;
+    setCarregandoSemana(true);
+    (async()=>{
+      const inicio = new Date(semanaChaveSelecionada+"T00:00:00").toISOString();
+      const fimObj = new Date(semanaChaveSelecionada+"T00:00:00");
+      fimObj.setDate(fimObj.getDate()+7);
+      const fim = fimObj.toISOString();
+      const { data, error } = await supabase
+        .from("pedidos")
+        .select("taxa, criado_em")
+        .eq("empresario_id", empresa.id)
+        .eq("status", "entregue")
+        .gte("criado_em", inicio)
+        .lt("criado_em", fim);
+      if (cancelado) return;
+      if (error) { console.error("Erro ao carregar total da semana:", error); setCarregandoSemana(false); return; }
+      setSemanaEntregasRaw((data||[]).map(p=>({
+        taxa: p.taxa,
+        dataISO: dataLocalISO(new Date(p.criado_em)),
+      })));
+      setCarregandoSemana(false);
+    })();
+    return ()=>{ cancelado = true; };
+  }, [empresa?.id, semanaChaveSelecionada]);
+
+  const todasEntregasSemana = semanaEntregasRaw;
   // Se a semana INTEIRA já foi marcada como paga de uma vez (plano semanal), não sobra
   // nada pendente. Se for plano diário, cada dia é descontado individualmente conforme
   // já foi pago — só entra na soma o que ainda está pendente, pra bater exatamente com
@@ -1582,10 +1614,6 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
     && empresa?.taxaSemanalPagaEm && segundaFeiraDaSemana(new Date(empresa.taxaSemanalPagaEm))===semanaChaveSelecionada;
   const entregasSemana = semanaInteiraJaPaga ? [] : todasEntregasSemana.filter(e=>!statusDoDia(e.dataISO) || statusDoDia(e.dataISO)==="pendente");
   const totalSemana = entregasSemana.reduce((s,e)=>s+e.taxa,0);
-  // Avisa só quando a semana selecionada realmente cai fora do mês escolhido no filtro
-  // de período — ou seja, quando faltar dado carregado. A mensagem agora deixa claro
-  // que é sobre ESSA semana específica atravessar a virada do mês, não sobre "meses atrás".
-  const semanaPodeEstarIncompleta = mesSelecionado!=="todos" && !(semanaChaveSelecionada.startsWith(mesSelecionado) && fimSemanaSelecionada.startsWith(mesSelecionado));
 
   // Resumo agrupado por dia — todos os dias que tiveram entrega, mais recente primeiro
   const porDia = {};
@@ -1645,18 +1673,20 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
 
       {/* Total PENDENTE da semana inteira (segunda a domingo) — pra quem paga toda
           segunda, sem precisar somar dia por dia na calculadora. Só conta o que ainda
-          não foi pago — o que já foi pago não aparece aqui, pra nunca confundir. */}
+          não foi pago — o que já foi pago não aparece aqui, pra nunca confundir.
+          Busca direto do banco (veja o useEffect acima), então SEMPRE vem completo,
+          não importa qual mês está selecionado no filtro de período lá em cima. */}
       <Card style={{marginBottom:14,background:"#0d2a4a",border:"1px solid #60a5fa"}}>
-        <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📆 Falta repassar essa semana</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>📆 Falta repassar essa semana</div>
+          {carregandoSemana && <span style={{color:"#6b7280",fontSize:11}}>⏳</span>}
+        </div>
         <div style={{color:"#6b7280",fontSize:12,marginBottom:4}}>{fmtDiaMesCurto(semanaChaveSelecionada)} a {fmtDiaMesCurto(fimSemanaSelecionada)}</div>
         <div style={{color:totalSemana>0?"#60a5fa":"#34d399",fontSize:32,fontWeight:900}}>R${totalSemana.toFixed(2)}</div>
         {totalSemana>0 ? (
           <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasSemana.length} entrega{entregasSemana.length!==1?"s":""} ainda pendente{entregasSemana.length!==1?"s":""} nessa semana</div>
         ) : (
           <div style={{color:"#34d399",fontSize:12,marginTop:2}}>✅ {todasEntregasSemana.length>0 ? "Tudo pago dessa semana" : "Nenhuma entrega nessa semana"}</div>
-        )}
-        {semanaPodeEstarIncompleta && (
-          <div style={{color:"#fbbf24",fontSize:11,marginTop:8}}>⚠️ Essa soma pode estar incompleta: a semana de {fmtDiaMesCurto(semanaChaveSelecionada)} a {fmtDiaMesCurto(fimSemanaSelecionada)} cai em dois meses diferentes, e o filtro acima está mostrando só um mês. Troca o período pra "🔍 Buscar tudo" pra ver o valor certo dessa semana.</div>
         )}
       </Card>
 
