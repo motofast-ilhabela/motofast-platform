@@ -694,7 +694,7 @@ function TelaLogin({ tipo, onCadastrar, onEntrar }) {
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function entrar() {
+   async function entrar() {
     if (!email || !senha) { setErro("Preencha e-mail e senha."); return; }
     if (!validarEmail(email)) { setErro("E-mail inválido."); return; }
     setErro("");
@@ -717,11 +717,28 @@ function TelaLogin({ tipo, onCadastrar, onEntrar }) {
 
     const { data: { user } } = await supabase.auth.getUser();
     const tabela = tipo === "motoboy" ? "motoboys" : "empresarios";
+    const tabelaOutra = tipo === "motoboy" ? "empresarios" : "motoboys";
     const { data: perfil } = await supabase.from(tabela).select("aprovado,rejeitado,motivo_rejeicao").eq("user_id", user.id).maybeSingle();
 
     setLoading(false);
 
-    if (!perfil || !perfil.aprovado) {
+    if (!perfil) {
+      // Não achou o cadastro na tabela certa pra essa tela — antes disso caía direto
+      // na mensagem de "aguardando aprovação", mesmo quando o problema real era a
+      // pessoa ter entrado na tela errada (motoboy usando login de empresário, ou o
+      // contrário). Agora confere na outra tabela antes de decidir qual mensagem mostrar.
+      const { data: perfilOutraTabela } = await supabase.from(tabelaOutra).select("id").eq("user_id", user.id).maybeSingle();
+      await supabase.auth.signOut();
+      if (perfilOutraTabela) {
+        const nomeOutroTipo = tipo === "motoboy" ? "empresário" : "motoboy";
+        setErro(`Essa conta é de ${nomeOutroTipo}, não de ${config[tipo].label.toLowerCase()}. Volta pra tela inicial e entra pelo login de ${nomeOutroTipo}.`);
+      } else {
+        setErro("Não encontramos seu cadastro. Fale com o suporte MotoFast.");
+      }
+      return;
+    }
+
+    if (!perfil.aprovado) {
       await supabase.auth.signOut();
       setErro("Seu cadastro ainda está sendo analisado. Aguarde o e-mail de aprovação.");
       return;
@@ -736,6 +753,7 @@ function TelaLogin({ tipo, onCadastrar, onEntrar }) {
 
     window.location.href = tipo === "motoboy" ? "/motoboy" : "/empresario";
   }
+
 
   const config = {
     empresario: { emoji:"🏪", label:"Empresário", cor:"#60a5fa", desc:"Acesse para solicitar entregas" },
