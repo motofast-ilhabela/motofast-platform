@@ -47,6 +47,18 @@ function dataLocalISO(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+// Retorna a data (AAAA-MM-DD) da segunda-feira que inicia a semana REAL (segunda a
+// domingo) que contém a data informada. Usado pra somar a taxa da semana inteira de
+// uma vez, pro empresário que paga toda segunda-feira não precisar somar dia por dia.
+function segundaFeiraDaSemana(date) {
+  const d = new Date(date);
+  const diaSemana = d.getDay(); // 0=domingo, 1=segunda, ..., 6=sábado
+  const diff = diaSemana === 0 ? -6 : 1 - diaSemana;
+  const segunda = new Date(d);
+  segunda.setDate(d.getDate() + diff);
+  return dataLocalISO(segunda);
+}
+
 // Normaliza texto pra comparação: remove acentos e deixa minúsculo. Usado na busca de
 // clientes salvos — sem isso, digitar "Fabio" (sem acento, o mais comum na pressa) não
 // encontrava um cliente salvo como "Fábio", fazendo o sistema tratar como cliente novo
@@ -1541,7 +1553,6 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
   const todos = historico;
   const lista = filtro==="Todos" ? todos : todos.filter(e=>e.status===filtro);
   const totalTaxas = todos.filter(e=>e.status==="Entregue").reduce((s,e)=>s+e.taxa,0);
-  const semana = todos.filter(e=>e.status==="Entregue").slice(0,5).reduce((s,e)=>s+e.taxa,0);
 
   // Entregas do dia selecionado — o mesmo valor "taxa" que o cliente pagou é o
   // valor que você repassa pra plataforma (a MotoFast fica com a margem dela e
@@ -1552,6 +1563,22 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
   const hojeISO = dataLocalISO();
   const ontemISO = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return dataLocalISO(d); })();
   const statusDataSelecionada = statusDoDia(dataSelecionada);
+
+  // Total da SEMANA (segunda a domingo) que contém a data selecionada — soma tudo de
+  // uma vez, pro empresário que paga toda segunda-feira não precisar ir dia por dia
+  // na calculadora. Usa a mesma semana real (segunda a domingo) do resto da plataforma.
+  const semanaChaveSelecionada = segundaFeiraDaSemana(new Date(dataSelecionada+"T12:00:00"));
+  function fmtDiaMesCurto(iso) {
+    const d = new Date(iso+"T12:00:00");
+    return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
+  }
+  const fimSemanaSelecionada = (()=>{ const d=new Date(semanaChaveSelecionada+"T12:00:00"); d.setDate(d.getDate()+6); return dataLocalISO(d); })();
+  const entregasSemana = todos.filter(e=>e.status==="Entregue" && segundaFeiraDaSemana(new Date(e.dataISO+"T12:00:00"))===semanaChaveSelecionada);
+  const totalSemana = entregasSemana.reduce((s,e)=>s+e.taxa,0);
+  // Avisa se a semana atravessa dois meses e o filtro de período pode estar cortando
+  // alguns dias dela fora da lista carregada (ex: semana de 27/07 a 02/08 com o mês
+  // selecionado sendo só Julho — os dias de agosto não entrariam na soma).
+  const semanaPodeEstarIncompleta = mesSelecionado!=="todos" && !(semanaChaveSelecionada.startsWith(mesSelecionado) && fimSemanaSelecionada.startsWith(mesSelecionado));
 
   // Resumo agrupado por dia — todos os dias que tiveram entrega, mais recente primeiro
   const porDia = {};
@@ -1606,6 +1633,18 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
         </div>
         {!entregasDia.length && dataSelecionada!==hojeISO && dataSelecionada!==ontemISO && mesSelecionado!=="todos" && !dataSelecionada.startsWith(mesSelecionado) && (
           <div style={{color:"#fbbf24",fontSize:11,marginTop:6}}>⚠️ Essa data é de outro mês — escolha o mês certo no período acima, ou "Buscar tudo", pra ver o valor dela.</div>
+        )}
+      </Card>
+
+      {/* Total da semana inteira (segunda a domingo) — pra quem paga toda segunda,
+          sem precisar somar dia por dia na calculadora. */}
+      <Card style={{marginBottom:14,background:"#0d2a4a",border:"1px solid #60a5fa"}}>
+        <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📆 Total da semana — pra quem paga toda segunda</div>
+        <div style={{color:"#6b7280",fontSize:12,marginBottom:4}}>{fmtDiaMesCurto(semanaChaveSelecionada)} a {fmtDiaMesCurto(fimSemanaSelecionada)}</div>
+        <div style={{color:"#60a5fa",fontSize:32,fontWeight:900}}>R${totalSemana.toFixed(2)}</div>
+        <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasSemana.length} entrega{entregasSemana.length!==1?"s":""} nessa semana toda</div>
+        {semanaPodeEstarIncompleta && (
+          <div style={{color:"#fbbf24",fontSize:11,marginTop:8}}>⚠️ Essa semana atravessa dois meses — escolha "🔍 Buscar tudo" no período acima pra garantir que a soma está completa, incluindo os dois meses.</div>
         )}
       </Card>
 
