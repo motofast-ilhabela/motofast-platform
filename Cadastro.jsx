@@ -757,7 +757,7 @@ function TelaLogin({ tipo, onCadastrar, onEntrar }) {
       <Inp label="Senha" value={senha} onChange={setSenha} placeholder="Sua senha" type="password"/>
 
       <div style={{textAlign:"right",marginBottom:14}}>
-        <span style={{color:"#60a5fa",fontSize:12,cursor:"pointer"}}>Esqueci minha senha</span>
+        <span style={{color:"#60a5fa",fontSize:12,cursor:"pointer"}} onClick={async()=>{const em=window.prompt("Digite o e-mail cadastrado nessa conta:");if(!em)return;const{error}=await supabase.auth.resetPasswordForEmail(em,{redirectTo:window.location.origin+"/redefinir-senha"});alert(error?"Erro: "+error.message:"Se esse e-mail estiver cadastrado, você vai receber um link por e-mail pra trocar a senha. Confira o spam também.")}}>Esqueci minha senha</span>
       </div>
 
       <Btn onClick={entrar} full loading={loading}>Entrar</Btn>
