@@ -1573,11 +1573,18 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
     return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
   }
   const fimSemanaSelecionada = (()=>{ const d=new Date(semanaChaveSelecionada+"T12:00:00"); d.setDate(d.getDate()+6); return dataLocalISO(d); })();
-  const entregasSemana = todos.filter(e=>e.status==="Entregue" && segundaFeiraDaSemana(new Date(e.dataISO+"T12:00:00"))===semanaChaveSelecionada);
+  const todasEntregasSemana = todos.filter(e=>e.status==="Entregue" && segundaFeiraDaSemana(new Date(e.dataISO+"T12:00:00"))===semanaChaveSelecionada);
+  // Se a semana INTEIRA já foi marcada como paga de uma vez (plano semanal), não sobra
+  // nada pendente. Se for plano diário, cada dia é descontado individualmente conforme
+  // já foi pago — só entra na soma o que ainda está pendente, pra bater exatamente com
+  // o que falta repassar, e não confundir com valor que já foi acertado.
+  const semanaInteiraJaPaga = empresa?.planoPagamentoMotoboy==="semanal" && empresa?.taxaSemanalPaga
+    && empresa?.taxaSemanalPagaEm && segundaFeiraDaSemana(new Date(empresa.taxaSemanalPagaEm))===semanaChaveSelecionada;
+  const entregasSemana = semanaInteiraJaPaga ? [] : todasEntregasSemana.filter(e=>!statusDoDia(e.dataISO) || statusDoDia(e.dataISO)==="pendente");
   const totalSemana = entregasSemana.reduce((s,e)=>s+e.taxa,0);
-  // Avisa se a semana atravessa dois meses e o filtro de período pode estar cortando
-  // alguns dias dela fora da lista carregada (ex: semana de 27/07 a 02/08 com o mês
-  // selecionado sendo só Julho — os dias de agosto não entrariam na soma).
+  // Avisa só quando a semana selecionada realmente cai fora do mês escolhido no filtro
+  // de período — ou seja, quando faltar dado carregado. A mensagem agora deixa claro
+  // que é sobre ESSA semana específica atravessar a virada do mês, não sobre "meses atrás".
   const semanaPodeEstarIncompleta = mesSelecionado!=="todos" && !(semanaChaveSelecionada.startsWith(mesSelecionado) && fimSemanaSelecionada.startsWith(mesSelecionado));
 
   // Resumo agrupado por dia — todos os dias que tiveram entrega, mais recente primeiro
@@ -1636,15 +1643,20 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
         )}
       </Card>
 
-      {/* Total da semana inteira (segunda a domingo) — pra quem paga toda segunda,
-          sem precisar somar dia por dia na calculadora. */}
+      {/* Total PENDENTE da semana inteira (segunda a domingo) — pra quem paga toda
+          segunda, sem precisar somar dia por dia na calculadora. Só conta o que ainda
+          não foi pago — o que já foi pago não aparece aqui, pra nunca confundir. */}
       <Card style={{marginBottom:14,background:"#0d2a4a",border:"1px solid #60a5fa"}}>
-        <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📆 Total da semana — pra quem paga toda segunda</div>
+        <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📆 Falta repassar essa semana</div>
         <div style={{color:"#6b7280",fontSize:12,marginBottom:4}}>{fmtDiaMesCurto(semanaChaveSelecionada)} a {fmtDiaMesCurto(fimSemanaSelecionada)}</div>
-        <div style={{color:"#60a5fa",fontSize:32,fontWeight:900}}>R${totalSemana.toFixed(2)}</div>
-        <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasSemana.length} entrega{entregasSemana.length!==1?"s":""} nessa semana toda</div>
+        <div style={{color:totalSemana>0?"#60a5fa":"#34d399",fontSize:32,fontWeight:900}}>R${totalSemana.toFixed(2)}</div>
+        {totalSemana>0 ? (
+          <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasSemana.length} entrega{entregasSemana.length!==1?"s":""} ainda pendente{entregasSemana.length!==1?"s":""} nessa semana</div>
+        ) : (
+          <div style={{color:"#34d399",fontSize:12,marginTop:2}}>✅ {todasEntregasSemana.length>0 ? "Tudo pago dessa semana" : "Nenhuma entrega nessa semana"}</div>
+        )}
         {semanaPodeEstarIncompleta && (
-          <div style={{color:"#fbbf24",fontSize:11,marginTop:8}}>⚠️ Essa semana atravessa dois meses — escolha "🔍 Buscar tudo" no período acima pra garantir que a soma está completa, incluindo os dois meses.</div>
+          <div style={{color:"#fbbf24",fontSize:11,marginTop:8}}>⚠️ Essa soma pode estar incompleta: a semana de {fmtDiaMesCurto(semanaChaveSelecionada)} a {fmtDiaMesCurto(fimSemanaSelecionada)} cai em dois meses diferentes, e o filtro acima está mostrando só um mês. Troca o período pra "🔍 Buscar tudo" pra ver o valor certo dessa semana.</div>
         )}
       </Card>
 
@@ -1973,6 +1985,8 @@ export default function AppEmpresario() {
             bloqueado: emp.bloqueado,
             motivoBloqueio: emp.motivo_bloqueio || null,
             modeloPrecificacao: emp.modelo_precificacao || "km",
+            taxaSemanalPaga: emp.taxa_semanal_paga || false,
+            taxaSemanalPagaEm: emp.taxa_semanal_paga_em || null,
           });
 
           // Carrega clientes desse empresário
