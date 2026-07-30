@@ -174,6 +174,17 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
     const rua = endEfetivo.rua;
     const num = endEfetivo.num;
     const bairro = endEfetivo.bairro;
+    // Se esse estabelecimento estiver configurado pra cobrar por BAIRRO (tabela fixa,
+    // escolhido lá no Admin), nem tenta calcular distância nenhuma — usa direto a
+    // tabela de bairro dele (a variável "taxa" já calcula isso mais abaixo). Só quando
+    // o modelo é "km" (padrão) que entra nessa lógica de calcular a rota real.
+    if (empresa.modeloPrecificacao === "bairro") {
+      setDistanciaKm(null);
+      setTaxaKm({e:0, m:0});
+      setErroCalculo(false);
+      setCalcKm(false);
+      return;
+    }
     // Só precisa do endereço do CLIENTE pra começar a calcular. O endereço do
     // ESTABELECIMENTO é só um "extra" pra ter mais precisão — se não tiver cadastrado
     // (empresa.endereco vazio), cai automaticamente pro bairro do estabelecimento.
@@ -262,7 +273,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       }
     })();
     return () => { cancelado = true; };
-  }, [endEfetivo.rua, endEfetivo.num, endEfetivo.bairro, empresa.endereco, empresa.bairro]);
+  }, [endEfetivo.rua, endEfetivo.num, endEfetivo.bairro, empresa.endereco, empresa.bairro, empresa.modeloPrecificacao]);
 
   const nomeEfetivo = clienteSel ? clienteSel.nome : clienteNome;
   const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
@@ -272,7 +283,9 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   // Só bloqueia publicar quando NÃO há preço nenhum disponível — nem pela distância
   // (km falhou) nem pela reserva por bairro (também não cadastrada). Nesse caso
   // publicar deixaria o pedido com taxa R$0, o que nunca pode acontecer.
-  const semPrecoDisponivel = erroCalculo && (!taxa || !(taxa.e>0));
+  const semPrecoDisponivel = empresa.modeloPrecificacao === "bairro"
+    ? !(taxa && taxa.e>0)
+    : erroCalculo && (!taxa || !(taxa.e>0));
 
   function detectarBairro(rua) {
     const l = rua.toLowerCase();
@@ -473,6 +486,19 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       {/* Taxa automática */}
       {taxa && (buscaCliente.length>=2) && (
         <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"14px 18px",marginBottom:14}}>
+          {empresa.modeloPrecificacao === "bairro" ? (
+            <div>
+              <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>
+                💰 Taxa de entrega — {bairroFinal}
+              </div>
+              {taxa.e>0 ? (
+                <div style={{color:"#34d399",fontWeight:900,fontSize:28}}>R${taxa.e}</div>
+              ) : (
+                <div style={{color:"#f87171",fontSize:13}}>⚠️ Esse bairro não tem taxa cadastrada. Fale com o suporte MotoFast antes de publicar.</div>
+              )}
+            </div>
+          ) : (
+          <div>
           <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>
             💰 Taxa de entrega{distanciaKm ? ` — ${distanciaKm}km` : ""}
           </div>
@@ -513,6 +539,8 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
             <div style={{color:"#9ca3af",fontSize:13}}>
               Digite o endereço do cliente para calcular a taxa automaticamente.
             </div>
+          )}
+          </div>
           )}
         </div>
       )}
@@ -657,6 +685,15 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
     const rua = endEfetivo.rua;
     const num = endEfetivo.num;
     const bairro = endEfetivo.bairro;
+    // Mesmo desvio da tela de Nova Entrega: se o estabelecimento usa o modelo por
+    // BAIRRO, nem tenta calcular km — usa a tabela fixa (variável "taxa" abaixo).
+    if (empresa.modeloPrecificacao === "bairro") {
+      setDistanciaKm(null);
+      setTaxaKm({e:0, m:0});
+      setErroCalculo(false);
+      setCalcKm(false);
+      return;
+    }
     if (!rua || !bairro) {
       setDistanciaKm(null);
       setTaxaKm({e:0, m:0});
@@ -727,11 +764,13 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       }
     })();
     return () => { cancelado = true; };
-  }, [endEfetivo.rua, endEfetivo.num, endEfetivo.bairro, empresa.endereco, empresa.bairro]);
+  }, [endEfetivo.rua, endEfetivo.num, endEfetivo.bairro, empresa.endereco, empresa.bairro, empresa.modeloPrecificacao]);
 
   // Só bloqueia adicionar quando NÃO há preço nenhum disponível (nem por km, nem
   // pela reserva por bairro) — nunca adiciona um pedido com taxa R$0.
-  const semPrecoDisponivel = erroCalculo && (!taxa || !(taxa.e>0));
+  const semPrecoDisponivel = empresa.modeloPrecificacao === "bairro"
+    ? !(taxa && taxa.e>0)
+    : erroCalculo && (!taxa || !(taxa.e>0));
 
   function detectarBairro(rua) {
     const l = rua.toLowerCase();
@@ -904,9 +943,20 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         </Card>
       )}
 
-      {/* Taxa — calculada por km, nunca fixa por bairro */}
+      {/* Taxa — por km (padrão) ou por bairro, dependendo da configuração do estabelecimento */}
       {taxa && buscaCliente.length>=2 && (
         <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"14px 18px",marginBottom:14}}>
+          {empresa.modeloPrecificacao === "bairro" ? (
+            <div>
+              <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>💰 Taxa de entrega — {bairroFinal}</div>
+              {taxa.e>0 ? (
+                <div style={{color:"#34d399",fontWeight:900,fontSize:28}}>R${taxa.e}</div>
+              ) : (
+                <div style={{color:"#f87171",fontSize:13}}>⚠️ Esse bairro não tem taxa cadastrada. Fale com o suporte antes de adicionar.</div>
+              )}
+            </div>
+          ) : (
+          <div>
           <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>
             💰 Taxa de entrega{distanciaKm ? ` — ${distanciaKm}km` : ""}
           </div>
@@ -935,6 +985,8 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
           )}
           {!calcKm && !distanciaKm && !erroCalculo && (
             <div style={{color:"#9ca3af",fontSize:13}}>Preencha o endereço do cliente para calcular a taxa automaticamente.</div>
+          )}
+          </div>
           )}
         </div>
       )}
@@ -1881,6 +1933,7 @@ export default function AppEmpresario() {
             pagamentosDiarios: emp.pagamentos_diarios || {},
             bloqueado: emp.bloqueado,
             motivoBloqueio: emp.motivo_bloqueio || null,
+            modeloPrecificacao: emp.modelo_precificacao || "km",
           });
 
           // Carrega clientes desse empresário

@@ -945,6 +945,19 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
     setEmpresarios(p=>p.map(e=>e.id===id?{...e,bloqueado:!e.bloqueado}:e));
   }
 
+  // Muda como a taxa de entrega é calculada pra esse estabelecimento — "km" (calcula
+  // a distância real automaticamente) ou "bairro" (usa a tabela fixa de bairros dele,
+  // configurada na aba Taxas). O app do empresário lê esse campo e decide sozinho
+  // qual fórmula usar, sem ele precisar escolher nada.
+  async function mudarModeloPrecificacao(id, modelo) {
+    const { error } = await supabase.from("empresarios").update({modelo_precificacao: modelo}).eq("id", id);
+    if (error) {
+      alert("❌ Erro ao salvar: " + error.message);
+      return;
+    }
+    setEmpresarios(p=>p.map(e=>e.id===id?{...e,modeloPrecificacao:modelo}:e));
+  }
+
   async function marcarMensalidade(id) {
     const agoraISO = new Date().toISOString();
     const { error } = await supabase.from("empresarios").update({mensalidade_paga:true, mensalidade_paga_em: agoraISO, bloqueado:false}).eq("id", id);
@@ -1108,6 +1121,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                   <span style={{color:"#f9fafb",fontWeight:800,fontSize:15}}>{emp.nome}</span>
                   {emp.bloqueado ? <Tag label="⛔ BLOQUEADO" cor="#ef4444"/> : emp.planoGratis ? <Tag label="🎁 Grátis" cor="#a78bfa"/> : <Tag label="✅ Ativo" cor="#34d399"/>}
                   <Tag label={emp.planoPagamento==="mensal"?"🗓️ Mensal":"📋 Semanal"} cor="#60a5fa"/>
+                  <Tag label={(emp.modeloPrecificacao||"km")==="bairro"?"🗺️ Por bairro":"📍 Por km"} cor={(emp.modeloPrecificacao||"km")==="bairro"?"#a78bfa":"#34d399"}/>
                 </div>
                 <div style={{color:"#6b7280",fontSize:12}}>📍 {emp.bairro} · 📞 {emp.tel}</div>
                 {emp.horarioFuncionamento
@@ -1229,6 +1243,22 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
                   {[["CNPJ",empSel.cnpj],["Telefone",empSel.tel],["Endereço",empSel.enderecoEstab],["Bairro",empSel.bairro],["Dono",empSel.nomeDono],["Tel. Dono",empSel.telDono],["Sócio",empSel.nomeSocio||"—"],["Tel. Sócio",empSel.telSocio||"—"]].map(([l,v])=>(
                     <div key={l}><div style={{color:"#4b5563",fontSize:11}}>{l}</div><div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{v||"—"}</div></div>
+                  ))}
+                </div>
+              </Card>
+              <Card style={{marginBottom:14,padding:"14px 16px",background:"#0f172a"}}>
+                <SectionTitle>💰 Como calcular a taxa de entrega</SectionTitle>
+                <div style={{color:"#6b7280",fontSize:12,marginBottom:10}}>
+                  Define se esse estabelecimento cobra pela distância real (calculada automaticamente) ou por uma tabela fixa de bairros (configurada na aba "🗺️ Taxas").
+                </div>
+                <div style={{display:"flex",gap:8}}>
+                  {[["km","📍 Por km (distância real)"],["bairro","🗺️ Por bairro (tabela fixa)"]].map(([val,label])=>(
+                    <button key={val} onClick={()=>mudarModeloPrecificacao(empSel.id,val)} style={{flex:1,padding:"10px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,
+                      background:(empSel.modeloPrecificacao||"km")===val?"#0d3d2e":"#111827",
+                      border:(empSel.modeloPrecificacao||"km")===val?"2px solid #34d399":"2px solid #1f2937",
+                      color:(empSel.modeloPrecificacao||"km")===val?"#34d399":"#6b7280"}}>
+                      {label} {(empSel.modeloPrecificacao||"km")===val?"✅":""}
+                    </button>
                   ))}
                 </div>
               </Card>
@@ -2356,6 +2386,7 @@ export default function App() {
         horarioFuncionamento: e.horario_funcionamento || "",
         aprovadoEm: e.aprovado_em || null,
         criadoEm: e.criado_em || null,
+        modeloPrecificacao: e.modelo_precificacao || "km",
       }));
 
       const clis = (cliRes.data || []).map(c => ({
