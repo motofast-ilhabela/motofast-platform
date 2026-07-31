@@ -1102,6 +1102,8 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
   // Salva edições feitas num pedido já publicado (mesmo depois do motoboy aceitar).
   // Permite corrigir dados errados sem precisar cancelar e recriar o pedido do zero.
   async function salvarEdicaoPedido(pedidoId, dados) {
+    // A taxa (cliente e motoboy) NUNCA é tocada aqui de propósito — o empresário não
+    // pode editar nem ver o valor do motoboy depois que o pedido já foi publicado.
     const { error } = await supabase.from("pedidos").update({
       cliente_telefone: dados.clienteTel,
       rua: dados.rua,
@@ -1110,8 +1112,6 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
       referencia: dados.ref,
       observacao: dados.obs,
       forma_pagamento: dados.pagamento,
-      taxa: dados.taxa,
-      taxa_motoboy: dados.taxaMotoboy,
       valor_pedido: dados.valorPedido,
       valor_receber: dados.valorReceber,
       valor_troco: dados.troco,
@@ -1413,25 +1413,25 @@ function ModalEditarPedido({ pedido, onSalvar, onFechar }) {
   const [ref, setRef] = useState(pedido.ref || "");
   const [obs, setObs] = useState(pedido.obs || "");
   const [pagamento, setPagamento] = useState(pedido.pagamento || "pix");
-  const [taxa, setTaxa] = useState(String(pedido.taxa ?? ""));
-  const [taxaMotoboy, setTaxaMotoboy] = useState(String(pedido.taxaMotoboy ?? ""));
   const [valorPedido, setValorPedido] = useState(pedido.valorPedido!=null ? String(pedido.valorPedido) : "");
   const [valorReceber, setValorReceber] = useState(pedido.valorReceber!=null ? String(pedido.valorReceber) : "");
   const [salvando, setSalvando] = useState(false);
 
-  // Já tem motoboy vinculado nesse pedido (aceito ou a caminho) — se mudar o valor
-  // que ele recebe, precisa avisar ele direto, porque ele já pode ter se programado
-  // com o valor original mostrado quando aceitou a corrida.
+  // Já tem motoboy vinculado nesse pedido (aceito ou a caminho) — se mudar o endereço
+  // ou a forma de pagamento, avise ele direto, porque ele já saiu com base nas
+  // informações originais.
   const jaTemMotoboy = !!pedido.motoboyId;
 
   async function salvar() {
     setSalvando(true);
     const troco = (valorPedido && valorReceber && parseFloat(valorReceber)>parseFloat(valorPedido))
       ? parseFloat(valorReceber)-parseFloat(valorPedido) : null;
+    // A TAXA (nem a do cliente, nem a do motoboy) nunca é enviada aqui — o empresário
+    // não tem como editar nem ver o valor do motoboy nessa tela. A taxa já foi
+    // calculada e mostrada uma única vez, no momento de publicar o pedido — depois
+    // disso é fixa, ponto final.
     const ok = await onSalvar({
       clienteTel, rua, num, bairro, ref, obs, pagamento,
-      taxa: parseFloat(taxa)||0,
-      taxaMotoboy: parseFloat(taxaMotoboy)||0,
       valorPedido: valorPedido ? parseFloat(valorPedido) : null,
       valorReceber: valorReceber ? parseFloat(valorReceber) : null,
       troco,
@@ -1446,7 +1446,7 @@ function ModalEditarPedido({ pedido, onSalvar, onFechar }) {
 
       {jaTemMotoboy && (
         <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px",marginBottom:14}}>
-          <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⚠️ Esse pedido já foi aceito por um motoboy. O valor dele está protegido e não muda. Mas se você alterar o endereço ou a forma de pagamento, avise ele direto pelo WhatsApp — ele já saiu com base nas informações originais.</div>
+          <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⚠️ Esse pedido já foi aceito por um motoboy. Se você alterar o endereço ou a forma de pagamento, avise ele direto pelo WhatsApp — ele já saiu com base nas informações originais.</div>
         </div>
       )}
 
@@ -1489,25 +1489,6 @@ function ModalEditarPedido({ pedido, onSalvar, onFechar }) {
             style={{background:"#0f172a",border:"1px solid #60a5fa",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
         </div>
       )}
-
-      <Divider/>
-      <STitle>💰 Taxa de Entrega</STitle>
-      <div style={{display:"flex",gap:10}}>
-        <div style={{flex:1}}>
-          <div style={{color:"#34d399",fontSize:11,fontWeight:700,marginBottom:4}}>Cliente paga (R$)</div>
-          <input type="number" value={taxa} onChange={e=>setTaxa(e.target.value)}
-            style={{background:"#0f172a",border:"1px solid #34d399",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:14,fontWeight:700,outline:"none",boxSizing:"border-box"}}/>
-        </div>
-        <div style={{flex:1}}>
-          <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>🔒 Motoboy recebe (R$)</div>
-          <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:6,color:"#fbbf24",padding:"8px 10px",width:"100%",fontSize:14,fontWeight:700,boxSizing:"border-box"}}>
-            R${taxaMotoboy}
-          </div>
-        </div>
-      </div>
-      <div style={{color:"#6b7280",fontSize:11,marginTop:4,marginBottom:10}}>
-        🔒 O valor do motoboy é protegido e não pode ser alterado aqui — garante que ele sempre recebe o que já foi calculado, mesmo se o preço do cliente mudar. Precisa ajustar? Cancele o pedido e publique de novo, ou fale direto com o motoboy.
-      </div>
 
       <Inp label="Observações" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
 
