@@ -1343,6 +1343,14 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
             const dataFmt = new Date(dataSelecionadaEmp+"T12:00:00").toLocaleDateString("pt-BR");
             const hojeISO = dataLocalISO();
             const ontemISO = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return dataLocalISO(d); })();
+            // Mesmo campo já usado na aba "Pagamentos" (pagamentosDiarios) — só faz
+            // sentido pra quem está no plano diário de repasse ao motoboy.
+            const planoDiarioEmp = empSel.planoPagamentoMotoboy === "diario";
+            function statusDoDiaEmp(data) {
+              if (!planoDiarioEmp) return null;
+              return empSel.pagamentosDiarios?.[data] ? "pago" : "pendente";
+            }
+            const statusDataSelecionadaEmp = statusDoDiaEmp(dataSelecionadaEmp);
 
             const porDia = {};
             historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue").forEach(e=>{
@@ -1364,7 +1372,11 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                   </div>
                   <div style={{color:"#6b7280",fontSize:12,marginBottom:4}}>{dataFmt}</div>
                   <div style={{color:"#34d399",fontSize:32,fontWeight:900}}>R${totalDia}</div>
-                  <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasDia.length} entrega{entregasDia.length!==1?"s":""} nesta data</div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2,flexWrap:"wrap"}}>
+                    <span style={{color:"#6b7280",fontSize:12}}>{entregasDia.length} entrega{entregasDia.length!==1?"s":""} nesta data</span>
+                    {statusDataSelecionadaEmp==="pago" && <Tag label="✅ Pago" cor="#34d399"/>}
+                    {statusDataSelecionadaEmp==="pendente" && <Tag label="⚠️ Pendente" cor="#fbbf24"/>}
+                  </div>
                 </Card>
 
                 {entregasDia.length>0 && (
@@ -1388,12 +1400,15 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                     {diasOrdenados.slice(0,30).map(([data,info])=>{
                       const dFmt = new Date(data+"T12:00:00").toLocaleDateString("pt-BR");
                       const sel = data===dataSelecionadaEmp;
+                      const statusDia = statusDoDiaEmp(data);
                       return (
                         <div key={data} onClick={()=>setDataSelecionadaEmp(data)}
-                          style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:sel?"#0d3d2e":"#0f172a",border:sel?"1px solid #34d399":"1px solid #1f2937",borderRadius:8,padding:"9px 14px",marginBottom:6,cursor:"pointer"}}>
+                          style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:sel?"#0d3d2e":"#0f172a",border:sel?"1px solid #34d399":"1px solid #1f2937",borderRadius:8,padding:"9px 14px",marginBottom:6,cursor:"pointer",flexWrap:"wrap",gap:6}}>
                           <span style={{color:sel?"#34d399":"#d1d5db",fontSize:13,fontWeight:600}}>{dFmt}</span>
                           <span style={{color:"#6b7280",fontSize:12}}>{info.qtd} entrega{info.qtd!==1?"s":""}</span>
                           <span style={{color:"#60a5fa",fontWeight:700,fontSize:14}}>R${info.total.toFixed(2)}</span>
+                          {statusDia==="pago" && <Tag label="✅ Pago" cor="#34d399"/>}
+                          {statusDia==="pendente" && <Tag label="⚠️ Pendente" cor="#fbbf24"/>}
                         </div>
                       );
                     })}
