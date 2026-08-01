@@ -1469,17 +1469,34 @@ function ModalEditarPedido({ pedido, onSalvar, onFechar }) {
         ))}
       </div>
       {pagamento==="dinheiro" && (
-        <div style={{display:"flex",gap:8,marginBottom:10}}>
-          <div style={{flex:1}}>
-            <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>Valor do pedido (R$)</div>
-            <input type="number" value={valorPedido} onChange={e=>setValorPedido(e.target.value)} placeholder="Ex: 15,00"
-              style={{background:"#0f172a",border:"1px solid #fbbf24",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+        <div style={{marginBottom:10}}>
+          <div style={{display:"flex",gap:8}}>
+            <div style={{flex:1}}>
+              <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>Valor do pedido (R$)</div>
+              <input type="number" value={valorPedido} onChange={e=>setValorPedido(e.target.value)} placeholder="Ex: 15,00"
+                style={{background:"#0f172a",border:"1px solid #fbbf24",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>Cliente paga com (R$)</div>
+              <input type="number" value={valorReceber} onChange={e=>setValorReceber(e.target.value)} placeholder="Ex: 20,00"
+                style={{background:"#0f172a",border:"1px solid #fbbf24",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+            </div>
           </div>
-          <div style={{flex:1}}>
-            <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>Cliente paga com (R$)</div>
-            <input type="number" value={valorReceber} onChange={e=>setValorReceber(e.target.value)} placeholder="Ex: 20,00"
-              style={{background:"#0f172a",border:"1px solid #fbbf24",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
-          </div>
+          {/* Troco calculado automaticamente — some tinha ficado de fora quando a
+              seção de taxa foi removida, mas esse cálculo não tem nada a ver com
+              taxa, é só o troco que o motoboy precisa levar pro cliente. */}
+          {valorPedido && valorReceber && parseFloat(valorReceber)>parseFloat(valorPedido) && (
+            <div style={{marginTop:8,background:"#4a2800",borderRadius:6,padding:"6px 10px"}}>
+              <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>
+                🪙 Troco: R${(parseFloat(valorReceber)-parseFloat(valorPedido)).toFixed(2)} — motoboy deve ter esse troco
+              </div>
+            </div>
+          )}
+          {valorPedido && (!valorReceber || parseFloat(valorReceber)===parseFloat(valorPedido)) && (
+            <div style={{marginTop:8,background:"#4a2800",borderRadius:6,padding:"6px 10px"}}>
+              <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>💵 Sem troco — cliente paga exato R${parseFloat(valorPedido).toFixed(2)}</div>
+            </div>
+          )}
         </div>
       )}
       {pagamento==="cartao" && (
