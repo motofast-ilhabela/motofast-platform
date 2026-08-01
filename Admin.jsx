@@ -1387,8 +1387,16 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
             // sentido pra quem está no plano diário de repasse ao motoboy.
             const planoDiarioEmp = empSel.planoPagamentoMotoboy === "diario";
             function statusDoDiaEmp(data) {
-              if (!planoDiarioEmp) return null;
-              return empSel.pagamentosDiarios?.[data] ? "pago" : "pendente";
+              if (planoDiarioEmp) {
+                return empSel.pagamentosDiarios?.[data] ? "pago" : "pendente";
+              }
+              // Plano semanal: o status do dia reflete o status da SEMANA inteira que
+              // ele pertence — só aparece "pago" quando a semana toda já foi quitada
+              // (mesmo valor parcial usado no card e na lista de semanas anteriores).
+              const semanaDoDia = segundaFeiraDaSemana(new Date(data+"T12:00:00"));
+              const totalSemanaDoDia = historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue"&&e.semana===semanaDoDia).reduce((s,e)=>s+e.taxaEmpresario,0);
+              const pagoSemanaDoDia = empSel.pagamentosSemanais?.[semanaDoDia] || 0;
+              return (totalSemanaDoDia - pagoSemanaDoDia <= 0.001) ? "pago" : "pendente";
             }
             const statusDataSelecionadaEmp = statusDoDiaEmp(dataSelecionadaEmp);
 
