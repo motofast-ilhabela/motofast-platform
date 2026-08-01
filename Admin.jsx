@@ -1362,7 +1362,15 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
             }
             const fimSemanaEmp = (()=>{ const d=new Date(semanaChaveEmp+"T12:00:00"); d.setDate(d.getDate()+6); return dataLocalISO(d); })();
             const entregasSemanaEmp = historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue"&&e.semana===semanaChaveEmp);
-            const entregasSemanaPendentesEmp = planoDiarioEmp ? entregasSemanaEmp.filter(e=>!empSel.pagamentosDiarios?.[e.data]) : [];
+            // No plano DIÁRIO, cada dia é marcado como pago individualmente. No plano
+            // SEMANAL, é a semana inteira que é marcada como paga de uma vez (o mesmo
+            // campo usado no Repasse). Cobre os dois casos, pra esse card sempre
+            // aparecer certinho não importa o plano do estabelecimento.
+            const semanaInteiraJaPagaEmp = !planoDiarioEmp && empSel.taxaSemanalPaga
+              && empSel.taxaSemanalPagaEm && segundaFeiraDaSemana(new Date(empSel.taxaSemanalPagaEm))===semanaChaveEmp;
+            const entregasSemanaPendentesEmp = semanaInteiraJaPagaEmp
+              ? []
+              : (planoDiarioEmp ? entregasSemanaEmp.filter(e=>!empSel.pagamentosDiarios?.[e.data]) : entregasSemanaEmp);
             const totalSemanaPendenteEmp = entregasSemanaPendentesEmp.reduce((s,e)=>s+e.taxaEmpresario,0);
 
             const porDia = {};
@@ -1392,21 +1400,19 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                   </div>
                 </Card>
 
-                {/* Total PENDENTE da semana — só faz sentido pra quem está no plano
-                    diário (paga avulso, fora de dia fixo), pra você ver de uma vez
-                    quanto ainda falta receber dessa semana, sem somar dia por dia. */}
-                {planoDiarioEmp && (
-                  <Card style={{marginBottom:14,background:"#0d2a4a",border:"1px solid #60a5fa"}}>
-                    <SectionTitle>📆 Falta receber essa semana</SectionTitle>
-                    <div style={{color:"#6b7280",fontSize:12,marginBottom:4}}>{fmtDiaMesEmp(semanaChaveEmp)} a {fmtDiaMesEmp(fimSemanaEmp)}</div>
-                    <div style={{color:totalSemanaPendenteEmp>0?"#60a5fa":"#34d399",fontSize:32,fontWeight:900}}>R${totalSemanaPendenteEmp.toFixed(2)}</div>
-                    {totalSemanaPendenteEmp>0 ? (
-                      <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasSemanaPendentesEmp.length} entrega{entregasSemanaPendentesEmp.length!==1?"s":""} ainda pendente{entregasSemanaPendentesEmp.length!==1?"s":""} nessa semana</div>
-                    ) : (
-                      <div style={{color:"#34d399",fontSize:12,marginTop:2}}>✅ {entregasSemanaEmp.length>0 ? "Tudo pago dessa semana" : "Nenhuma entrega nessa semana"}</div>
-                    )}
-                  </Card>
-                )}
+                {/* Total PENDENTE da semana — funciona pros dois planos (diário e
+                    semanal), pra você ver de uma vez quanto ainda falta receber dessa
+                    semana, sem somar dia por dia, não importa a configuração. */}
+                <Card style={{marginBottom:14,background:"#0d2a4a",border:"1px solid #60a5fa"}}>
+                  <SectionTitle>📆 Falta receber essa semana</SectionTitle>
+                  <div style={{color:"#6b7280",fontSize:12,marginBottom:4}}>{fmtDiaMesEmp(semanaChaveEmp)} a {fmtDiaMesEmp(fimSemanaEmp)}</div>
+                  <div style={{color:totalSemanaPendenteEmp>0?"#60a5fa":"#34d399",fontSize:32,fontWeight:900}}>R${totalSemanaPendenteEmp.toFixed(2)}</div>
+                  {totalSemanaPendenteEmp>0 ? (
+                    <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasSemanaPendentesEmp.length} entrega{entregasSemanaPendentesEmp.length!==1?"s":""} ainda pendente{entregasSemanaPendentesEmp.length!==1?"s":""} nessa semana</div>
+                  ) : (
+                    <div style={{color:"#34d399",fontSize:12,marginTop:2}}>✅ {entregasSemanaEmp.length>0 ? "Tudo pago dessa semana" : "Nenhuma entrega nessa semana"}</div>
+                  )}
+                </Card>
 
                 {entregasDia.length>0 && (
                   <Card style={{marginBottom:14}}>
