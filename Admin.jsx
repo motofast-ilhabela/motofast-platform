@@ -112,7 +112,18 @@ function Dashboard({ historico, motoboys, empresarios }) {
   const agora = new Date();
   const mesAtual = agora.getMonth()+1;
   const anoAtual = agora.getFullYear();
-  const mAtu = ent.filter(e=>e.mes===mesAtual&&e.ano===anoAtual);
+
+  // Seletor de mês — por padrão mostra o mês atual, mas dá pra trocar pra qualquer
+  // mês que já teve entrega. Isso vale pros cartões de cima, "Entregas por
+  // Estabelecimento" e "Ranking Motoboys" — só o gráfico "Entregas por Mês" continua
+  // mostrando todo o histórico empilhado, sem depender do seletor.
+  const [mesSelDash, setMesSelDash] = useState(`${anoAtual}-${String(mesAtual).padStart(2,"0")}`);
+  const [anoSelStr, mesSelStr] = mesSelDash.split("-");
+  const anoSel = parseInt(anoSelStr, 10);
+  const mesSel = parseInt(mesSelStr, 10);
+  const ehMesAtual = anoSel===anoAtual && mesSel===mesAtual;
+
+  const mAtu = ent.filter(e=>e.mes===mesSel&&e.ano===anoSel);
   const lucroTotal = ent.reduce((s,e)=>s+e.lucro,0).toFixed(2);
   const lucroMes   = mAtu.reduce((s,e)=>s+e.lucro,0).toFixed(2);
   const taxasMes   = mAtu.reduce((s,e)=>s+e.taxaEmpresario,0).toFixed(2);
@@ -149,25 +160,43 @@ function Dashboard({ historico, motoboys, empresarios }) {
       pago: v.pago.toFixed(2),
     }));
   const maxMes = Math.max(...porMes.map(p=>p.qtd), 1);
+  // Lista de meses disponíveis pro seletor — os mesmos meses que já têm entrega
+  // registrada (do porMesMap), do mais recente pro mais antigo. Sempre inclui o mês
+  // atual, mesmo que ainda não tenha nenhuma entrega nele.
+  const mesesDisponiveisDash = Array.from(new Set([
+    `${anoAtual}-${String(mesAtual).padStart(2,"0")}`,
+    ...Object.keys(porMesMap),
+  ])).sort((a,b)=>b.localeCompare(a)).map(chave=>{
+    const [a,m] = chave.split("-").map(Number);
+    return { chave, label: `${MESES[m-1]}/${a}` };
+  });
 
   const porEmp = empresarios.map(emp=>{
     const e = mAtu.filter(x=>x.empresarioId===emp.id);
     return {...emp, qtd:e.length, fat:e.reduce((s,x)=>s+x.taxaEmpresario,0).toFixed(2)};
   }).sort((a,b)=>b.qtd-a.qtd);
   const maxEmp = Math.max(...porEmp.map(p=>p.qtd), 1);
-  const nomeMes = MESES[mesAtual-1];
+  const nomeMes = MESES[mesSel-1];
 
   return (
     <div>
-      <div style={{marginBottom:20}}>
-        <div style={{color:"#34d399",fontWeight:800,fontSize:22}}>📊 Dashboard</div>
-        <div style={{color:"#6b7280",fontSize:13}}>Visão geral — {nomeMes} {anoAtual}</div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:10,marginBottom:20}}>
+        <div>
+          <div style={{color:"#34d399",fontWeight:800,fontSize:22}}>📊 Dashboard</div>
+          <div style={{color:"#6b7280",fontSize:13}}>Visão geral — {nomeMes} {anoSel}{!ehMesAtual?" (mês selecionado)":""}</div>
+        </div>
+        <select value={mesSelDash} onChange={e=>setMesSelDash(e.target.value)}
+          style={{background:ehMesAtual?"#1f2937":"#0d3d2e",border:ehMesAtual?"1px solid #374151":"1px solid #34d399",borderRadius:8,color:ehMesAtual?"#9ca3af":"#34d399",padding:"9px 14px",fontSize:13,fontWeight:700,outline:"none"}}>
+          {mesesDisponiveisDash.map(m=>(
+            <option key={m.chave} value={m.chave}>{m.label}{m.chave===`${anoAtual}-${String(mesAtual).padStart(2,"0")}`?" (atual)":""}</option>
+          ))}
+        </select>
       </div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
-        <Stat icon="✅" label="Entregas este mês" value={mAtu.length} sub={`${ent.length} total histórico`} cor="#34d399"/>
-        <Stat icon="💰" label="Faturado este mês" value={`R$${fatMes}`} sub={`Taxas R$${taxasMes} + Mensalidades R$${mensMes}`} cor="#60a5fa"/>
-        <Stat icon="🏍️" label="A pagar motoboys" value={`R$${pagoMb}`} sub="a repassar na terça-feira" cor="#fbbf24"/>
-        <Stat icon="💵" label="Seu lucro mês" value={`R$${lucroMes}`} sub={`R$${lucroTotal} total acumulado`} cor="#a78bfa"/>
+        <Stat icon="✅" label={`Entregas em ${nomeMes}`} value={mAtu.length} sub={`${ent.length} total histórico`} cor="#34d399"/>
+        <Stat icon="💰" label={`Faturado em ${nomeMes}`} value={`R$${fatMes}`} sub={`Taxas R$${taxasMes} + Mensalidades R$${mensMes}`} cor="#60a5fa"/>
+        <Stat icon="🏍️" label="A pagar motoboys" value={`R$${pagoMb}`} sub={ehMesAtual?"a repassar na terça-feira":`referente a ${nomeMes}`} cor="#fbbf24"/>
+        <Stat icon="💵" label={`Seu lucro em ${nomeMes}`} value={`R$${lucroMes}`} sub={`R$${lucroTotal} total acumulado`} cor="#a78bfa"/>
         <Stat icon="🟢" label="Motoboys online" value={motoboys.filter(m=>m.online&&!m.banido).length} sub={`de ${motoboys.filter(m=>!m.banido).length} ativos`} cor="#34d399"/>
         <Stat icon="🏪" label="Estabelecimentos" value={empresarios.filter(e=>!e.bloqueado).length} sub={`${empresarios.filter(e=>e.bloqueado).length} bloqueado(s)`} cor="#60a5fa"/>
       </div>
@@ -187,7 +216,7 @@ function Dashboard({ historico, motoboys, empresarios }) {
         </Card>
         <Card style={{flex:2,minWidth:240}}>
           <SectionTitle>📦 Entregas por Estabelecimento — {nomeMes}</SectionTitle>
-          {porEmp.filter(e=>e.qtd>0).length===0 && <div style={{color:"#4b5563",fontSize:13}}>Nenhuma entrega este mês.</div>}
+          {porEmp.filter(e=>e.qtd>0).length===0 && <div style={{color:"#4b5563",fontSize:13}}>Nenhuma entrega em {nomeMes}.</div>}
           {porEmp.filter(e=>e.qtd>0).map(emp=>(
             <div key={emp.id} style={{marginBottom:10}}>
               <div style={{display:"flex",justifyContent:"space-between",marginBottom:2}}>
@@ -200,7 +229,7 @@ function Dashboard({ historico, motoboys, empresarios }) {
         </Card>
         <Card style={{flex:2,minWidth:240}}>
           <SectionTitle>🏆 Ranking Motoboys — {nomeMes}</SectionTitle>
-          {ranking.filter(m=>m.qtd>0).length===0 && <div style={{color:"#4b5563",fontSize:13}}>Nenhuma entrega este mês.</div>}
+          {ranking.filter(m=>m.qtd>0).length===0 && <div style={{color:"#4b5563",fontSize:13}}>Nenhuma entrega em {nomeMes}.</div>}
           {ranking.map((mb,i)=>(
             <div key={mb.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
               <div style={{width:28,height:28,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13,background:i===0?"#f59e0b":i===1?"#9ca3af":i===2?"#b45309":"#1f2937",color:i<3?"#000":"#6b7280"}}>{i+1}</div>
