@@ -1564,19 +1564,21 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
     let cancelado = false;
     setCarregandoSemana(true);
     (async()=>{
-      const inicio = new Date(semanaChaveSelecionada+"T00:00:00").toISOString();
-      const fimObj = new Date(semanaChaveSelecionada+"T00:00:00");
-      fimObj.setDate(fimObj.getDate()+7);
-      const fim = fimObj.toISOString();
+      // Busca os últimos ~120 dias (não só a semana selecionada) — assim, se ficou
+      // alguma semana antiga sem pagar, ela continua contando na soma de pendências,
+      // em vez de "sumir" quando a semana virar. 120 dias é de sobra pra pegar
+      // qualquer esquecimento realista, sem pesar a busca.
+      const inicioObj = new Date();
+      inicioObj.setDate(inicioObj.getDate()-120);
+      const inicio = inicioObj.toISOString();
       const { data, error } = await supabase
         .from("pedidos")
         .select("taxa, criado_em")
         .eq("empresario_id", empresa.id)
         .eq("status", "entregue")
-        .gte("criado_em", inicio)
-        .lt("criado_em", fim);
+        .gte("criado_em", inicio);
       if (cancelado) return;
-      if (error) { console.error("Erro ao carregar total da semana:", error); setCarregandoSemana(false); return; }
+      if (error) { console.error("Erro ao carregar total pendente:", error); setCarregandoSemana(false); return; }
       setSemanaEntregasRaw((data||[]).map(p=>({
         taxa: p.taxa,
         dataISO: dataLocalISO(new Date(p.criado_em)),
@@ -1584,17 +1586,39 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
       setCarregandoSemana(false);
     })();
     return ()=>{ cancelado = true; };
-  }, [empresa?.id, semanaChaveSelecionada]);
+  }, [empresa?.id]);
 
-  const todasEntregasSemana = semanaEntregasRaw;
-  // Se a semana INTEIRA já foi marcada como paga de uma vez (plano semanal), não sobra
-  // nada pendente. Se for plano diário, cada dia é descontado individualmente conforme
-  // já foi pago — só entra na soma o que ainda está pendente, pra bater exatamente com
-  // o que falta repassar, e não confundir com valor que já foi acertado.
-  const semanaInteiraJaPaga = empresa?.planoPagamentoMotoboy==="semanal" && empresa?.taxaSemanalPaga
-    && empresa?.taxaSemanalPagaEm && segundaFeiraDaSemana(new Date(empresa.taxaSemanalPagaEm))===semanaChaveSelecionada;
-  const entregasSemana = semanaInteiraJaPaga ? [] : todasEntregasSemana.filter(e=>!statusDoDia(e.dataISO) || statusDoDia(e.dataISO)==="pendente");
-  const totalSemana = entregasSemana.reduce((s,e)=>s+e.taxa,0);
+  const todasEntregasCarregadas = semanaEntregasRaw;
+  const planoSemanalEmp = empresa?.planoPagamentoMotoboy === "semanal";
+  let entregasSemana, todasEntregasSemana, totalSemana;
+  if (planoSemanalEmp) {
+    // Plano SEMANAL: cada semana guarda o VALOR JÁ PAGO (não só sim/não) — soma só o
+    // que ainda falta de cada semana, cobrindo TODAS as semanas já registradas, não
+    // só a selecionada. Isso também cobre adiantamento parcial (ex: empresário pagou
+    // só parte do valor no meio da semana).
+    todasEntregasSemana = todasEntregasCarregadas;
+    const porSemanaMapEmp = {};
+    todasEntregasCarregadas.forEach(e=>{
+      const semanaDaEntrega = segundaFeiraDaSemana(new Date(e.dataISO+"T12:00:00"));
+      if (!porSemanaMapEmp[semanaDaEntrega]) porSemanaMapEmp[semanaDaEntrega] = 0;
+      porSemanaMapEmp[semanaDaEntrega] += e.taxa;
+    });
+    entregasSemana = Object.entries(porSemanaMapEmp).filter(([semana,total])=>{
+      const pago = empresa?.pagamentosSemanais?.[semana] || 0;
+      return total-pago > 0;
+    });
+    totalSemana = Object.entries(porSemanaMapEmp).reduce((s,[semana,total])=>{
+      const pago = empresa?.pagamentosSemanais?.[semana] || 0;
+      return s + Math.max(0, total-pago);
+    }, 0);
+  } else {
+    // Plano DIÁRIO: cada dia é marcado como pago individualmente — soma TUDO que
+    // ainda está pendente, de qualquer semana dentro dos últimos 120 dias, não só a
+    // que está selecionada no momento.
+    todasEntregasSemana = todasEntregasCarregadas;
+    entregasSemana = todasEntregasCarregadas.filter(e=>!statusDoDia(e.dataISO) || statusDoDia(e.dataISO)==="pendente");
+    totalSemana = entregasSemana.reduce((s,e)=>s+e.taxa,0);
+  }
 
   // Resumo agrupado por dia — todos os dias que tiveram entrega, mais recente primeiro
   const porDia = {};
@@ -1652,22 +1676,21 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
         )}
       </Card>
 
-      {/* Total PENDENTE da semana inteira (segunda a domingo) — pra quem paga toda
-          segunda, sem precisar somar dia por dia na calculadora. Só conta o que ainda
-          não foi pago — o que já foi pago não aparece aqui, pra nunca confundir.
-          Busca direto do banco (veja o useEffect acima), então SEMPRE vem completo,
-          não importa qual mês está selecionado no filtro de período lá em cima. */}
+      {/* Total PENDENTE — agora vale pros dois planos: soma TUDO que ainda não foi
+          pago, de qualquer dia ou semana (não só o período selecionado), pra nunca
+          "esconder" uma pendência antiga esquecida. Busca direto do banco (veja o
+          useEffect acima), então nunca vem incompleto, não importa qual mês está
+          selecionado no filtro de período lá em cima. */}
       <Card style={{marginBottom:14,background:"#0d2a4a",border:"1px solid #60a5fa"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>📆 Falta repassar essa semana</div>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>📆 Falta repassar (tudo pendente)</div>
           {carregandoSemana && <span style={{color:"#6b7280",fontSize:11}}>⏳</span>}
         </div>
-        <div style={{color:"#6b7280",fontSize:12,marginBottom:4}}>{fmtDiaMesCurto(semanaChaveSelecionada)} a {fmtDiaMesCurto(fimSemanaSelecionada)}</div>
         <div style={{color:totalSemana>0?"#60a5fa":"#34d399",fontSize:32,fontWeight:900}}>R${totalSemana.toFixed(2)}</div>
         {totalSemana>0 ? (
-          <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasSemana.length} entrega{entregasSemana.length!==1?"s":""} ainda pendente{entregasSemana.length!==1?"s":""} nessa semana</div>
+          <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{planoSemanalEmp ? `${entregasSemana.length} semana(s) com saldo pendente` : `${entregasSemana.length} entrega${entregasSemana.length!==1?"s":""} ainda pendente${entregasSemana.length!==1?"s":""} no total`}</div>
         ) : (
-          <div style={{color:"#34d399",fontSize:12,marginTop:2}}>✅ {todasEntregasSemana.length>0 ? "Tudo pago dessa semana" : "Nenhuma entrega nessa semana"}</div>
+          <div style={{color:"#34d399",fontSize:12,marginTop:2}}>✅ {todasEntregasSemana.length>0 ? "Tudo pago" : "Nenhuma entrega registrada"}</div>
         )}
       </Card>
 
@@ -1998,6 +2021,7 @@ export default function AppEmpresario() {
             modeloPrecificacao: emp.modelo_precificacao || "km",
             taxaSemanalPaga: emp.taxa_semanal_paga || false,
             taxaSemanalPagaEm: emp.taxa_semanal_paga_em || null,
+            pagamentosSemanais: emp.pagamentos_semanais || {},
           });
 
           // Carrega clientes desse empresário
@@ -2159,14 +2183,15 @@ export default function AppEmpresario() {
 
   // Busca o histórico só quando a aba é aberta, ou quando o mês selecionado muda —
   // nunca fica recarregando isso sozinho de fundo, diferente dos pedidos ativos.
-  // Também atualiza os pagamentos diários nesse momento, pra sempre refletir o que
-  // o Admin marcou como pago mais recentemente, mesmo sem dar refresh na página.
+  // Também atualiza os pagamentos diários E semanais nesse momento, pra sempre
+  // refletir o que o Admin marcou como pago mais recentemente, mesmo sem dar
+  // refresh na página.
   useEffect(()=>{
     if (aba==="historico" && empresa?.id) {
       carregarHistorico(mesHistorico);
-      supabase.from("empresarios").select("pagamentos_diarios").eq("id", empresa.id).maybeSingle()
+      supabase.from("empresarios").select("pagamentos_diarios, pagamentos_semanais").eq("id", empresa.id).maybeSingle()
         .then(({data})=>{
-          if (data) setEmpresa(prev=>({...prev, pagamentosDiarios: data.pagamentos_diarios || {}}));
+          if (data) setEmpresa(prev=>({...prev, pagamentosDiarios: data.pagamentos_diarios || {}, pagamentosSemanais: data.pagamentos_semanais || {}}));
         });
     }
   },[aba, mesHistorico, empresa?.id]);

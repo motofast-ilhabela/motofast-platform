@@ -1002,14 +1002,25 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
 
   // Separado da mensalidade/comissão de propósito — taxa de entrega é dinheiro do motoboy,
   // nunca deve se misturar com a comissão da plataforma.
-  async function marcarTaxaSemanalPaga(id) {
-    const agoraISO = new Date().toISOString();
-    const { error } = await supabase.from("empresarios").update({taxa_semanal_paga:true, taxa_semanal_paga_em: agoraISO}).eq("id", id);
+  // "pagamentos_semanais" agora guarda o VALOR JÁ PAGO de cada semana (não só sim/não)
+  // — isso resolve o caso do empresário adiantar parte do valor no meio da semana
+  // (ex: pagou R$5 de uma taxa de R$20 na quinta) sem precisar trocar de plano nem
+  // mexer no controle diário pra registrar isso.
+  async function atualizarValorPagoSemana(id, semanaChave, valor) {
+    const emp = empresarios.find(e=>e.id===id);
+    const novoPag = {...(emp.pagamentosSemanais||{}), [semanaChave]: valor};
+    const { error } = await supabase.from("empresarios").update({pagamentos_semanais: novoPag}).eq("id", id);
     if (error) {
-      alert("❌ Erro ao salvar no banco de dados: " + error.message + "\n\nA taxa semanal NÃO foi marcada como paga. Tenta de novo.");
+      alert("❌ Erro ao salvar no banco de dados: " + error.message + "\n\nO valor NÃO foi salvo. Tenta de novo.");
       return;
     }
-    setEmpresarios(p=>p.map(e=>e.id===id?{...e,taxaSemanalPaga:true,taxaSemanalPagaEm:agoraISO}:e));
+    setEmpresarios(p=>p.map(e=>e.id===id?{...e,pagamentosSemanais:novoPag}:e));
+  }
+
+  // Atalho: marca a semana inteira como paga de uma vez (usa o total da semana como
+  // valor pago) — é o que o botão "Marcar taxa semanal como paga" continua fazendo.
+  async function marcarTaxaSemanalPaga(id, semanaChave, valorTotal) {
+    await atualizarValorPagoSemana(id, semanaChave, valorTotal);
   }
 
   async function toggleDia(id, dia) {
@@ -1390,17 +1401,34 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
               return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
             }
             const fimSemanaEmp = (()=>{ const d=new Date(semanaChaveEmp+"T12:00:00"); d.setDate(d.getDate()+6); return dataLocalISO(d); })();
-            const entregasSemanaEmp = historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue"&&e.semana===semanaChaveEmp);
-            // No plano DIÁRIO, cada dia é marcado como pago individualmente. No plano
-            // SEMANAL, é a semana inteira que é marcada como paga de uma vez (o mesmo
-            // campo usado no Repasse). Cobre os dois casos, pra esse card sempre
-            // aparecer certinho não importa o plano do estabelecimento.
-            const semanaInteiraJaPagaEmp = !planoDiarioEmp && empSel.taxaSemanalPaga
-              && empSel.taxaSemanalPagaEm && segundaFeiraDaSemana(new Date(empSel.taxaSemanalPagaEm))===semanaChaveEmp;
-            const entregasSemanaPendentesEmp = semanaInteiraJaPagaEmp
-              ? []
-              : (planoDiarioEmp ? entregasSemanaEmp.filter(e=>!empSel.pagamentosDiarios?.[e.data]) : entregasSemanaEmp);
-            const totalSemanaPendenteEmp = entregasSemanaPendentesEmp.reduce((s,e)=>s+e.taxaEmpresario,0);
+
+            // Agrupa por SEMANA (segunda-feira) — usado tanto pro total pendente quanto
+            // pra lista "Semanas anteriores" mais abaixo.
+            const porSemanaMap = {};
+            if (!planoDiarioEmp) {
+              historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue").forEach(e=>{
+                if (!porSemanaMap[e.semana]) porSemanaMap[e.semana] = {qtd:0, total:0};
+                porSemanaMap[e.semana].qtd++;
+                porSemanaMap[e.semana].total += e.taxaEmpresario;
+              });
+            }
+            const semanasOrdenadas = Object.entries(porSemanaMap).sort((a,b)=>b[0].localeCompare(a[0]));
+
+            // No plano DIÁRIO, cada dia é marcado individualmente (sim/não). No plano
+            // SEMANAL, agora cada semana guarda o VALOR JÁ PAGO (não só sim/não) — soma
+            // só a parte que ainda falta de cada semana, cobrindo TODAS as semanas já
+            // registradas, não só a que está selecionada no momento.
+            let entregasSemanaPendentesEmp, totalSemanaPendenteEmp;
+            if (planoDiarioEmp) {
+              entregasSemanaPendentesEmp = historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue"&&!empSel.pagamentosDiarios?.[e.data]);
+              totalSemanaPendenteEmp = entregasSemanaPendentesEmp.reduce((s,e)=>s+e.taxaEmpresario,0);
+            } else {
+              entregasSemanaPendentesEmp = []; // não usado na contagem de "entregas" pro plano semanal
+              totalSemanaPendenteEmp = semanasOrdenadas.reduce((s,[semana,info])=>{
+                const pago = empSel.pagamentosSemanais?.[semana] || 0;
+                return s + Math.max(0, info.total - pago);
+              }, 0);
+            }
 
             const porDia = {};
             historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue").forEach(e=>{
@@ -1429,19 +1457,62 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                   </div>
                 </Card>
 
-                {/* Total PENDENTE da semana — funciona pros dois planos (diário e
-                    semanal), pra você ver de uma vez quanto ainda falta receber dessa
-                    semana, sem somar dia por dia, não importa a configuração. */}
+                {/* Total PENDENTE — agora vale pros dois planos: soma TUDO que ainda
+                    não foi marcado como pago, de qualquer semana ou dia (não só o
+                    atual), pra nunca "esconder" uma pendência antiga esquecida. */}
                 <Card style={{marginBottom:14,background:"#0d2a4a",border:"1px solid #60a5fa"}}>
-                  <SectionTitle>📆 Falta receber essa semana</SectionTitle>
-                  <div style={{color:"#6b7280",fontSize:12,marginBottom:4}}>{fmtDiaMesEmp(semanaChaveEmp)} a {fmtDiaMesEmp(fimSemanaEmp)}</div>
+                  <SectionTitle>💰 Falta receber (tudo pendente)</SectionTitle>
                   <div style={{color:totalSemanaPendenteEmp>0?"#60a5fa":"#34d399",fontSize:32,fontWeight:900}}>R${totalSemanaPendenteEmp.toFixed(2)}</div>
                   {totalSemanaPendenteEmp>0 ? (
-                    <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasSemanaPendentesEmp.length} entrega{entregasSemanaPendentesEmp.length!==1?"s":""} ainda pendente{entregasSemanaPendentesEmp.length!==1?"s":""} nessa semana</div>
+                    planoDiarioEmp ? (
+                      <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasSemanaPendentesEmp.length} entrega{entregasSemanaPendentesEmp.length!==1?"s":""} ainda pendente{entregasSemanaPendentesEmp.length!==1?"s":""} no total</div>
+                    ) : (
+                      <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{semanasOrdenadas.filter(([s,i])=>Math.max(0,i.total-(empSel.pagamentosSemanais?.[s]||0))>0).length} semana(s) com saldo pendente</div>
+                    )
                   ) : (
-                    <div style={{color:"#34d399",fontSize:12,marginTop:2}}>✅ {entregasSemanaEmp.length>0 ? "Tudo pago dessa semana" : "Nenhuma entrega nessa semana"}</div>
+                    <div style={{color:"#34d399",fontSize:12,marginTop:2}}>✅ Tudo pago</div>
                   )}
                 </Card>
+
+                {/* Lista de semanas anteriores — só pro plano semanal, com valor já
+                    pago editável em cada uma, igual "Dias anteriores" faz por dia. */}
+                {!planoDiarioEmp && semanasOrdenadas.length>0 && (
+                  <Card style={{marginBottom:14}}>
+                    <SectionTitle>📅 Semanas anteriores</SectionTitle>
+                    {semanasOrdenadas.slice(0,20).map(([semana,info])=>{
+                      const pago = empSel.pagamentosSemanais?.[semana] || 0;
+                      const pendenteSemana = Math.max(0, info.total-pago);
+                      const fimSemanaLista = (()=>{ const d=new Date(semana+"T12:00:00"); d.setDate(d.getDate()+6); return dataLocalISO(d); })();
+                      const inputIdLista = `valor-pago-lista-${empSel.id}-${semana}`;
+                      return (
+                        <div key={semana} style={{background:pendenteSemana<=0?"#0d3d2e":"#0f172a",border:pendenteSemana<=0?"1px solid #34d399":"1px solid #1f2937",borderRadius:8,padding:"10px 14px",marginBottom:8}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6,marginBottom:6}}>
+                            <span style={{color:"#d1d5db",fontSize:13,fontWeight:600}}>{fmtDiaMesEmp(semana)} a {fmtDiaMesEmp(fimSemanaLista)}</span>
+                            <span style={{color:"#6b7280",fontSize:12}}>{info.qtd} entrega{info.qtd!==1?"s":""} · total R${info.total.toFixed(2)}</span>
+                            {pendenteSemana<=0 ? <Tag label="✅ Pago" cor="#34d399"/> : <Tag label={`⚠️ Falta R$${pendenteSemana.toFixed(2)}`} cor="#fbbf24"/>}
+                          </div>
+                          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                            <span style={{color:"#6b7280",fontSize:11}}>Valor pago:</span>
+                            <input id={inputIdLista} type="number" defaultValue={pago||""} placeholder="0,00"
+                              style={{background:"#111827",border:"1px solid #374151",borderRadius:6,color:"#f9fafb",padding:"6px 10px",width:90,fontSize:13,outline:"none"}}/>
+                            <button onClick={()=>{
+                              const val = parseFloat(document.getElementById(inputIdLista).value) || 0;
+                              atualizarValorPagoSemana(empSel.id, semana, val);
+                            }} style={{padding:"6px 12px",borderRadius:6,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:11,cursor:"pointer"}}>
+                              💾 Salvar
+                            </button>
+                            {pendenteSemana>0 && (
+                              <button onClick={()=>atualizarValorPagoSemana(empSel.id, semana, info.total)}
+                                style={{padding:"6px 12px",borderRadius:6,background:"#0d3d2e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,fontSize:11,cursor:"pointer"}}>
+                                ✅ Pagar tudo
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </Card>
+                )}
 
                 {entregasDia.length>0 && (
                   <Card style={{marginBottom:14}}>
@@ -1708,21 +1779,34 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
               {empSel.planoPagamentoMotoboy==="semanal" && (()=>{
                 const segundaAtual3 = segundaFeiraDaSemana(new Date());
                 const entsSemana = historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue"&&e.semana===segundaAtual3);
-                const totalSemanaTaxa = entsSemana.reduce((s,e)=>s+e.taxaEmpresario,0).toFixed(2);
-                const pagoEstaSemanaTaxa = empSel.taxaSemanalPagaEm
-                  ? segundaFeiraDaSemana(new Date(empSel.taxaSemanalPagaEm)) === segundaAtual3
-                  : false;
+                const totalSemanaTaxa = entsSemana.reduce((s,e)=>s+e.taxaEmpresario,0);
+                const valorJaPago = empSel.pagamentosSemanais?.[segundaAtual3] || 0;
+                const pendenteSemanaAtual = Math.max(0, totalSemanaTaxa - valorJaPago);
+                const inputId = `valor-pago-semana-${empSel.id}`;
                 return (
                   <Card style={{padding:"14px 16px",background:"#0f172a"}}>
                     <div style={{color:"#9ca3af",fontWeight:700,fontSize:13,marginBottom:6}}>💵 Taxa semanal (dinheiro do motoboy — separado da comissão)</div>
-                    <div style={{color:"#6b7280",fontSize:12,marginBottom:10}}>{entsSemana.length} entrega(s) essa semana · Total: <strong style={{color:"#60a5fa"}}>R${totalSemanaTaxa}</strong></div>
-                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                      {pagoEstaSemanaTaxa ? <Tag label="✅ Pago essa semana" cor="#34d399"/> : <Tag label="⚠️ Pendente" cor="#fbbf24"/>}
-                      {!pagoEstaSemanaTaxa && (
-                        <button onClick={()=>marcarTaxaSemanalPaga(empSel.id)} style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:6,color:"#34d399",padding:"6px 14px",cursor:"pointer",fontWeight:700,fontSize:12}}>
-                          ✅ Marcar taxa semanal como paga
-                        </button>
-                      )}
+                    <div style={{color:"#6b7280",fontSize:12,marginBottom:10}}>{entsSemana.length} entrega(s) essa semana · Total: <strong style={{color:"#60a5fa"}}>R${totalSemanaTaxa.toFixed(2)}</strong></div>
+                    <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
+                      {pendenteSemanaAtual<=0 && totalSemanaTaxa>0 ? <Tag label="✅ Pago essa semana" cor="#34d399"/> : <Tag label={`⚠️ Falta R$${pendenteSemanaAtual.toFixed(2)}`} cor="#fbbf24"/>}
+                      {valorJaPago>0 && <span style={{color:"#6b7280",fontSize:11}}>já registrado: R${valorJaPago.toFixed(2)}</span>}
+                    </div>
+                    {/* Valor já pago — aceita parcial, pro caso do empresário adiantar
+                        parte do valor no meio da semana (ex: pagou R$5 de uma taxa de
+                        R$20 na quinta). Não precisa marcar tudo de uma vez. */}
+                    <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                      <input id={inputId} type="number" defaultValue={valorJaPago||""} placeholder="0,00"
+                        style={{background:"#111827",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"8px 12px",width:110,fontSize:14,outline:"none"}}/>
+                      <button onClick={()=>{
+                        const val = parseFloat(document.getElementById(inputId).value) || 0;
+                        atualizarValorPagoSemana(empSel.id, segundaAtual3, val);
+                      }} style={{padding:"8px 14px",borderRadius:8,background:"#0d3d2e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                        💾 Salvar valor pago
+                      </button>
+                      <button onClick={()=>marcarTaxaSemanalPaga(empSel.id, segundaAtual3, totalSemanaTaxa)}
+                        style={{padding:"8px 14px",borderRadius:8,background:"#10b981",border:"none",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                        ✅ Marcar tudo como pago
+                      </button>
                     </div>
                   </Card>
                 );
@@ -2463,6 +2547,7 @@ export default function App() {
         mensalidadePagaEm: e.mensalidade_paga_em || null,
         taxaSemanalPaga: e.taxa_semanal_paga || false,
         taxaSemanalPagaEm: e.taxa_semanal_paga_em || null,
+        pagamentosSemanais: e.pagamentos_semanais || {},
         pagamentosDiarios: e.pagamentos_diarios || {},
         taxas: e.taxas || {},
         diaVencimento: e.dia_vencimento || new Date(e.criado_em||Date.now()).getDate(),
