@@ -67,7 +67,9 @@ function normalizarTexto(str) {
   return (str || "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase();
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
@@ -153,7 +155,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   const bairrosDisponiveis = Object.keys(taxasEmpresa);
   const endEfetivo = (clienteSel && modoEndereco==="salvo") ? {rua:clienteSel.rua,num:clienteSel.num,bairro:clienteSel.bairro,ref:clienteSel.ref} : novoEndereco;
   const bairroFinal = endEfetivo.bairro || bairrosDisponiveis[0] || "";
-  const taxaKey = Object.keys(taxasEmpresa).find(k => k.toLowerCase() === bairroFinal.toLowerCase()) || bairroFinal;
+  const taxaKey = Object.keys(taxasEmpresa).find(k => normalizarTexto(k) === normalizarTexto(bairroFinal)) || bairroFinal;
   const taxa = taxasEmpresa[taxaKey] || {e:0,m:0};
 
   // ─── TAXA POR KM ──────────────────────────────────────────────────────────────
@@ -652,7 +654,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
 
   const endEfetivo = (clienteSel && modoEndereco==="salvo") ? {rua:clienteSel.rua,num:clienteSel.num,bairro:clienteSel.bairro,ref:clienteSel.ref} : novoEndereco;
   const bairroFinal = endEfetivo.bairro || bairrosDisponiveis2[0] || "";
-  const taxaKey2 = Object.keys(taxasEmpresa2).find(k => k.toLowerCase() === bairroFinal.toLowerCase()) || bairroFinal;
+  const taxaKey2 = Object.keys(taxasEmpresa2).find(k => normalizarTexto(k) === normalizarTexto(bairroFinal)) || bairroFinal;
   const taxa = taxasEmpresa2[taxaKey2] || {e:0,m:0};
   const nomeEfetivo = clienteSel ? clienteSel.nome : clienteNome;
   const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
