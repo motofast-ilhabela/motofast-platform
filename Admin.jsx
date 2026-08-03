@@ -359,8 +359,19 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
       const hojeISORepasse = dataLocalISO();
       taxas = ents.filter(e => e.data !== hojeISORepasse && !emp.pagamentosDiarios?.[e.data]).reduce((s,e)=>s+e.taxaEmpresario,0);
     } else {
-      // Plano semanal — controle SEPARADO da mensalidade (taxa é dinheiro do motoboy, nunca se mistura com a comissão)
-      taxas = (!taxaSemanalPagaEstaSemana) ? ents.reduce((s,e)=>s+e.taxaEmpresario,0) : 0;
+      // Plano semanal — agora usa o VALOR PARCIAL já pago de cada semana (mesmo
+      // sistema da aba Por Dia), não mais só sim/não. Assim, se o empresário pagou
+      // metade do valor e você registrou isso, só a diferença aparece aqui como
+      // pendente — nunca mais mostra o valor cheio depois de um pagamento parcial.
+      const porSemanaRepasse = {};
+      ents.forEach(e=>{
+        if (!porSemanaRepasse[e.semana]) porSemanaRepasse[e.semana] = 0;
+        porSemanaRepasse[e.semana] += e.taxaEmpresario;
+      });
+      taxas = Object.entries(porSemanaRepasse).reduce((s,[semana,total])=>{
+        const pago = emp.pagamentosSemanais?.[semana] || 0;
+        return s + Math.max(0, total-pago);
+      }, 0);
     }
     taxas = +taxas.toFixed(2);
     return {...emp, ents, qtd:ents.length, taxas, mensalidade:mens, total:+(taxas+mens).toFixed(2)};
