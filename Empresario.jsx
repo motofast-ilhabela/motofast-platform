@@ -2075,6 +2075,14 @@ export default function AppEmpresario() {
           // Rede de segurança — atualiza a cada 8s, caso o Realtime não esteja ativo no banco
           const intervalo = setInterval(()=>carregarPedidos(emp.id), 8000);
           window.__motofastIntervalo = intervalo;
+
+          // Atualiza as CONFIGURAÇÕES do estabelecimento (modelo de taxa, plano,
+          // bloqueio, etc) a cada 30s — assim, se você mudar algo no Admin enquanto
+          // o empresário já está com a tela aberta (o que é bem comum na correria do
+          // dia a dia), a mudança chega sozinha, sem precisar ele dar F5 ou lembrar
+          // de atualizar nada.
+          const intervaloConfig = setInterval(()=>atualizarConfiguracoesEmpresa(emp.id), 30000);
+          window.__motofastIntervaloConfig = intervaloConfig;
         }
       } catch (e) {
         console.error("Erro ao carregar dados do empresário:", e);
@@ -2086,8 +2094,42 @@ export default function AppEmpresario() {
     return () => {
       if (canal) supabase.removeChannel(canal);
       if (window.__motofastIntervalo) clearInterval(window.__motofastIntervalo);
+      if (window.__motofastIntervaloConfig) clearInterval(window.__motofastIntervaloConfig);
     };
   },[]);
+
+  // Busca de novo as configurações do estabelecimento (não os pedidos) — usada pelo
+  // intervalo automático acima, pra qualquer mudança feita no Admin (modelo de taxa,
+  // plano de pagamento, bloqueio, etc) chegar sozinha na tela do empresário.
+  async function atualizarConfiguracoesEmpresa(empresaId) {
+    if (!empresaId) return;
+    const { data: emp, error } = await supabase
+      .from("empresarios")
+      .select("*")
+      .eq("id", empresaId)
+      .maybeSingle();
+    if (error || !emp) return;
+    setEmpresa(prev=>({
+      ...prev,
+      nome: emp.nome,
+      bairro: emp.bairro,
+      tel: emp.telefone,
+      endereco: emp.endereco_estabelecimento || "",
+      planoPagamento: emp.plano_pagamento,
+      planoPagamentoMotoboy: emp.plano_pagamento_motoboy,
+      planoGratis: emp.plano_gratis,
+      dataFimGratis: emp.data_fim_gratis,
+      taxas: emp.taxas || {},
+      mensalidadePaga: emp.mensalidade_paga,
+      pagamentosDiarios: emp.pagamentos_diarios || {},
+      bloqueado: emp.bloqueado,
+      motivoBloqueio: emp.motivo_bloqueio || null,
+      modeloPrecificacao: emp.modelo_precificacao || "km",
+      taxaSemanalPaga: emp.taxa_semanal_paga || false,
+      taxaSemanalPagaEm: emp.taxa_semanal_paga_em || null,
+      pagamentosSemanais: emp.pagamentos_semanais || {},
+    }));
+  }
 
   async function carregarPedidos(empresaId) {
     if (!empresaId) return;

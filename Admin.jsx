@@ -18,6 +18,18 @@ function dataLocalISO(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+// Normaliza texto pra comparação: remove acentos, deixa minúsculo, tira espaço extra.
+// Usado na busca de estabelecimentos — sem isso, digitar "Jrs" (sem acento/maiúscula
+// certinha) podia não encontrar "Jrs Burguers" dependendo de como foi cadastrado.
+function normalizarTexto(str) {
+  return (str || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
 // Retorna a data (AAAA-MM-DD) da segunda-feira que inicia a semana REAL (segunda a domingo)
 // que contém a data informada. Usado pra agrupar "semana" de forma consistente com o
 // calendário de verdade, sem depender de blocos fixos de 7 dias do mês (dia 1-7, 8-14...)
@@ -892,6 +904,7 @@ function Motoboys({ motoboys, setMotoboys, historico }) {
 // ─── ESTABELECIMENTOS ─────────────────────────────────────────────────────────
 function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, onRecarregar }) {
   const [sel, setSel] = useState(null);
+  const [buscaEstab, setBuscaEstab] = useState("");
   const [abaEmp, setAbaEmp] = useState("geral");
   const [taxasEdit, setTaxasEdit] = useState({});
   const [taxaSalva, setTaxaSalva] = useState(false);
@@ -1139,6 +1152,11 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
         <Btn onClick={()=>setModalCad(true)}>+ Cadastrar Estabelecimento</Btn>
       </div>
 
+      <div style={{position:"relative",marginBottom:14}}>
+        <input value={buscaEstab} onChange={e=>setBuscaEstab(e.target.value)} placeholder="🔍 Buscar estabelecimento pelo nome..."
+          style={{background:"#0f172a",border:"1px solid #374151",borderRadius:10,color:"#f9fafb",padding:"11px 16px",width:"100%",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+      </div>
+
       {paraCobrar.length>0 && (
         <Card style={{marginBottom:14,background:"#1a0a0a",border:"1px solid #ef4444"}}>
           <div style={{color:"#f87171",fontWeight:800,fontSize:14,marginBottom:4}}>📞 Cobrança pendente — {paraCobrar.length} estabelecimento{paraCobrar.length!==1?"s":""}</div>
@@ -1169,7 +1187,13 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
         </Card>
       )}
 
-      {empresarios.map(emp=>{
+      {empresarios.length>0 && empresarios.filter(emp=>normalizarTexto(emp.nome).includes(normalizarTexto(buscaEstab))).length===0 && (
+        <Card style={{textAlign:"center",padding:30}}>
+          <div style={{color:"#4b5563",fontSize:14}}>Nenhum estabelecimento encontrado com esse nome.</div>
+        </Card>
+      )}
+
+      {empresarios.filter(emp=>normalizarTexto(emp.nome).includes(normalizarTexto(buscaEstab))).map(emp=>{
         const ts = totalSemana(emp);
         const motInad = motivoInadimplencia(emp);
         const borda = emp.bloqueado?"1px solid #ef4444":(motInad?"1px solid #f59e0b":"1px solid #1f2937");
