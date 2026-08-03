@@ -342,39 +342,45 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   }).filter(m=>m.qtd>0).sort((a,b)=>b.total-a.total);
 
   const dadosEmp = empresarios.map(emp=>{
-    const ents = fonteTodasSemana.filter(e=>e.empresarioId===emp.id);
     const mensalidadePagaEstaSemana = pagoNestaSemana(emp.mensalidadePagaEm);
-    const taxaSemanalPagaEstaSemana = pagoNestaSemana(emp.taxaSemanalPagaEm);
     const valorPlano = emp.planoPagamento==="mensal" ? MENSALIDADE*4 : MENSALIDADE;
     // O período GRÁTIS só isenta a MENSALIDADE da plataforma (a comissão do MotoFast).
     // Nunca isenta a taxa de entrega — o motoboy tem que ser pago sempre, período de teste ou não.
     const mens = (!emp.planoGratis && !mensalidadePagaEstaSemana) ? valorPlano : 0;
-    // Taxas de entrega ainda pendentes de cobrança do estabelecimento — checa se
-    // ele realmente já pagou (na tela de Pagamentos) NESTA semana, não se o motoboy já recebeu,
-    // e NÃO depende de plano grátis (taxa nunca é grátis, é o dinheiro do motoboy).
-    let taxas;
+
+    // Taxa de entrega — SEMPRE soma TODAS as pendências desse estabelecimento, de
+    // qualquer semana ou dia (não só a que está selecionada no seletor do Repasse).
+    // Isso evita exatamente o problema que já resolvemos na aba "Por Dia": uma
+    // semana antiga sem pagar "sumir" da vista só porque virou a semana seguinte.
+    const entsHistoricoCompleto = historico.filter(e=>e.status==="Entregue"&&e.empresarioId===emp.id);
+    let taxas, entsPendentes;
     if (emp.planoPagamentoMotoboy === "diario") {
       // NUNCA cobra a entrega de HOJE — no plano "paga sempre no dia seguinte",
       // a entrega de hoje só vence amanhã, não pode aparecer como pendente ainda.
       const hojeISORepasse = dataLocalISO();
-      taxas = ents.filter(e => e.data !== hojeISORepasse && !emp.pagamentosDiarios?.[e.data]).reduce((s,e)=>s+e.taxaEmpresario,0);
+      entsPendentes = entsHistoricoCompleto.filter(e => e.data !== hojeISORepasse && !emp.pagamentosDiarios?.[e.data]);
+      taxas = entsPendentes.reduce((s,e)=>s+e.taxaEmpresario,0);
     } else {
-      // Plano semanal — agora usa o VALOR PARCIAL já pago de cada semana (mesmo
-      // sistema da aba Por Dia), não mais só sim/não. Assim, se o empresário pagou
-      // metade do valor e você registrou isso, só a diferença aparece aqui como
-      // pendente — nunca mais mostra o valor cheio depois de um pagamento parcial.
+      // Plano semanal — usa o VALOR PARCIAL já pago de CADA semana (mesmo sistema
+      // da aba Por Dia), somando o que falta de todas as semanas em aberto, não só
+      // a atual. A lista de entregas exibida no card mostra tudo que compõe esse
+      // valor, mesmo vindo de semanas diferentes.
       const porSemanaRepasse = {};
-      ents.forEach(e=>{
+      entsHistoricoCompleto.forEach(e=>{
         if (!porSemanaRepasse[e.semana]) porSemanaRepasse[e.semana] = 0;
         porSemanaRepasse[e.semana] += e.taxaEmpresario;
       });
+      const semanasComSaldo = new Set(Object.entries(porSemanaRepasse)
+        .filter(([semana,total])=>Math.max(0,total-(emp.pagamentosSemanais?.[semana]||0))>0)
+        .map(([semana])=>semana));
+      entsPendentes = entsHistoricoCompleto.filter(e=>semanasComSaldo.has(e.semana));
       taxas = Object.entries(porSemanaRepasse).reduce((s,[semana,total])=>{
         const pago = emp.pagamentosSemanais?.[semana] || 0;
         return s + Math.max(0, total-pago);
       }, 0);
     }
     taxas = +taxas.toFixed(2);
-    return {...emp, ents, qtd:ents.length, taxas, mensalidade:mens, total:+(taxas+mens).toFixed(2)};
+    return {...emp, ents:entsPendentes, qtd:entsPendentes.length, taxas, mensalidade:mens, total:+(taxas+mens).toFixed(2)};
   }).filter(e=>e.qtd>0||e.mensalidade>0||!e.planoGratis);
   const dadosEmpPendentes = dadosEmp.filter(e=>e.total>0);
   const dadosEmpEmDia = dadosEmp.filter(e=>e.total===0&&(e.qtd>0||!e.planoGratis));
