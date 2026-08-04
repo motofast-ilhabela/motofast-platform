@@ -222,74 +222,51 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
     setErroCalculo(false);
     (async()=>{
       try {
-        const endDestino = encodeURIComponent(`${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil`);
-        const endOrigemBairro = encodeURIComponent(`${empresa.bairro||""}, Ilhabela, SP, Brasil`);
-        const endDestinoBairro = encodeURIComponent(`${bairro}, Ilhabela, SP, Brasil`);
+        const enderecoDestino = `${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil`;
+        const enderecoOrigem = empresa.endereco
+          ? `${empresa.endereco}, Ilhabela, SP, Brasil`
+          : `${empresa.bairro||""}, Ilhabela, SP, Brasil`;
 
-        // Origem: tenta o endereço completo do estabelecimento primeiro (se tiver
-        // cadastrado); se não encontrar, cai pro bairro do estabelecimento.
-        let latO, lonO, metodoOrigem = "não encontrado";
-        if (empresa.endereco) {
-          const endOrigem = encodeURIComponent(`${empresa.endereco}, Ilhabela, SP, Brasil`);
-          const rO = await fetch(`https://nominatim.openstreetmap.org/search?q=${endOrigem}&format=json&limit=1`).then(r=>r.json());
-          if (rO[0]) { latO = rO[0].lat; lonO = rO[0].lon; metodoOrigem = "endereço completo"; }
-        }
-        if (!latO && empresa.bairro) {
-          const rOB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endOrigemBairro}&format=json&limit=1`).then(r=>r.json());
-          if (rOB[0]) { latO = rOB[0].lat; lonO = rOB[0].lon; metodoOrigem = "bairro do estabelecimento"; }
-        }
+        // Calcula pelo Google Maps (via nossa função no servidor, que protege a
+        // chave). O Google já lida muito bem com endereço incompleto ou digitado
+        // torto — não precisa mais daquela cadeia de tentativas manuais que o mapa
+        // gratuito exigia antes.
+        const resp = await fetch("/api/calcular-distancia", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ origem: enderecoOrigem, destino: enderecoDestino }),
+        });
+        const data = await resp.json();
 
-        // Destino: tenta o endereço completo do cliente (rua+número+bairro) primeiro.
-        // Se não encontrar, tenta rua+número SEM o bairro — importante pra clientes
-        // salvos há mais tempo, onde o campo "bairro" às vezes é o nome de um
-        // condomínio ou ponto de referência (ex: "Gren Park") que não existe de
-        // verdade no mapa, e travava a busca mesmo com a rua certa.
-        // Se ainda assim não achar, tenta o BAIRRO OFICIAL (o mesmo nome usado no
-        // cadastro de taxas do estabelecimento, ex: "Barra Velha") — que é sempre
-        // um lugar de verdade reconhecido no mapa, diferente do texto livre que às
-        // vezes está salvo no cliente. Só por último, em caso raro, cai pro bairro
-        // exatamente como está escrito no cadastro do cliente.
-        const rD = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestino}&format=json&limit=1`).then(r=>r.json());
-        let latD, lonD, metodoDestino = "não encontrado";
-        if (rD[0]) { latD = rD[0].lat; lonD = rD[0].lon; metodoDestino = "endereço completo do cliente"; }
-        else {
-          const endDestinoSemBairro = encodeURIComponent(`${rua}, ${num||""}, Ilhabela, SP, Brasil`);
-          const rDSemBairro = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoSemBairro}&format=json&limit=1`).then(r=>r.json());
-          if (rDSemBairro[0]) { latD = rDSemBairro[0].lat; lonD = rDSemBairro[0].lon; metodoDestino = "rua do cliente sem bairro"; }
-          else {
-            let achouBairroOficial = false;
-            if (taxaKey && taxaKey.toLowerCase() !== bairro.toLowerCase()) {
-              const endDestinoOficial = encodeURIComponent(`${taxaKey}, Ilhabela, SP, Brasil`);
-              const rDOficial = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoOficial}&format=json&limit=1`).then(r=>r.json());
-              if (rDOficial[0]) { latD = rDOficial[0].lat; lonD = rDOficial[0].lon; achouBairroOficial = true; metodoDestino = "bairro oficial (nome corrigido)"; }
-            }
-            if (!achouBairroOficial) {
-              const rDB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoBairro}&format=json&limit=1`).then(r=>r.json());
-              if (rDB[0]) { latD = rDB[0].lat; lonD = rDB[0].lon; metodoDestino = "bairro do cliente (texto do cadastro)"; }
-            }
-          }
+        if (!cancelado && data.ok) {
+          setDistanciaKm(data.km.toFixed(1));
+          setTaxaKm(calcularTaxaPorKm(data.km));
+          setMetodoCalculoKm("Google Maps — endereço completo");
+          return;
         }
 
-        if (!cancelado && latO && latD) {
-          const rota = await fetch(`https://router.project-osrm.org/route/v1/driving/${lonO},${latO};${lonD},${latD}?overview=false`).then(r=>r.json());
-          const metros = rota.routes?.[0]?.distance;
-          if (metros && !cancelado) {
-            const km = metros / 1000;
-            setDistanciaKm(km.toFixed(1));
-            setTaxaKm(calcularTaxaPorKm(km));
-            setMetodoCalculoKm(`Origem: ${metodoOrigem} · Destino: ${metodoDestino}`);
+        // Se o endereço específico não foi encontrado, tenta só com o bairro do
+        // cliente — último recurso antes de cair na reserva por bairro fixa.
+        if (!cancelado) {
+          const enderecoDestinoBairro = `${bairro}, Ilhabela, SP, Brasil`;
+          const resp2 = await fetch("/api/calcular-distancia", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ origem: enderecoOrigem, destino: enderecoDestinoBairro }),
+          });
+          const data2 = await resp2.json();
+          if (!cancelado && data2.ok) {
+            setDistanciaKm(data2.km.toFixed(1));
+            setTaxaKm(calcularTaxaPorKm(data2.km));
+            setMetodoCalculoKm("Google Maps — bairro (endereço específico não encontrado)");
           } else if (!cancelado) {
             setDistanciaKm(null);
             setErroCalculo(true);
             setMetodoCalculoKm(null);
           }
-        } else if (!cancelado) {
-          setDistanciaKm(null);
-          setErroCalculo(true);
-          setMetodoCalculoKm(null);
         }
       } catch(e) {
-        console.log("Erro ao calcular distância:", e);
+        console.log("Erro ao calcular distância via Google Maps:", e);
         if (!cancelado) { setDistanciaKm(null); setErroCalculo(true); setMetodoCalculoKm(null); }
       } finally {
         if (!cancelado) setCalcKm(false);
@@ -714,62 +691,45 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
     setErroCalculo(false);
     (async()=>{
       try {
-        const endDestino = encodeURIComponent(`${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil`);
-        const endOrigemBairro = encodeURIComponent(`${empresa.bairro||""}, Ilhabela, SP, Brasil`);
-        const endDestinoBairro = encodeURIComponent(`${bairro}, Ilhabela, SP, Brasil`);
+        const enderecoDestino = `${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil`;
+        const enderecoOrigem = empresa.endereco
+          ? `${empresa.endereco}, Ilhabela, SP, Brasil`
+          : `${empresa.bairro||""}, Ilhabela, SP, Brasil`;
 
-        let latO, lonO, metodoOrigem = "não encontrado";
-        if (empresa.endereco) {
-          const endOrigem = encodeURIComponent(`${empresa.endereco}, Ilhabela, SP, Brasil`);
-          const rO = await fetch(`https://nominatim.openstreetmap.org/search?q=${endOrigem}&format=json&limit=1`).then(r=>r.json());
-          if (rO[0]) { latO = rO[0].lat; lonO = rO[0].lon; metodoOrigem = "endereço completo"; }
-        }
-        if (!latO && empresa.bairro) {
-          const rOB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endOrigemBairro}&format=json&limit=1`).then(r=>r.json());
-          if (rOB[0]) { latO = rOB[0].lat; lonO = rOB[0].lon; metodoOrigem = "bairro do estabelecimento"; }
-        }
+        const resp = await fetch("/api/calcular-distancia", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ origem: enderecoOrigem, destino: enderecoDestino }),
+        });
+        const data = await resp.json();
 
-        const rD = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestino}&format=json&limit=1`).then(r=>r.json());
-        let latD, lonD, metodoDestino = "não encontrado";
-        if (rD[0]) { latD = rD[0].lat; lonD = rD[0].lon; metodoDestino = "endereço completo do cliente"; }
-        else {
-          const endDestinoSemBairro = encodeURIComponent(`${rua}, ${num||""}, Ilhabela, SP, Brasil`);
-          const rDSemBairro = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoSemBairro}&format=json&limit=1`).then(r=>r.json());
-          if (rDSemBairro[0]) { latD = rDSemBairro[0].lat; lonD = rDSemBairro[0].lon; metodoDestino = "rua do cliente sem bairro"; }
-          else {
-            let achouBairroOficial = false;
-            if (taxaKey2 && taxaKey2.toLowerCase() !== bairro.toLowerCase()) {
-              const endDestinoOficial = encodeURIComponent(`${taxaKey2}, Ilhabela, SP, Brasil`);
-              const rDOficial = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoOficial}&format=json&limit=1`).then(r=>r.json());
-              if (rDOficial[0]) { latD = rDOficial[0].lat; lonD = rDOficial[0].lon; achouBairroOficial = true; metodoDestino = "bairro oficial (nome corrigido)"; }
-            }
-            if (!achouBairroOficial) {
-              const rDB = await fetch(`https://nominatim.openstreetmap.org/search?q=${endDestinoBairro}&format=json&limit=1`).then(r=>r.json());
-              if (rDB[0]) { latD = rDB[0].lat; lonD = rDB[0].lon; metodoDestino = "bairro do cliente (texto do cadastro)"; }
-            }
-          }
+        if (!cancelado && data.ok) {
+          setDistanciaKm(data.km.toFixed(1));
+          setTaxaKm(calcularTaxaPorKm(data.km));
+          setMetodoCalculoKm("Google Maps — endereço completo");
+          return;
         }
 
-        if (!cancelado && latO && latD) {
-          const rota = await fetch(`https://router.project-osrm.org/route/v1/driving/${lonO},${latO};${lonD},${latD}?overview=false`).then(r=>r.json());
-          const metros = rota.routes?.[0]?.distance;
-          if (metros && !cancelado) {
-            const km = metros / 1000;
-            setDistanciaKm(km.toFixed(1));
-            setTaxaKm(calcularTaxaPorKm(km));
-            setMetodoCalculoKm(`Origem: ${metodoOrigem} · Destino: ${metodoDestino}`);
+        if (!cancelado) {
+          const enderecoDestinoBairro = `${bairro}, Ilhabela, SP, Brasil`;
+          const resp2 = await fetch("/api/calcular-distancia", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ origem: enderecoOrigem, destino: enderecoDestinoBairro }),
+          });
+          const data2 = await resp2.json();
+          if (!cancelado && data2.ok) {
+            setDistanciaKm(data2.km.toFixed(1));
+            setTaxaKm(calcularTaxaPorKm(data2.km));
+            setMetodoCalculoKm("Google Maps — bairro (endereço específico não encontrado)");
           } else if (!cancelado) {
             setDistanciaKm(null);
             setErroCalculo(true);
             setMetodoCalculoKm(null);
           }
-        } else if (!cancelado) {
-          setDistanciaKm(null);
-          setErroCalculo(true);
-          setMetodoCalculoKm(null);
         }
       } catch(e) {
-        console.log("Erro ao calcular distância:", e);
+        console.log("Erro ao calcular distância via Google Maps:", e);
         if (!cancelado) { setDistanciaKm(null); setErroCalculo(true); setMetodoCalculoKm(null); }
       } finally {
         if (!cancelado) setCalcKm(false);
