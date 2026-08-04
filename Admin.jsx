@@ -952,6 +952,81 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
 
   const empSel = empresarios.find(e=>e.id===sel);
 
+  // Cálculo por km pra tela "Registrar Entrega" — mesma lógica que já existe no
+  // Empresario.jsx (chama a mesma função do servidor, protegendo a chave do Google).
+  // Só roda quando o estabelecimento selecionado usa o modelo "km"; se for "bairro",
+  // continua usando a tabela fixa direto, sem gastar chamada de API à toa.
+  const [distanciaKmReg, setDistanciaKmReg] = useState(null);
+  const [calcKmReg, setCalcKmReg] = useState(false);
+  const [taxaKmReg, setTaxaKmReg] = useState({e:0, m:0});
+  const [erroCalculoReg, setErroCalculoReg] = useState(false);
+
+  function calcularTaxaPorKmReg(km) {
+    const kmArred = Math.max(1, Math.ceil(km));
+    if (kmArred === 1) return {e: 8, m: 6.50};
+    if (kmArred === 2) return {e: 10, m: 8.20};
+    let bandeiradaCliente, bandeiradaMotoboy, valorKmMotoboy;
+    if (kmArred <= 5) { bandeiradaCliente=7; bandeiradaMotoboy=5.60; valorKmMotoboy=1.80; }
+    else              { bandeiradaCliente=8; bandeiradaMotoboy=6.30; valorKmMotoboy=1.90; }
+    const valorKmCliente = 2;
+    const e = bandeiradaCliente + valorKmCliente*kmArred;
+    const m = bandeiradaMotoboy + valorKmMotoboy*kmArred;
+    return {e: +e.toFixed(2), m: +m.toFixed(2)};
+  }
+
+  useEffect(()=>{
+    if (abaEmp!=="registrar" || !empSel) return;
+    if (empSel.modeloPrecificacao!=="km") {
+      setDistanciaKmReg(null); setTaxaKmReg({e:0,m:0}); setErroCalculoReg(false); setCalcKmReg(false);
+      return;
+    }
+    const rua = formRegistro.rua;
+    const num = formRegistro.num;
+    const bairro = formRegistro.bairro || Object.keys(empSel.taxas||{})[0] || "";
+    if (!rua || !bairro) {
+      setDistanciaKmReg(null); setTaxaKmReg({e:0,m:0}); setErroCalculoReg(false);
+      return;
+    }
+    let cancelado = false;
+    setCalcKmReg(true);
+    setErroCalculoReg(false);
+    (async()=>{
+      try {
+        const enderecoDestino = `${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil`;
+        const enderecoOrigem = empSel.enderecoEstab
+          ? `${empSel.enderecoEstab}, Ilhabela, SP, Brasil`
+          : `${empSel.bairro||""}, Ilhabela, SP, Brasil`;
+        const resp = await fetch("/api/calcular-distancia", {
+          method: "POST", headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ origem: enderecoOrigem, destino: enderecoDestino }),
+        });
+        const data = await resp.json();
+        if (!cancelado && data.ok) {
+          setDistanciaKmReg(data.km.toFixed(1));
+          setTaxaKmReg(calcularTaxaPorKmReg(data.km));
+        } else if (!cancelado) {
+          const resp2 = await fetch("/api/calcular-distancia", {
+            method: "POST", headers: {"Content-Type":"application/json"},
+            body: JSON.stringify({ origem: enderecoOrigem, destino: `${bairro}, Ilhabela, SP, Brasil` }),
+          });
+          const data2 = await resp2.json();
+          if (!cancelado && data2.ok) {
+            setDistanciaKmReg(data2.km.toFixed(1));
+            setTaxaKmReg(calcularTaxaPorKmReg(data2.km));
+          } else if (!cancelado) {
+            setDistanciaKmReg(null); setErroCalculoReg(true);
+          }
+        }
+      } catch(e) {
+        console.log("Erro ao calcular distância (Registrar Entrega):", e);
+        if (!cancelado) { setDistanciaKmReg(null); setErroCalculoReg(true); }
+      } finally {
+        if (!cancelado) setCalcKmReg(false);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [abaEmp, sel, formRegistro.rua, formRegistro.num, formRegistro.bairro, empSel?.modeloPrecificacao, empSel?.enderecoEstab, empSel?.bairro]);
+
   function abrirEmp(emp) { setSel(emp.id); setAbaEmp("geral"); setTaxasEdit(JSON.parse(JSON.stringify(emp.taxas||{}))); setTaxaSalva(false); }
 
   async function salvarTaxas() {
@@ -1606,7 +1681,11 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
             const bairrosEmp = Object.keys(empSel.taxas||{});
             const bairroSel = formRegistro.bairro || bairrosEmp[0] || "";
             const taxaKeyReg = bairrosEmp.find(k=>k.trim().toLowerCase()===bairroSel.trim().toLowerCase()) || bairroSel;
-            const taxaReg = (empSel.taxas||{})[taxaKeyReg] || {e:0,m:0};
+            const taxaBairroReg = (empSel.taxas||{})[taxaKeyReg] || {e:0,m:0};
+            // Se o estabelecimento usa modelo "km" e o cálculo deu certo, usa esse
+            // valor. Senão (modelo "bairro", ou km falhou), cai pra tabela fixa.
+            const usandoKm = empSel.modeloPrecificacao==="km" && distanciaKmReg && taxaKmReg.e>0;
+            const taxaReg = usandoKm ? taxaKmReg : taxaBairroReg;
 
             async function registrarEntrega() {
               if (!formRegistro.clienteNome.trim() || !formRegistro.rua.trim() || !formRegistro.num.trim()) {
@@ -1639,6 +1718,8 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                   taxa: taxaReg.e,
                   taxa_motoboy: taxaReg.m,
                   taxa_empresario: taxaReg.e,
+                  distancia_km: usandoKm ? parseFloat(distanciaKmReg) : null,
+                  metodo_calculo_km: usandoKm ? "Google Maps (Registrar Entrega — Admin)" : "tabela fixa por bairro",
                   status: "entregue",
                   saiu_estabelecimento_em: agoraISO,
                   entregue_em: agoraISO,
@@ -1682,8 +1763,16 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                   {motoboys.filter(m=>!m.banido).map(m=><option key={m.id} value={m.id}>{m.nomeCompleto}</option>)}
                 </SelInput>
                 <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px",marginBottom:14}}>
-                  <div style={{color:"#9ca3af",fontSize:11}}>Taxa — {bairroSel || "selecione um bairro"}</div>
-                  <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>Cliente R${taxaReg.e} → Motoboy R${taxaReg.m}</div>
+                  <div style={{color:"#9ca3af",fontSize:11}}>
+                    Taxa {usandoKm ? `— calculada por km (${distanciaKmReg}km)` : `— ${bairroSel || "selecione um bairro"}`}
+                  </div>
+                  {empSel.modeloPrecificacao==="km" && calcKmReg && (
+                    <div style={{color:"#fbbf24",fontSize:13,marginTop:4}}>⏳ Calculando distância pelo Google Maps...</div>
+                  )}
+                  {empSel.modeloPrecificacao==="km" && !calcKmReg && erroCalculoReg && (
+                    <div style={{color:"#f87171",fontSize:12,marginTop:4}}>⚠️ Não conseguiu calcular a distância — usando reserva por bairro abaixo.</div>
+                  )}
+                  <div style={{color:"#34d399",fontWeight:800,fontSize:20,marginTop:4}}>Cliente R${taxaReg.e} → Motoboy R${taxaReg.m}</div>
                 </div>
                 <Btn onClick={registrarEntrega} full disabled={salvandoRegistro}>{salvandoRegistro?"Salvando...":"✅ Registrar Entrega (já feita)"}</Btn>
               </div>
