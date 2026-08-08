@@ -125,10 +125,6 @@ function Dashboard({ historico, motoboys, empresarios }) {
   const mesAtual = agora.getMonth()+1;
   const anoAtual = agora.getFullYear();
 
-  // Seletor de mês — por padrão mostra o mês atual, mas dá pra trocar pra qualquer
-  // mês que já teve entrega. Isso vale pros cartões de cima, "Entregas por
-  // Estabelecimento" e "Ranking Motoboys" — só o gráfico "Entregas por Mês" continua
-  // mostrando todo o histórico empilhado, sem depender do seletor.
   const [mesSelDash, setMesSelDash] = useState(`${anoAtual}-${String(mesAtual).padStart(2,"0")}`);
   const [anoSelStr, mesSelStr] = mesSelDash.split("-");
   const anoSel = parseInt(anoSelStr, 10);
@@ -150,10 +146,6 @@ function Dashboard({ historico, motoboys, empresarios }) {
   }).sort((a,b)=>b.qtd-a.qtd);
   const maxQ = ranking[0]?.qtd || 1;
 
-  // Agrupa por ANO+MÊS (nunca só por mês) — assim julho/2026 nunca se mistura com
-  // julho/2027 se um dia a plataforma tiver mais de um ano de histórico. Mostra TODOS
-  // os meses desde a primeira entrega registrada, não só o ano corrente — é isso que
-  // permite ver a evolução mês a mês desde o início, pra sempre.
   const porMesMap = {};
   ent.forEach(e=>{
     const chave = `${e.ano}-${String(e.mes).padStart(2,"0")}`;
@@ -172,9 +164,6 @@ function Dashboard({ historico, motoboys, empresarios }) {
       pago: v.pago.toFixed(2),
     }));
   const maxMes = Math.max(...porMes.map(p=>p.qtd), 1);
-  // Lista de meses disponíveis pro seletor — os mesmos meses que já têm entrega
-  // registrada (do porMesMap), do mais recente pro mais antigo. Sempre inclui o mês
-  // atual, mesmo que ainda não tenha nenhuma entrega nele.
   const mesesDisponiveisDash = Array.from(new Set([
     `${anoAtual}-${String(mesAtual).padStart(2,"0")}`,
     ...Object.keys(porMesMap),
@@ -266,7 +255,7 @@ function Dashboard({ historico, motoboys, empresarios }) {
 
 // ─── REPASSE ──────────────────────────────────────────────────────────────────
 function Repasse({ historico, setHistorico, motoboys, empresarios }) {
-  const [semana, setSemana] = useState("atual"); // "atual" | "pendentes" | uma chave de segunda-feira específica (AAAA-MM-DD)
+  const [semana, setSemana] = useState("atual");
   const [detalhe, setDetalhe] = useState(null);
   const [bonus, setBonus] = useState(null);
   const [bonusValor, setBonusValor] = useState("");
@@ -274,8 +263,6 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
 
   const agora = new Date();
 
-  // Semana REAL — sempre segunda a domingo, identificada pela data da própria segunda-feira.
-  // Isso nunca desalinha com o calendário, nem quando a semana atravessa a virada do mês.
   function fmtDiaMes(iso) {
     const d = new Date(iso+"T12:00:00");
     return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
@@ -287,9 +274,6 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
     return `Semana de ${fmtDiaMes(chaveSegunda)} a ${fmtDiaMes(dataLocalISO(fimData))}`;
   }
 
-  // Gera a lista de semanas passadas disponíveis pro seletor (últimas 30 = ~7 meses).
-  // Assim, mesmo daqui a vários meses de plataforma, qualquer semana antiga continua
-  // acessível pra consulta — nada fica "perdido" só porque passou da semana anterior.
   function gerarSemanasDisponiveis(qtd=30) {
     const lista = [];
     let cursor = segundaAtualChave;
@@ -303,9 +287,6 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   }
   const semanasDisponiveis = gerarSemanasDisponiveis();
 
-  // "atual" = semana em andamento, só pendente. "pendentes" = qualquer coisa mais antiga
-  // ainda não paga (backlog). Uma CHAVE ESPECÍFICA = consulta histórica daquela semana
-  // exata, mostrando tudo que teve nela (pago ou não), pra revisão a qualquer momento.
   const semanaEspecifica = semana!=="atual" && semana!=="pendentes" ? semana : null;
   const semanaChaveAtiva = semanaEspecifica || segundaAtualChave;
   const sem = {
@@ -313,15 +294,8 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
     label: semana==="pendentes" ? "Pendências antigas — tudo que ainda não foi pago" : labelDaSemana(semanaChaveAtiva),
   };
   const fonte = historico.filter(e=>e.status==="Entregue"&&e.semana===sem.s&&(semana==="atual"?!e.repasePago:(semanaEspecifica?true:e.repasePago)));
-  // Fonte separada pros estabelecimentos — não depende de o motoboy já ter sido pago ou não.
-  // Cobrança do estabelecimento e pagamento do motoboy são duas coisas independentes.
   const fonteTodasSemana = historico.filter(e=>e.status==="Entregue"&&e.semana===sem.s);
 
-  // Fonte separada PARA OS MOTOBOYS — usa a MESMA semana real (segunda a domingo) que os
-  // empresários, só que o pagamento acontece na terça-feira seguinte ao fim dela.
-  // "atual": só a semana em andamento, pendente. "pendentes": todo backlog não pago de
-  // qualquer semana mais antiga. Semana ESPECÍFICA escolhida no seletor: mostra TUDO
-  // daquela semana exata, pago ou não — é a consulta histórica de verdade.
   const labelPagarMb = semana==="atual"
     ? sem.label
     : semana==="pendentes"
@@ -331,12 +305,9 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
     if (e.status!=="Entregue") return false;
     if (semana==="atual") return e.semana===segundaAtualChave && !e.repasePago;
     if (semana==="pendentes") return e.semana<segundaAtualChave && !e.repasePago;
-    return e.semana===semana; // semana específica: mostra tudo, pago ou não
+    return e.semana===semana;
   });
 
-  // Verifica se um pagamento (mensalidade/taxa semanal) foi feito DENTRO da semana que está sendo
-  // vista agora — não só "alguma vez marcado true". Isso evita que uma marcação antiga (de uma
-  // semana passada) fique "presa" como paga pra sempre, escondendo cobranças de semanas novas.
   function pagoNestaSemana(dataPagoISO) {
     if (!dataPagoISO) return false;
     return segundaFeiraDaSemana(new Date(dataPagoISO)) === sem.s;
@@ -356,27 +327,15 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   const dadosEmp = empresarios.map(emp=>{
     const mensalidadePagaEstaSemana = pagoNestaSemana(emp.mensalidadePagaEm);
     const valorPlano = emp.planoPagamento==="mensal" ? MENSALIDADE*4 : MENSALIDADE;
-    // O período GRÁTIS só isenta a MENSALIDADE da plataforma (a comissão do MotoFast).
-    // Nunca isenta a taxa de entrega — o motoboy tem que ser pago sempre, período de teste ou não.
     const mens = (!emp.planoGratis && !mensalidadePagaEstaSemana) ? valorPlano : 0;
 
-    // Taxa de entrega — SEMPRE soma TODAS as pendências desse estabelecimento, de
-    // qualquer semana ou dia (não só a que está selecionada no seletor do Repasse).
-    // Isso evita exatamente o problema que já resolvemos na aba "Por Dia": uma
-    // semana antiga sem pagar "sumir" da vista só porque virou a semana seguinte.
     const entsHistoricoCompleto = historico.filter(e=>e.status==="Entregue"&&e.empresarioId===emp.id);
     let taxas, entsPendentes;
     if (emp.planoPagamentoMotoboy === "diario") {
-      // NUNCA cobra a entrega de HOJE — no plano "paga sempre no dia seguinte",
-      // a entrega de hoje só vence amanhã, não pode aparecer como pendente ainda.
       const hojeISORepasse = dataLocalISO();
       entsPendentes = entsHistoricoCompleto.filter(e => e.data !== hojeISORepasse && !emp.pagamentosDiarios?.[e.data]);
       taxas = entsPendentes.reduce((s,e)=>s+e.taxaEmpresario,0);
     } else {
-      // Plano semanal — usa o VALOR PARCIAL já pago de CADA semana (mesmo sistema
-      // da aba Por Dia), somando o que falta de todas as semanas em aberto, não só
-      // a atual. A lista de entregas exibida no card mostra tudo que compõe esse
-      // valor, mesmo vindo de semanas diferentes.
       const porSemanaRepasse = {};
       entsHistoricoCompleto.forEach(e=>{
         if (!porSemanaRepasse[e.semana]) porSemanaRepasse[e.semana] = 0;
@@ -399,13 +358,8 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
 
   const totalCobrar = dadosEmp.reduce((s,e)=>s+e.total,0).toFixed(2);
   const totalPagar  = dadosMb.reduce((s,m)=>s+m.total,0).toFixed(2);
-  // Lucro real da semana: soma direta das entregas (o que o cliente pagou menos o que o
-  // motoboy recebeu), sem depender de quem já cobrou/pagou ou não — assim nunca fica
-  // negativo à toa só porque uma cobrança ainda está pendente.
   const lucro = fonteTodasSemana.reduce((s,e)=>s+e.lucro,0).toFixed(2);
 
-  // Marca como pago pro motoboy — salva de verdade no banco (antes só mudava na tela
-  // e sumia se atualizasse a página).
   async function marcarPago(mbId) {
     const idsParaMarcar = fonteMb.filter(e=>e.motoboyId===mbId && !e.repasePago).map(e=>e.id);
     if (idsParaMarcar.length===0) return;
@@ -920,9 +874,6 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   const [erroRegistro, setErroRegistro] = useState("");
   const FVAZIO = {nome:"",tel:"",bairro:"",planoPagamento:"semanal",planoPagamentoMotoboy:"diario",cnpj:"",nomeDono:"",telDono:"",nomeSocio:"",telSocio:"",enderecoEstab:"",horarioFuncionamento:""};
   const [form, setForm] = useState(FVAZIO);
-  // "pendentes" = mostra qualquer dia ainda não pago, não importa a idade (lista curta,
-  // já que não costuma acumular). Uma chave de segunda-feira específica = consulta
-  // histórica daquela semana exata (pago ou não), sem carregar tudo de uma vez.
   const [semanaPagDiaria, setSemanaPagDiaria] = useState("pendentes");
 
   const agora = new Date();
@@ -952,22 +903,37 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
 
   const empSel = empresarios.find(e=>e.id===sel);
 
-  // Cálculo por km pra tela "Registrar Entrega" — mesma lógica que já existe no
-  // Empresario.jsx (chama a mesma função do servidor, protegendo a chave do Google).
-  // Só roda quando o estabelecimento selecionado usa o modelo "km"; se for "bairro",
-  // continua usando a tabela fixa direto, sem gastar chamada de API à toa.
   const [distanciaKmReg, setDistanciaKmReg] = useState(null);
   const [calcKmReg, setCalcKmReg] = useState(false);
   const [taxaKmReg, setTaxaKmReg] = useState({e:0, m:0});
   const [erroCalculoReg, setErroCalculoReg] = useState(false);
 
+  // Fórmula por km — REVISADA em 08/08/2026 (mesma tabela de faixas fixas aplicada
+  // no Empresario.jsx). PARA REVERTER pro sistema antigo, troca o corpo desta
+  // função de volta pela versão anterior (corte em 1km fixo, subindo km a km):
+  //   const kmArred = Math.max(1, Math.ceil(km));
+  //   if (kmArred === 1) return {e: 8, m: 6.50};
+  //   if (kmArred === 2) return {e: 10, m: 8.20};
+  //   let bandeiradaCliente, bandeiradaMotoboy, valorKmMotoboy;
+  //   if (kmArred <= 5) { bandeiradaCliente=7; bandeiradaMotoboy=5.60; valorKmMotoboy=1.80; }
+  //   else              { bandeiradaCliente=8; bandeiradaMotoboy=6.30; valorKmMotoboy=1.90; }
+  //   const valorKmCliente = 2;
+  //   const e = bandeiradaCliente + valorKmCliente*kmArred;
+  //   const m = bandeiradaMotoboy + valorKmMotoboy*kmArred;
+  //   return {e: +e.toFixed(2), m: +m.toFixed(2)};
   function calcularTaxaPorKmReg(km) {
-    const kmArred = Math.max(1, Math.ceil(km));
-    if (kmArred === 1) return {e: 8, m: 6.50};
-    if (kmArred === 2) return {e: 10, m: 8.20};
-    let bandeiradaCliente, bandeiradaMotoboy, valorKmMotoboy;
-    if (kmArred <= 5) { bandeiradaCliente=7; bandeiradaMotoboy=5.60; valorKmMotoboy=1.80; }
-    else              { bandeiradaCliente=8; bandeiradaMotoboy=6.30; valorKmMotoboy=1.90; }
+    if (km <= 1.5) return {e: 8,  m: 6.50};
+    if (km <= 2.5) return {e: 10, m: 8.20};
+    if (km <= 3.5) return {e: 13, m: 11.00};
+    if (km <= 4.5) return {e: 15, m: 12.80};
+    if (km <= 5.5) return {e: 17, m: 14.60};
+    if (km <= 6.5) return {e: 20, m: 17.70};
+    if (km <= 7.5) return {e: 20, m: 17.00};
+    if (km <= 8.5) return {e: 24, m: 21.50};
+    if (km <= 9.5) return {e: 23, m: 20.00};
+    if (km <= 10)  return {e: 28, m: 25.30};
+    const kmArred = Math.ceil(km);
+    const bandeiradaCliente = 8, bandeiradaMotoboy = 6.30, valorKmMotoboy = 1.90;
     const valorKmCliente = 2;
     const e = bandeiradaCliente + valorKmCliente*kmArred;
     const m = bandeiradaMotoboy + valorKmMotoboy*kmArred;
@@ -1082,10 +1048,6 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
     setEmpresarios(p=>p.map(e=>e.id===id?{...e,bloqueado:!e.bloqueado}:e));
   }
 
-  // Muda como a taxa de entrega é calculada pra esse estabelecimento — "km" (calcula
-  // a distância real automaticamente) ou "bairro" (usa a tabela fixa de bairros dele,
-  // configurada na aba Taxas). O app do empresário lê esse campo e decide sozinho
-  // qual fórmula usar, sem ele precisar escolher nada.
   async function mudarModeloPrecificacao(id, modelo) {
     const { error } = await supabase.from("empresarios").update({modelo_precificacao: modelo}).eq("id", id);
     if (error) {
@@ -1105,12 +1067,6 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
     setEmpresarios(p=>p.map(e=>e.id===id?{...e,mensalidadePaga:true,mensalidadePagaEm:agoraISO,bloqueado:false}:e));
   }
 
-  // Separado da mensalidade/comissão de propósito — taxa de entrega é dinheiro do motoboy,
-  // nunca deve se misturar com a comissão da plataforma.
-  // "pagamentos_semanais" agora guarda o VALOR JÁ PAGO de cada semana (não só sim/não)
-  // — isso resolve o caso do empresário adiantar parte do valor no meio da semana
-  // (ex: pagou R$5 de uma taxa de R$20 na quinta) sem precisar trocar de plano nem
-  // mexer no controle diário pra registrar isso.
   async function atualizarValorPagoSemana(id, semanaChave, valor) {
     const emp = empresarios.find(e=>e.id===id);
     const novoPag = {...(emp.pagamentosSemanais||{}), [semanaChave]: valor};
@@ -1122,8 +1078,6 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
     setEmpresarios(p=>p.map(e=>e.id===id?{...e,pagamentosSemanais:novoPag}:e));
   }
 
-  // Atalho: marca a semana inteira como paga de uma vez (usa o total da semana como
-  // valor pago) — é o que o botão "Marcar taxa semanal como paga" continua fazendo.
   async function marcarTaxaSemanalPaga(id, semanaChave, valorTotal) {
     await atualizarValorPagoSemana(id, semanaChave, valorTotal);
   }
@@ -1185,9 +1139,6 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
     const m = [];
     if (!emp.mensalidadePaga) m.push("mensalidade não paga");
     if (emp.planoPagamentoMotoboy==="diario") {
-      // Usa os dias REAIS que tiveram entrega desse estabelecimento (sem limite de
-      // janela de 7 dias) — assim um dia antigo esquecido continua contando como
-      // pendente, em vez de sumir da conta só porque passou uma semana.
       const diasComEntregaEmp = [...new Set(
         historico.filter(e=>e.empresarioId===emp.id&&e.status==="Entregue").map(e=>e.data)
       )];
@@ -1200,10 +1151,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   const bloqueados = empresarios.filter(e=>e.bloqueado).length;
   const inadimplentes = empresarios.filter(e=>!e.mensalidadePaga&&!e.planoGratis).length;
 
-  // Lista de cobrança — só aparece a partir de terça-feira (segunda ainda é dia
-  // de tolerância pro empresário pagar). Só entra aqui quem está no plano SEMANAL,
-  // não é grátis, e ainda não marcou como pago nesta semana.
-  const hojeEhSegunda = new Date().getDay() === 1; // 0=domingo, 1=segunda...
+  const hojeEhSegunda = new Date().getDay() === 1;
   const paraCobrar = empresarios.filter(e=>
     e.planoPagamento==="semanal" && !e.planoGratis && !e.mensalidadePaga && !hojeEhSegunda
   );
@@ -1295,7 +1243,6 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                     ? `✅ Na plataforma desde ${new Date(emp.aprovadoEm).toLocaleDateString("pt-BR")}`
                     : "⏳ Ainda não aprovado"}
                 </div>
-                {/* Régua de meta de entregas */}
                 {(()=>{
                   const meta = 40;
                   const atual = emp.entregasMes || 0;
@@ -1499,16 +1446,11 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
             const dataFmt = new Date(dataSelecionadaEmp+"T12:00:00").toLocaleDateString("pt-BR");
             const hojeISO = dataLocalISO();
             const ontemISO = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return dataLocalISO(d); })();
-            // Mesmo campo já usado na aba "Pagamentos" (pagamentosDiarios) — só faz
-            // sentido pra quem está no plano diário de repasse ao motoboy.
             const planoDiarioEmp = empSel.planoPagamentoMotoboy === "diario";
             function statusDoDiaEmp(data) {
               if (planoDiarioEmp) {
                 return empSel.pagamentosDiarios?.[data] ? "pago" : "pendente";
               }
-              // Plano semanal: o status do dia reflete o status da SEMANA inteira que
-              // ele pertence — só aparece "pago" quando a semana toda já foi quitada
-              // (mesmo valor parcial usado no card e na lista de semanas anteriores).
               const semanaDoDia = segundaFeiraDaSemana(new Date(data+"T12:00:00"));
               const totalSemanaDoDia = historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue"&&e.semana===semanaDoDia).reduce((s,e)=>s+e.taxaEmpresario,0);
               const pagoSemanaDoDia = empSel.pagamentosSemanais?.[semanaDoDia] || 0;
@@ -1516,9 +1458,6 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
             }
             const statusDataSelecionadaEmp = statusDoDiaEmp(dataSelecionadaEmp);
 
-            // Total PENDENTE da semana (segunda a domingo) que contém o dia selecionado —
-            // soma automática de tudo que ainda não foi marcado como pago, pra quem
-            // recebe Pix avulso (fora de dia fixo) não precisar somar dia por dia.
             const semanaChaveEmp = segundaFeiraDaSemana(new Date(dataSelecionadaEmp+"T12:00:00"));
             function fmtDiaMesEmp(iso) {
               const d = new Date(iso+"T12:00:00");
@@ -1526,8 +1465,6 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
             }
             const fimSemanaEmp = (()=>{ const d=new Date(semanaChaveEmp+"T12:00:00"); d.setDate(d.getDate()+6); return dataLocalISO(d); })();
 
-            // Agrupa por SEMANA (segunda-feira) — usado tanto pro total pendente quanto
-            // pra lista "Semanas anteriores" mais abaixo.
             const porSemanaMap = {};
             if (!planoDiarioEmp) {
               historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue").forEach(e=>{
@@ -1538,16 +1475,12 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
             }
             const semanasOrdenadas = Object.entries(porSemanaMap).sort((a,b)=>b[0].localeCompare(a[0]));
 
-            // No plano DIÁRIO, cada dia é marcado individualmente (sim/não). No plano
-            // SEMANAL, agora cada semana guarda o VALOR JÁ PAGO (não só sim/não) — soma
-            // só a parte que ainda falta de cada semana, cobrindo TODAS as semanas já
-            // registradas, não só a que está selecionada no momento.
             let entregasSemanaPendentesEmp, totalSemanaPendenteEmp;
             if (planoDiarioEmp) {
               entregasSemanaPendentesEmp = historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue"&&!empSel.pagamentosDiarios?.[e.data]);
               totalSemanaPendenteEmp = entregasSemanaPendentesEmp.reduce((s,e)=>s+e.taxaEmpresario,0);
             } else {
-              entregasSemanaPendentesEmp = []; // não usado na contagem de "entregas" pro plano semanal
+              entregasSemanaPendentesEmp = [];
               totalSemanaPendenteEmp = semanasOrdenadas.reduce((s,[semana,info])=>{
                 const pago = empSel.pagamentosSemanais?.[semana] || 0;
                 return s + Math.max(0, info.total - pago);
@@ -1581,9 +1514,6 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                   </div>
                 </Card>
 
-                {/* Total PENDENTE — agora vale pros dois planos: soma TUDO que ainda
-                    não foi marcado como pago, de qualquer semana ou dia (não só o
-                    atual), pra nunca "esconder" uma pendência antiga esquecida. */}
                 <Card style={{marginBottom:14,background:"#0d2a4a",border:"1px solid #60a5fa"}}>
                   <SectionTitle>💰 Falta receber (tudo pendente)</SectionTitle>
                   <div style={{color:totalSemanaPendenteEmp>0?"#60a5fa":"#34d399",fontSize:32,fontWeight:900}}>R${totalSemanaPendenteEmp.toFixed(2)}</div>
@@ -1598,8 +1528,6 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                   )}
                 </Card>
 
-                {/* Lista de semanas anteriores — só pro plano semanal, com valor já
-                    pago editável em cada uma, igual "Dias anteriores" faz por dia. */}
                 {!planoDiarioEmp && semanasOrdenadas.length>0 && (
                   <Card style={{marginBottom:14}}>
                     <SectionTitle>📅 Semanas anteriores</SectionTitle>
@@ -1682,8 +1610,6 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
             const bairroSel = formRegistro.bairro || bairrosEmp[0] || "";
             const taxaKeyReg = bairrosEmp.find(k=>k.trim().toLowerCase()===bairroSel.trim().toLowerCase()) || bairroSel;
             const taxaBairroReg = (empSel.taxas||{})[taxaKeyReg] || {e:0,m:0};
-            // Se o estabelecimento usa modelo "km" e o cálculo deu certo, usa esse
-            // valor. Senão (modelo "bairro", ou km falhou), cai pra tabela fixa.
             const usandoKm = empSel.modeloPrecificacao==="km" && distanciaKmReg && taxaKmReg.e>0;
             const taxaReg = usandoKm ? taxaKmReg : taxaBairroReg;
 
@@ -1859,10 +1785,6 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                 </div>
               </Card>
               {empSel.planoPagamentoMotoboy==="diario" && (()=>{
-                // Por padrão mostra só os dias PENDENTES (não importa a idade — lista curta,
-                // já que não costuma acumular). Pra rever uma semana específica por completo
-                // (paga ou não), usa o seletor — sem precisar carregar tudo de uma vez, o que
-                // evitaria a tela ficar pesada lá na frente com muitos meses de histórico.
                 const todosDiasComEntrega = [...new Set(
                   historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue").map(e=>e.data)
                 )];
@@ -1921,9 +1843,6 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                 const valorJaPago = empSel.pagamentosSemanais?.[segundaAtual3] || 0;
                 const pendenteSemanaAtual = Math.max(0, totalSemanaTaxa - valorJaPago);
                 const inputId = `valor-pago-semana-${empSel.id}`;
-                // Total pendente de TODAS as semanas (não só a atual) — a mesma conta
-                // que já existe na aba "Por Dia", só que resumida aqui também, pra não
-                // dar a impressão de que só a semana atual importa.
                 const porSemanaMapPag = {};
                 historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue").forEach(e=>{
                   if (!porSemanaMapPag[e.semana]) porSemanaMapPag[e.semana] = 0;
@@ -1938,7 +1857,6 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                   <Card style={{padding:"14px 16px",background:"#0f172a"}}>
                     <div style={{color:"#9ca3af",fontWeight:700,fontSize:13,marginBottom:6}}>💵 Taxa semanal (dinheiro do motoboy — separado da comissão)</div>
 
-                    {/* Total geral pendente, somando TODAS as semanas em aberto */}
                     <div style={{background:temPendenciaAntiga?"#3d2a00":"#0d3d2e",border:`1px solid ${temPendenciaAntiga?"#f59e0b":"#34d399"}`,borderRadius:8,padding:"10px 14px",marginBottom:12}}>
                       <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase"}}>Falta receber no total (todas as semanas)</div>
                       <div style={{color:totalPendenteGeral>0?"#fbbf24":"#34d399",fontSize:24,fontWeight:900}}>R${totalPendenteGeral.toFixed(2)}</div>
@@ -1952,10 +1870,6 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                       {pendenteSemanaAtual<=0 && totalSemanaTaxa>0 ? <Tag label="✅ Pago essa semana" cor="#34d399"/> : <Tag label={`⚠️ Falta R$${pendenteSemanaAtual.toFixed(2)} essa semana`} cor="#fbbf24"/>}
                       {valorJaPago>0 && <span style={{color:"#6b7280",fontSize:11}}>já registrado: R${valorJaPago.toFixed(2)}</span>}
                     </div>
-                    {/* Valor já pago — aceita parcial, pro caso do empresário adiantar
-                        parte do valor no meio da semana (ex: pagou R$5 de uma taxa de
-                        R$20 na quinta). Sempre se refere à SEMANA ATUAL — pra mexer em
-                        semanas antigas, usa a lista "Semanas anteriores" na aba Por Dia. */}
                     <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                       <input id={inputId} type="number" defaultValue={valorJaPago||""} placeholder="0,00"
                         style={{background:"#111827",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"8px 12px",width:110,fontSize:14,outline:"none"}}/>
@@ -2227,10 +2141,6 @@ function Historico({ historico, motoboys, empresarios }) {
 
   const mesesDisponiveis = [...new Set(historico.map(e=>MESES[e.mes-1]))];
 
-  // O "historico" já chega do banco ordenado do mais recente pro mais antigo —
-  // NUNCA inverter aqui. Inverter fazia a lista de baixo (slice 0-100) pegar as
-  // entregas mais ANTIGAS em vez das mais recentes, travando a tela num dia velho
-  // sempre que havia mais de 100 registros no total sem nenhum filtro aplicado.
   const lista = historico.filter(e=>{
     if (filtroStatus!=="Todos"&&e.status!==filtroStatus) return false;
     if (filtroMes!=="Todos"&&MESES[e.mes-1]!==filtroMes) return false;
@@ -2322,7 +2232,6 @@ function Avaliacoes({ avaliacoes, motoboys }) {
     ? avaliacoes
     : avaliacoes.filter(a => a.motoboy_nome === filtroMb);
 
-  // Média por motoboy
   const medias = motoboys.filter(m=>!m.banido).map(mb => {
     const avs = avaliacoes.filter(a => a.motoboy_nome === mb.nomeCompleto);
     const mediaMb = avs.length > 0
@@ -2359,15 +2268,12 @@ function Avaliacoes({ avaliacoes, motoboys }) {
         <div style={{color:"#6b7280",fontSize:13}}>{avaliacoes.length} avaliações recebidas</div>
       </div>
 
-      {/* Cards de média geral */}
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:20}}>
         <Stat icon="⭐" label="Média dos Motoboys" value={mediaGeralMb} sub={`${avaliacoes.length} avaliações`} cor="#f59e0b"/>
         <Stat icon="⚡" label="Média do MotoFast" value={mediaGeralMf} sub="satisfação geral" cor="#34d399"/>
         <Stat icon="📋" label="Total de avaliações" value={avaliacoes.length} cor="#60a5fa"/>
       </div>
 
-      {/* Ranking por motoboy */}
-      {/* Legenda das estrelas */}
       <Card style={{marginBottom:16,background:"#0f172a"}}>
         <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📖 Significado das estrelas</div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -2416,7 +2322,6 @@ function Avaliacoes({ avaliacoes, motoboys }) {
         ))}
       </div>
 
-      {/* Lista de avaliações */}
       <div>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10,flexWrap:"wrap",gap:8}}>
           <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>📋 Todas as Avaliações</div>
@@ -2489,7 +2394,6 @@ function CorridasAtivas({ corridasAtivas }) {
   const aguardando = corridasAtivas.filter(p=>p.status==="aguardando");
   const emRota = corridasAtivas.filter(p=>p.status==="aceito"||p.status==="saiu_estabelecimento");
 
-  // Agrupa por corrida (mesmo motoboy pode estar levando até 3 pedidos juntos)
   const porCorrida = {};
   emRota.forEach(p=>{
     if (!porCorrida[p.corridaId]) porCorrida[p.corridaId] = [];
@@ -2599,11 +2503,9 @@ export default function App() {
   const [modalRejeitar, setModalRejeitar] = useState(null);
   const [motivoRejeicao, setMotivoRejeicao] = useState("");
 
-  // ── Carrega dados reais do Supabase ao iniciar ──
   useEffect(()=>{
     carregarTudo();
 
-    // Realtime — atualiza online dos motoboys em tempo real
     const canal = supabase
       .channel("motoboys-online")
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "motoboys" }, (payload) => {
@@ -2619,7 +2521,6 @@ export default function App() {
       })
       .subscribe();
 
-    // Polling de segurança a cada 10s — atualiza status online de todos os motoboys
     const pollingOnline = setInterval(async () => {
       const { data } = await supabase
         .from("motoboys")
@@ -2634,8 +2535,6 @@ export default function App() {
       }
     }, 10000);
 
-    // Realtime — atualiza o Histórico/Repasse automaticamente quando um pedido novo é
-    // criado, aceito, entregue ou cancelado, sem precisar clicar no botão 🔄 manualmente.
     const canalPedidos = supabase
       .channel("pedidos-mudancas")
       .on("postgres_changes", { event: "*", schema: "public", table: "pedidos" }, () => {
@@ -2643,8 +2542,6 @@ export default function App() {
       })
       .subscribe();
 
-    // Polling de segurança a cada 60s — garante que o histórico nunca fique desatualizado
-    // mesmo se o realtime cair por instabilidade de conexão.
     const pollingPedidos = setInterval(() => {
       carregarTudo(true);
     }, 60000);
@@ -2751,7 +2648,6 @@ export default function App() {
           }
           const taxaEmp = p.taxa_empresario || p.taxa || 0;
           const taxaMb  = p.taxa_motoboy || 0;
-          // lucro = o que você fica (diferença entre taxa do cliente e taxa do motoboy)
           const lucroEntrega = taxaEmp - taxaMb;
           return {
             id: p.id,
@@ -2776,7 +2672,6 @@ export default function App() {
           };
         });
 
-      // Verifica empresários com plano grátis vencido e atualiza banco automaticamente
       const hoje = dataLocalISO();
       const vencidos = emps.filter(e =>
         e.planoGratis && e.dataFimGratis && e.dataFimGratis !== "∞" && e.dataFimGratis < hoje
@@ -2787,14 +2682,12 @@ export default function App() {
           data_fim_gratis: null,
           mensalidade_paga: false,
         }).eq("id", emp.id);
-        // Atualiza localmente
         const idx = emps.findIndex(e => e.id === emp.id);
         if (idx >= 0) {
           emps[idx] = {...emps[idx], planoGratis: false, dataFimGratis: null, mensalidadePaga: false};
         }
       }
 
-      // Busca entregas do mês atual por empresário para régua de meta
       const inicioMesAtual = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
       const { data: entregasMesDB } = await supabase
         .from("pedidos")
@@ -2802,19 +2695,14 @@ export default function App() {
         .eq("status", "entregue")
         .gte("criado_em", inicioMesAtual);
 
-      // Conta entregas por empresário
       const contagemEntregas = {};
       (entregasMesDB || []).forEach(p => {
         if (!p.empresario_id) return;
         contagemEntregas[p.empresario_id] = (contagemEntregas[p.empresario_id] || 0) + 1;
       });
 
-      // Adiciona contagem nas empresas
       const empsComMeta = emps.map(e => ({...e, entregasMes: contagemEntregas[e.id] || 0}));
 
-      // Busca pedidos EM ANDAMENTO agora (aguardando aceite, aceito, ou já saiu pro cliente) —
-      // separado do histórico, que só tem entregue/cancelado. É isso que monta o painel de
-      // "corridas ativas", mostrando em tempo real qual motoboy está com o quê e pra quem.
       const { data: ativosDB } = await supabase
         .from("pedidos")
         .select("*, motoboys(nome_completo, telefone), empresarios(nome)")
@@ -2852,7 +2740,6 @@ export default function App() {
     if (aba==="pendentes") carregarPendentes();
   },[aba]);
 
-  // Polling de 30s — verifica novos cadastros automaticamente
   useEffect(()=>{
     const intervalo = setInterval(async ()=>{
       const [mb, emp] = await Promise.all([
@@ -2861,7 +2748,6 @@ export default function App() {
       ]);
       const totalNovo = (mb.data?.length||0) + (emp.data?.length||0);
       const totalAtual = pendentes.motoboys.length + pendentes.empresarios.length;
-      // Se chegou cadastro novo, recarrega e notifica
       if (totalNovo > totalAtual) {
         carregarPendentes();
       }
@@ -2884,7 +2770,6 @@ export default function App() {
 
   async function aprovar(tipo, id, userId) {
     await supabase.from(tipo).update({aprovado:true, aprovado_em: new Date().toISOString()}).eq("id", id);
-    // Confirma o e-mail automaticamente no Supabase — a pessoa não precisa clicar em link nenhum
     if (userId) {
       try {
         await fetch("/api/confirmar-email", {
