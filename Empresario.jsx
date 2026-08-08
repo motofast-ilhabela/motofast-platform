@@ -36,6 +36,15 @@ const PG = {
 const SUPORTE_TEL = "5512991213656";
 const SUPORTE_HORARIO = "Seg-Sex 9h-22h • Sáb 9h-19h • Dom/feriados: fechado";
 
+// Limite mensal de entregas grátis pra quem ainda não está em nenhum plano pago.
+// Zera sozinho todo mês, porque a contagem sempre filtra pelo mês calendário atual.
+const LIMITE_ENTREGAS_MES = 40;
+const PIX_MOTOFAST = {
+  chave: "bcdccace-30bb-43db-813a-881bc3977131",
+  nome: "Alessandro da Hora",
+  banco: "C6 Bank",
+};
+
 // Retorna a data no formato AAAA-MM-DD usando o horário LOCAL (Brasil), nunca UTC.
 // IMPORTANTE: nunca usar date.toISOString().split("T")[0] pra pegar "a data de hoje"
 // ou "a data de um pedido" — toISOString() converte pra UTC e desloca a data em
@@ -1042,7 +1051,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
 }
 
 // ─── PEDIDOS EM ANDAMENTO ─────────────────────────────────────────────────────
-function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, onRecarregar }) {
+function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, onRecarregar, limiteAtingido }) {
   const [tick, setTick] = useState(0);
   const [modalMapa, setModalMapa] = useState(null);
   const [modalAddCorrida, setModalAddCorrida] = useState(null); // {corridaId, motoboyNome, motoboyTel, vagaNum}
@@ -1111,6 +1120,14 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
   }
 
   async function adicionarPedidoCorrida(novoPedido) {
+    // Trava de segurança extra — igual a do publicarPedido — pra nunca deixar
+    // passar um pedido a mais depois que o limite mensal já bateu, mesmo que o
+    // modal tenha ficado aberto de antes do bloqueio aparecer.
+    if (limiteAtingido) {
+      alert(`🔒 Limite de ${LIMITE_ENTREGAS_MES} entregas do mês atingido. Vá na aba "Nova Entrega" pra ver como regularizar antes de adicionar mais pedidos.`);
+      setModalAddCorrida(null);
+      return;
+    }
     const { data: pedidoDB } = await supabase.from("pedidos").insert({
       empresario_id: empresa.id,
       motoboy_id: novoPedido.motoboyId,
@@ -1320,8 +1337,16 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
               </button>
             </div>
 
-            {/* Adicionar pedido extra à mesma corrida (máx 3) ou aviso de limite */}
-            {corrida.pedidos.length<3 ? (
+            {/* Adicionar pedido extra à mesma corrida (máx 3) ou aviso de limite —
+                também travado quando o estabelecimento já bateu o limite mensal de
+                entregas, exatamente como a aba "Nova Entrega". Sem essa checagem
+                aqui, dava pra "furar" o bloqueio adicionando pedidos numa corrida
+                já em andamento, sem precisar publicar um pedido novo do zero. */}
+            {limiteAtingido ? (
+              <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px"}}>
+                <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>🔒 Limite de {LIMITE_ENTREGAS_MES} entregas do mês atingido. Vá na aba "Nova Entrega" pra ver como regularizar.</div>
+              </div>
+            ) : corrida.pedidos.length<3 ? (
               <Btn small cor="azul" full onClick={()=>setModalAddCorrida({
                 corridaId: corrida.corridaId,
                 motoboyId: primeiro.motoboyId,
@@ -1947,9 +1972,51 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
   );
 }
 
+// ─── BLOQUEIO POR LIMITE DE 40 ENTREGAS/MÊS ──────────────────────────────────
+// Tela mostrada no lugar de "Nova Entrega" quando o estabelecimento não está em
+// nenhum plano pago (nem grátis, nem mensalidade em dia) e já bateu o limite
+// mensal. Pede pra escolher um dos dois planos e mandar o comprovante pro suporte.
+function BloqueioLimiteEntregas({ empresa }) {
+  return (
+    <Card style={{textAlign:"center",padding:"32px 24px",border:"1px solid #f59e0b"}}>
+      <div style={{fontSize:56,marginBottom:12}}>🔒</div>
+      <div style={{color:"#f59e0b",fontWeight:900,fontSize:22,marginBottom:10}}>
+        Limite de {LIMITE_ENTREGAS_MES} entregas atingido
+      </div>
+      <div style={{color:"#9ca3af",fontSize:14,lineHeight:1.7,marginBottom:20,textAlign:"left",maxWidth:480,margin:"0 auto 20px"}}>
+        Você já usou suas <strong style={{color:"#f9fafb"}}>{LIMITE_ENTREGAS_MES} entregas grátis</strong> este mês. Pra continuar solicitando motoboy, escolha um dos planos abaixo:
+      </div>
+      <div style={{display:"flex",gap:12,flexWrap:"wrap",justifyContent:"center",marginBottom:20}}>
+        <div style={{background:"#0f172a",border:"1px solid #34d399",borderRadius:12,padding:"16px 20px",flex:1,minWidth:180,maxWidth:220}}>
+          <div style={{color:"#34d399",fontWeight:900,fontSize:20}}>R$95</div>
+          <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>toda segunda-feira</div>
+        </div>
+        <div style={{background:"#0f172a",border:"1px solid #60a5fa",borderRadius:12,padding:"16px 20px",flex:1,minWidth:180,maxWidth:220}}>
+          <div style={{color:"#60a5fa",fontWeight:900,fontSize:20}}>R$380</div>
+          <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>uma vez por mês</div>
+        </div>
+      </div>
+      <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:10,padding:"16px 20px",marginBottom:20,textAlign:"left",maxWidth:420,margin:"0 auto 20px"}}>
+        <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>💠 Chave Pix pra pagamento</div>
+        <div style={{color:"#f9fafb",fontWeight:700,fontSize:14,wordBreak:"break-all"}}>{PIX_MOTOFAST.chave}</div>
+        <div style={{color:"#6b7280",fontSize:12,marginTop:6}}>{PIX_MOTOFAST.nome} — {PIX_MOTOFAST.banco}</div>
+      </div>
+      <div style={{color:"#9ca3af",fontSize:13,lineHeight:1.6,marginBottom:20}}>
+        Depois de escolher o plano e fazer o Pix, manda o comprovante pro suporte MotoFast — assim que recebermos, liberamos seu acesso com o plano certo.
+      </div>
+      <a href={`https://wa.me/${SUPORTE_TEL}?text=${encodeURIComponent(`Olá! Sou do estabelecimento ${empresa?.nome || ""} e atingi o limite de ${LIMITE_ENTREGAS_MES} entregas. Quero escolher um plano e mandar o comprovante do Pix.`)}`}
+        target="_blank" rel="noreferrer"
+        style={{display:"inline-flex",alignItems:"center",gap:8,background:"#10b981",borderRadius:10,padding:"14px 24px",textDecoration:"none",fontWeight:700,fontSize:15,color:"#fff"}}>
+        💬 Mandar comprovante pro suporte
+      </a>
+    </Card>
+  );
+}
+
 // ─── APP EMPRESÁRIO ───────────────────────────────────────────────────────────
 export default function AppEmpresario() {
   const [aba, setAba] = useState("nova");
+  const [entregasMesAtual, setEntregasMesAtual] = useState(0);
   const [clientes, setClientes] = useState([]);
   const [pedidos, setPedidos] = useState([]);
   const pedidosRef = useRef([]);
@@ -2032,6 +2099,7 @@ export default function AppEmpresario() {
 
           // Carrega pedidos ativos e recentes desse empresário, já com dados do motoboy
           await carregarPedidos(emp.id);
+          await carregarContagemMensal(emp.id);
 
           // Escuta mudanças em tempo real (quando o motoboy aceita, sai, entrega, cancela)
           canal = supabase
@@ -2066,6 +2134,12 @@ export default function AppEmpresario() {
           // de atualizar nada.
           const intervaloConfig = setInterval(()=>atualizarConfiguracoesEmpresa(emp.id), 30000);
           window.__motofastIntervaloConfig = intervaloConfig;
+
+          // Atualiza a contagem mensal de entregas também a cada 30s — assim, assim
+          // que a entrega de número 40 for concluída, a tela de bloqueio aparece
+          // sozinha na próxima tentativa de publicar, sem precisar recarregar a página.
+          const intervaloContagem = setInterval(()=>carregarContagemMensal(emp.id), 30000);
+          window.__motofastIntervaloContagem = intervaloContagem;
         }
       } catch (e) {
         console.error("Erro ao carregar dados do empresário:", e);
@@ -2078,6 +2152,7 @@ export default function AppEmpresario() {
       if (canal) supabase.removeChannel(canal);
       if (window.__motofastIntervalo) clearInterval(window.__motofastIntervalo);
       if (window.__motofastIntervaloConfig) clearInterval(window.__motofastIntervaloConfig);
+      if (window.__motofastIntervaloContagem) clearInterval(window.__motofastIntervaloContagem);
     };
   },[]);
 
@@ -2112,6 +2187,25 @@ export default function AppEmpresario() {
       taxaSemanalPagaEm: emp.taxa_semanal_paga_em || null,
       pagamentosSemanais: emp.pagamentos_semanais || {},
     }));
+  }
+
+  // Conta quantas entregas (só "entregue", cancelamento não conta) esse
+  // estabelecimento já fez NESTE mês calendário — reseta sozinho todo mês porque
+  // o filtro é sempre "desde o dia 1 do mês atual". Usada pra travar quem ainda
+  // não está em nenhum plano pago (nem grátis, nem mensalidade em dia) assim que
+  // bate o limite de LIMITE_ENTREGAS_MES.
+  async function carregarContagemMensal(empresaId) {
+    if (!empresaId) return;
+    const agora = new Date();
+    const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1).toISOString();
+    const { count, error } = await supabase
+      .from("pedidos")
+      .select("id", { count: "exact", head: true })
+      .eq("empresario_id", empresaId)
+      .eq("status", "entregue")
+      .gte("criado_em", inicioMes);
+    if (error) { console.error("Erro ao contar entregas do mês:", error); return; }
+    setEntregasMesAtual(count || 0);
   }
 
   async function carregarPedidos(empresaId) {
@@ -2274,6 +2368,14 @@ export default function AppEmpresario() {
       return;
     }
 
+    // Trava de segurança extra (a tela já esconde o formulário de Nova Entrega
+    // nesse caso, mas confere de novo aqui pra nunca deixar passar um pedido 41
+    // por engano, tipo se a aba ficou aberta desde antes do limite bater).
+    if (!empresa.planoGratis && !empresa.mensalidadePaga && entregasMesAtual >= LIMITE_ENTREGAS_MES) {
+      alert(`⛔ Você atingiu o limite de ${LIMITE_ENTREGAS_MES} entregas deste mês. Escolha um plano e envie o comprovante pro suporte MotoFast pra continuar solicitando motoboy.`);
+      return;
+    }
+
     // Salva o pedido no Supabase
     const { data: pedidoDB } = await supabase.from("pedidos").insert({
       empresario_id: empresa.id,
@@ -2306,6 +2408,10 @@ export default function AppEmpresario() {
     await carregarPedidos(empresa.id);
     setAba("ativos");
   }
+
+  // Calcula se esse estabelecimento está travado pelo limite mensal — só vale pra
+  // quem NÃO está em nenhum plano pago (nem grátis, nem mensalidade em dia).
+  const limiteAtingido = !empresa.planoGratis && !empresa.mensalidadePaga && entregasMesAtual >= LIMITE_ENTREGAS_MES;
 
   if (carregando) {
     return (
@@ -2392,8 +2498,10 @@ export default function AppEmpresario() {
 
       {/* Conteúdo */}
       <div style={{maxWidth:900,margin:"0 auto",padding:"24px 20px"}}>
-        {aba==="nova"      && <SolicitarEntrega clientes={clientes} setClientes={setClientes} onPublicar={publicarPedido} empresa={empresa}/>}
-        {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes} empresa={empresa} onRecarregar={()=>carregarPedidos(empresa.id)}/>}
+        {aba==="nova"      && (limiteAtingido
+          ? <BloqueioLimiteEntregas empresa={empresa}/>
+          : <SolicitarEntrega clientes={clientes} setClientes={setClientes} onPublicar={publicarPedido} empresa={empresa}/>)}
+        {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes} empresa={empresa} onRecarregar={()=>carregarPedidos(empresa.id)} limiteAtingido={limiteAtingido}/>}
         {aba==="historico" && <HistoricoEmp historico={historicoData} carregando={carregandoHistorico} mesSelecionado={mesHistorico} setMesSelecionado={setMesHistorico} mesesDisponiveis={gerarMesesDisponiveis()} empresa={empresa}/>}
         {aba==="clientes"  && <ClientesSalvos clientes={clientes} setClientes={setClientes} empresaId={empresa.id}/>}
       </div>
