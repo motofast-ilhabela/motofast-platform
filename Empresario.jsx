@@ -168,22 +168,41 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   // estranho, sem precisar pedir print de mapa pro empresário de novo.
   const [metodoCalculoKm, setMetodoCalculoKm] = useState(null);
 
-  // Fórmula final aprovada:
-  // CLIENTE — 1-2km: R$8 FIXO (não sobe nada dentro dessa faixa) · 3-5km: R$7 + R$2/km · 6km+: R$8 + R$2/km
-  // MOTOBOY — 1-2km: R$6,50 FIXO · 3-5km: R$5,60 + R$1,80/km · 6km+: R$6,30 + R$1,90/km
-  // Qualquer distância é SEMPRE arredondada pra cima, pro km cheio mais próximo
-  // (ex: 300m ou 1,9km contam como 1km) — garante que uma corrida curtinha nunca
-  // fique mais barata que a bandeirada mínima, cobrindo o custo do motoboy sair.
+  // Fórmula final aprovada — REVISADA em 08/08/2026 (teste em andamento, ver nota
+  // abaixo de como reverter):
+  // Tabela de faixas fixas até 10km, cada faixa cobrindo ~1km de "colchão" em volta
+  // do km cheio (ex: a faixa do "2km" vale de 1,51km a 2,50km) — isso evita que uma
+  // distância real tipo 1,2km ou 6,9km "salte" pro preço do km cheio seguinte, que
+  // estava deixando entregas mais longas caras demais (relatado pelos empresários
+  // Jrs Burguers e Casa Cardoso). Acima de 10km, volta pra fórmula antiga de sempre
+  // arredondar pro km cheio e subir R$2/km (cliente) e R$1,90/km (motoboy).
+  //
+  // PARA REVERTER pro sistema antigo (corte em 1km fixo, sobe km a km sem faixas
+  // largas), é só trocar o corpo desta função de volta para:
+  //   const kmArred = Math.max(1, Math.ceil(km));
+  //   if (kmArred === 1) return {e: 8, m: 6.50};
+  //   if (kmArred === 2) return {e: 10, m: 8.20};
+  //   let bandeiradaCliente, bandeiradaMotoboy, valorKmMotoboy;
+  //   if (kmArred <= 5) { bandeiradaCliente=7; bandeiradaMotoboy=5.60; valorKmMotoboy=1.80; }
+  //   else              { bandeiradaCliente=8; bandeiradaMotoboy=6.30; valorKmMotoboy=1.90; }
+  //   const valorKmCliente = 2;
+  //   const e = bandeiradaCliente + valorKmCliente*kmArred;
+  //   const m = bandeiradaMotoboy + valorKmMotoboy*kmArred;
+  //   return {e: +e.toFixed(2), m: +m.toFixed(2)};
   function calcularTaxaPorKm(km) {
-    const kmArred = Math.max(1, Math.ceil(km));
-    // Até 1km e de 1 a 2km agora são DUAS faixas fixas separadas (não uma só) —
-    // uma entrega bem curtinha (dentro do mesmo bairro) paga menos que uma que já
-    // atravessa pra outro bairro, mesmo as duas caindo dentro de até 2km de distância.
-    if (kmArred === 1) return {e: 8, m: 6.50};
-    if (kmArred === 2) return {e: 10, m: 8.20};
-    let bandeiradaCliente, bandeiradaMotoboy, valorKmMotoboy;
-    if (kmArred <= 5) { bandeiradaCliente=7; bandeiradaMotoboy=5.60; valorKmMotoboy=1.80; }
-    else              { bandeiradaCliente=8; bandeiradaMotoboy=6.30; valorKmMotoboy=1.90; }
+    if (km <= 1.5) return {e: 8,  m: 6.50};
+    if (km <= 2.5) return {e: 10, m: 8.20};
+    if (km <= 3.5) return {e: 13, m: 11.00};
+    if (km <= 4.5) return {e: 15, m: 12.80};
+    if (km <= 5.5) return {e: 17, m: 14.60};
+    if (km <= 6.5) return {e: 20, m: 17.70};
+    if (km <= 7.5) return {e: 20, m: 17.00};
+    if (km <= 8.5) return {e: 24, m: 21.50};
+    if (km <= 9.5) return {e: 23, m: 20.00};
+    if (km <= 10)  return {e: 28, m: 25.30};
+    // Acima de 10km: volta pra fórmula antiga, arredondando pro km cheio pra cima
+    const kmArred = Math.ceil(km);
+    const bandeiradaCliente = 8, bandeiradaMotoboy = 6.30, valorKmMotoboy = 1.90;
     const valorKmCliente = 2;
     const e = bandeiradaCliente + valorKmCliente*kmArred;
     const m = bandeiradaMotoboy + valorKmMotoboy*kmArred;
@@ -641,10 +660,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
 
   // ─── TAXA POR KM ──────────────────────────────────────────────────────────────
   // MESMA lógica do "Nova Entrega" — a taxa NUNCA é digitada manualmente, sempre
-  // calculada pela distância real. Faltava isso aqui antes, e por isso a tela pedia
-  // pra digitar o valor na mão quando o empresário adicionava um 2º/3º pedido na
-  // mesma corrida — o que abria brecha pra qualquer valor ser colocado, sem relação
-  // nenhuma com a distância de verdade.
+  // calculada pela distância real.
   const [distanciaKm, setDistanciaKm] = useState(null);
   const [calcKm, setCalcKm] = useState(false);
   const [taxaKm, setTaxaKm] = useState({e:0, m:0});
@@ -655,12 +671,19 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   const [metodoCalculoKm, setMetodoCalculoKm] = useState(null);
 
   function calcularTaxaPorKm(km) {
-    const kmArred = Math.max(1, Math.ceil(km));
-    if (kmArred === 1) return {e: 8, m: 6.50};
-    if (kmArred === 2) return {e: 10, m: 8.20};
-    let bandeiradaCliente, bandeiradaMotoboy, valorKmMotoboy;
-    if (kmArred <= 5) { bandeiradaCliente=7; bandeiradaMotoboy=5.60; valorKmMotoboy=1.80; }
-    else              { bandeiradaCliente=8; bandeiradaMotoboy=6.30; valorKmMotoboy=1.90; }
+    if (km <= 1.5) return {e: 8,  m: 6.50};
+    if (km <= 2.5) return {e: 10, m: 8.20};
+    if (km <= 3.5) return {e: 13, m: 11.00};
+    if (km <= 4.5) return {e: 15, m: 12.80};
+    if (km <= 5.5) return {e: 17, m: 14.60};
+    if (km <= 6.5) return {e: 20, m: 17.70};
+    if (km <= 7.5) return {e: 20, m: 17.00};
+    if (km <= 8.5) return {e: 24, m: 21.50};
+    if (km <= 9.5) return {e: 23, m: 20.00};
+    if (km <= 10)  return {e: 28, m: 25.30};
+    // Acima de 10km: volta pra fórmula antiga, arredondando pro km cheio pra cima
+    const kmArred = Math.ceil(km);
+    const bandeiradaCliente = 8, bandeiradaMotoboy = 6.30, valorKmMotoboy = 1.90;
     const valorKmCliente = 2;
     const e = bandeiradaCliente + valorKmCliente*kmArred;
     const m = bandeiradaMotoboy + valorKmMotoboy*kmArred;
