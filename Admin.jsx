@@ -589,6 +589,7 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
 // ─── MOTOBOYS ─────────────────────────────────────────────────────────────────
 function Motoboys({ motoboys, setMotoboys, historico }) {
   const [aba, setAba] = useState("ativos");
+  const [buscaMotoboy, setBuscaMotoboy] = useState("");
   const [detalhe, setDetalhe] = useState(null);
   const [modalCad, setModalCad] = useState(false);
   const [modalBanir, setModalBanir] = useState(null);
@@ -598,6 +599,9 @@ function Motoboys({ motoboys, setMotoboys, historico }) {
 
   const ativos  = motoboys.filter(m=>!m.banido);
   const banidos = motoboys.filter(m=>m.banido);
+  // Busca por nome tolerante a acento/maiúscula/espaço extra — mesmo padrão já
+  // usado na busca de Estabelecimentos, pra achar rápido mesmo com nomes parecidos.
+  const ativosFiltrados = ativos.filter(mb=>normalizarTexto(mb.nomeCompleto).includes(normalizarTexto(buscaMotoboy)));
 
   async function cadastrar() {
     if (!form.nomeCompleto.trim()) return;
@@ -675,13 +679,24 @@ function Motoboys({ motoboys, setMotoboys, historico }) {
         </div>
       </div>
 
+      <div style={{position:"relative",marginBottom:14}}>
+        <input value={buscaMotoboy} onChange={e=>setBuscaMotoboy(e.target.value)} placeholder="🔍 Buscar motoboy pelo nome..."
+          style={{background:"#0f172a",border:"1px solid #374151",borderRadius:10,color:"#f9fafb",padding:"11px 16px",width:"100%",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+      </div>
+
       {aba==="ativos" && ativos.length===0 && (
         <Card style={{textAlign:"center",padding:30}}>
           <div style={{color:"#4b5563",fontSize:14}}>Nenhum motoboy aprovado ainda.</div>
         </Card>
       )}
 
-      {aba==="ativos" && ativos.map(mb=>{
+      {aba==="ativos" && ativos.length>0 && ativosFiltrados.length===0 && (
+        <Card style={{textAlign:"center",padding:30}}>
+          <div style={{color:"#4b5563",fontSize:14}}>Nenhum motoboy encontrado com esse nome.</div>
+        </Card>
+      )}
+
+      {aba==="ativos" && ativosFiltrados.map(mb=>{
         const ents = historico.filter(e=>e.motoboyId===mb.id&&e.status==="Entregue");
         const entsMes = ents.filter(e=>e.mes===mesAtual);
         const saldo = ents.filter(e=>!e.repasePago).reduce((s,e)=>s+e.taxaMotoboy,0).toFixed(2);
