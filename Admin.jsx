@@ -587,7 +587,7 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
 }
 
 // ─── MOTOBOYS ─────────────────────────────────────────────────────────────────
-function Motoboys({ motoboys, setMotoboys, historico }) {
+function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
   const [aba, setAba] = useState("ativos");
   const [buscaMotoboy, setBuscaMotoboy] = useState("");
   const [detalhe, setDetalhe] = useState(null);
@@ -596,6 +596,12 @@ function Motoboys({ motoboys, setMotoboys, historico }) {
   const [motivo, setMotivo] = useState("");
   const FVAZIO = {nomeCompleto:"",tel:"",pix:"",bairroBase:BAIRROS[0],cpf:"",rg:"",nascimento:"",nomePai:"",nomeMae:"",endereco:""};
   const [form, setForm] = useState(FVAZIO);
+
+  // Toda vez que o botão "X banido(s)" do topo é clicado (o número muda), pula
+  // direto pra aba "Banidos" — mesmo se essa tela já estivesse aberta antes.
+  useEffect(()=>{
+    if (focoBanidos > 0) setAba("banidos");
+  }, [focoBanidos]);
 
   const ativos  = motoboys.filter(m=>!m.banido);
   const banidos = motoboys.filter(m=>m.banido);
@@ -871,9 +877,10 @@ function Motoboys({ motoboys, setMotoboys, historico }) {
 }
 
 // ─── ESTABELECIMENTOS ─────────────────────────────────────────────────────────
-function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, onRecarregar }) {
+function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, onRecarregar, focoBloqueados }) {
   const [sel, setSel] = useState(null);
   const [buscaEstab, setBuscaEstab] = useState("");
+  const [somenteBloqueados, setSomenteBloqueados] = useState(false);
   const [abaEmp, setAbaEmp] = useState("geral");
   const [taxasEdit, setTaxasEdit] = useState({});
   const [taxaSalva, setTaxaSalva] = useState(false);
@@ -890,6 +897,12 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   const FVAZIO = {nome:"",tel:"",bairro:"",planoPagamento:"semanal",planoPagamentoMotoboy:"diario",cnpj:"",nomeDono:"",telDono:"",nomeSocio:"",telSocio:"",enderecoEstab:"",horarioFuncionamento:""};
   const [form, setForm] = useState(FVAZIO);
   const [semanaPagDiaria, setSemanaPagDiaria] = useState("pendentes");
+
+  // Toda vez que o botão "X bloqueado(s)" do topo é clicado (o número muda),
+  // liga o filtro "só bloqueados" sozinho — mesmo se essa tela já estivesse aberta.
+  useEffect(()=>{
+    if (focoBloqueados > 0) setSomenteBloqueados(true);
+  }, [focoBloqueados]);
 
   const agora = new Date();
   const mesAtual = agora.getMonth()+1;
@@ -1165,6 +1178,12 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
 
   const bloqueados = empresarios.filter(e=>e.bloqueado).length;
   const inadimplentes = empresarios.filter(e=>!e.mensalidadePaga&&!e.planoGratis).length;
+  // Lista já com os dois filtros aplicados: nome (busca) + bloqueado (quando o
+  // filtro "só bloqueados" está ativo). Numa variável só, pra não repetir a
+  // mesma expressão de filtro em vários lugares do JSX abaixo.
+  const empresariosFiltrados = empresarios
+    .filter(emp=>normalizarTexto(emp.nome).includes(normalizarTexto(buscaEstab)))
+    .filter(emp=>!somenteBloqueados || emp.bloqueado);
 
   const hojeEhSegunda = new Date().getDay() === 1;
   const paraCobrar = empresarios.filter(e=>
@@ -1219,19 +1238,29 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
         <span style={{color:"#fbbf24",fontWeight:700,fontSize:13}}>🔒 Cobrança toda segunda · Bloqueio automático toda terça às 23h30 se não pagar · Mensalidade R${MENSALIDADE}/semana</span>
       </div>
 
+      {/* Chip do filtro "só bloqueados" — só aparece quando ativo, com botão pra limpar
+          e voltar a ver todos. Fica logo acima da lista, sem sumir do lugar do botão
+          que ativou ele (esse continua lá em cima, do lado de "Meu lucro"). */}
+      {somenteBloqueados && (
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",background:"#3d1010",border:"1px solid #ef4444",borderRadius:10,padding:"10px 16px",marginBottom:14}}>
+          <span style={{color:"#f87171",fontWeight:700,fontSize:13}}>⛔ Mostrando somente estabelecimentos bloqueados</span>
+          <button onClick={()=>setSomenteBloqueados(false)} style={{background:"#1f2937",border:"1px solid #374151",borderRadius:8,color:"#9ca3af",padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:700}}>✕ Ver todos</button>
+        </div>
+      )}
+
       {empresarios.length===0 && (
         <Card style={{textAlign:"center",padding:30}}>
           <div style={{color:"#4b5563",fontSize:14}}>Nenhum estabelecimento aprovado ainda.</div>
         </Card>
       )}
 
-      {empresarios.length>0 && empresarios.filter(emp=>normalizarTexto(emp.nome).includes(normalizarTexto(buscaEstab))).length===0 && (
+      {empresarios.length>0 && empresariosFiltrados.length===0 && (
         <Card style={{textAlign:"center",padding:30}}>
-          <div style={{color:"#4b5563",fontSize:14}}>Nenhum estabelecimento encontrado com esse nome.</div>
+          <div style={{color:"#4b5563",fontSize:14}}>{somenteBloqueados ? "Nenhum estabelecimento bloqueado no momento." : "Nenhum estabelecimento encontrado com esse nome."}</div>
         </Card>
       )}
 
-      {empresarios.filter(emp=>normalizarTexto(emp.nome).includes(normalizarTexto(buscaEstab))).map(emp=>{
+      {empresariosFiltrados.map(emp=>{
         const ts = totalSemana(emp);
         const motInad = motivoInadimplencia(emp);
         const borda = emp.bloqueado?"1px solid #ef4444":(motInad?"1px solid #f59e0b":"1px solid #1f2937");
@@ -2505,6 +2534,12 @@ function CorridasAtivas({ corridasAtivas }) {
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [aba, setAba] = useState("dashboard");
+  // Contadores "gatilho" — cada clique no badge "X bloqueado(s)" ou "X banido(s)"
+  // do topo incrementa esse número. Os componentes Estabelecimentos/Motoboys
+  // observam essa mudança pra ativar o filtro "só bloqueados/banidos" sozinhos,
+  // mesmo que a aba já estivesse aberta antes do clique.
+  const [focoBloqueadosEstab, setFocoBloqueadosEstab] = useState(0);
+  const [focoBanidosMb, setFocoBanidosMb] = useState(0);
   const [motoboys, setMotoboys]       = useState([]);
   const [empresarios, setEmpresarios] = useState([]);
   const [clientes, setClientes]       = useState([]);
@@ -2855,8 +2890,8 @@ export default function App() {
           </nav>
           <div style={{display:"flex",gap:8,padding:"8px 0",flexShrink:0}}>
             {+saldo>0 && <button onClick={()=>setAba("repasse")} style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#34d399",fontWeight:700,cursor:"pointer"}}>💰 Meu lucro: R${saldo}</button>}
-            {bloqueados>0 && <button onClick={()=>setAba("estabelecimentos")} style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#f87171",fontWeight:700,cursor:"pointer"}}>⛔ {bloqueados} bloqueado(s)</button>}
-            {banidos>0 && <button onClick={()=>setAba("motoboys")} style={{background:"#1f2937",border:"1px solid #6b7280",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#9ca3af",fontWeight:700,cursor:"pointer"}}>⛔ {banidos} banido(s)</button>}
+            {bloqueados>0 && <button onClick={()=>{setAba("estabelecimentos");setFocoBloqueadosEstab(x=>x+1);}} style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#f87171",fontWeight:700,cursor:"pointer"}}>⛔ {bloqueados} bloqueado(s)</button>}
+            {banidos>0 && <button onClick={()=>{setAba("motoboys");setFocoBanidosMb(x=>x+1);}} style={{background:"#1f2937",border:"1px solid #6b7280",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#9ca3af",fontWeight:700,cursor:"pointer"}}>⛔ {banidos} banido(s)</button>}
             <button onClick={async()=>{ await supabase.auth.signOut(); window.location.href = "/"; }}
               style={{background:"transparent",border:"1px solid #374151",color:"#9ca3af",padding:"6px 12px",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700}}>
               🚪 Sair
@@ -2971,8 +3006,8 @@ export default function App() {
         {aba==="dashboard" && <Dashboard historico={historico} motoboys={motoboys} empresarios={empresarios}/> }
         {aba==="corridas"         && <CorridasAtivas corridasAtivas={corridasAtivas}/>}
         {aba==="repasse"          && <Repasse historico={historico} setHistorico={setHistorico} motoboys={motoboys} empresarios={empresarios}/>}
-        {aba==="motoboys"         && <Motoboys motoboys={motoboys} setMotoboys={setMotoboys} historico={historico}/>}
-        {aba==="estabelecimentos" && <Estabelecimentos empresarios={empresarios} setEmpresarios={setEmpresarios} historico={historico} motoboys={motoboys} onRecarregar={carregarTudo}/>}
+        {aba==="motoboys"         && <Motoboys motoboys={motoboys} setMotoboys={setMotoboys} historico={historico} focoBanidos={focoBanidosMb}/>}
+        {aba==="estabelecimentos" && <Estabelecimentos empresarios={empresarios} setEmpresarios={setEmpresarios} historico={historico} motoboys={motoboys} onRecarregar={carregarTudo} focoBloqueados={focoBloqueadosEstab}/>}
         {aba==="clientes"         && <Clientes clientes={clientes} setClientes={setClientes} historico={historico} empresarios={empresarios}/>}
         {aba==="historico"        && <Historico historico={historico} motoboys={motoboys} empresarios={empresarios}/>}
         {aba==="avaliacoes"        && <Avaliacoes avaliacoes={avaliacoes} motoboys={motoboys}/>}
