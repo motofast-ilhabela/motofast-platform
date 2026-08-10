@@ -1601,13 +1601,19 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
   const todasEntregasCarregadas = semanaEntregasRaw;
   const planoSemanalEmp = empresa?.planoPagamentoMotoboy === "semanal";
   let entregasSemana, todasEntregasSemana, totalSemana;
+  // Semana REAL de hoje (segunda a domingo) — usada pra separar o que já é uma
+  // semana FECHADA (cobrável agora) do que ainda está em andamento (acumulando,
+  // só fecha e vira cobrança na próxima segunda-feira).
+  const segundaAtualEmpFixa = segundaFeiraDaSemana(new Date());
+  let porSemanaMapEmp = {};
+  let totalSemanasAnteriores = 0, semanasAnterioresPendentes = [];
+  let totalSemanaAtualBruto = 0, totalSemanaAtualPendente = 0;
   if (planoSemanalEmp) {
     // Plano SEMANAL: cada semana guarda o VALOR JÁ PAGO (não só sim/não) — soma só o
     // que ainda falta de cada semana, cobrindo TODAS as semanas já registradas, não
     // só a selecionada. Isso também cobre adiantamento parcial (ex: empresário pagou
     // só parte do valor no meio da semana).
     todasEntregasSemana = todasEntregasCarregadas;
-    const porSemanaMapEmp = {};
     todasEntregasCarregadas.forEach(e=>{
       const semanaDaEntrega = segundaFeiraDaSemana(new Date(e.dataISO+"T12:00:00"));
       if (!porSemanaMapEmp[semanaDaEntrega]) porSemanaMapEmp[semanaDaEntrega] = 0;
@@ -1621,6 +1627,17 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
       const pago = empresa?.pagamentosSemanais?.[semana] || 0;
       return s + Math.max(0, total-pago);
     }, 0);
+    // Separa: semanas ANTERIORES já fechadas (cobrável agora de verdade) vs a
+    // semana ATUAL em andamento (só acumulando, não vence ainda — vence só na
+    // próxima segunda, quando ela mesma virar "anterior").
+    semanasAnterioresPendentes = entregasSemana.filter(([semana])=>semana < segundaAtualEmpFixa);
+    totalSemanasAnteriores = semanasAnterioresPendentes.reduce((s,[semana,total])=>{
+      const pago = empresa?.pagamentosSemanais?.[semana] || 0;
+      return s + Math.max(0, total-pago);
+    }, 0);
+    totalSemanaAtualBruto = porSemanaMapEmp[segundaAtualEmpFixa] || 0;
+    const pagoSemanaAtualEmp = empresa?.pagamentosSemanais?.[segundaAtualEmpFixa] || 0;
+    totalSemanaAtualPendente = Math.max(0, totalSemanaAtualBruto - pagoSemanaAtualEmp);
   } else {
     // Plano DIÁRIO: cada dia é marcado como pago individualmente — soma TUDO que
     // ainda está pendente, de qualquer semana dentro dos últimos 120 dias, não só a
@@ -1686,23 +1703,71 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
         )}
       </Card>
 
-      {/* Total PENDENTE — agora vale pros dois planos: soma TUDO que ainda não foi
-          pago, de qualquer dia ou semana (não só o período selecionado), pra nunca
-          "esconder" uma pendência antiga esquecida. Busca direto do banco (veja o
-          useEffect acima), então nunca vem incompleto, não importa qual mês está
-          selecionado no filtro de período lá em cima. */}
-      <Card style={{marginBottom:14,background:"#0d2a4a",border:"1px solid #60a5fa"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>📆 Falta repassar (tudo pendente)</div>
-          {carregandoSemana && <span style={{color:"#6b7280",fontSize:11}}>⏳</span>}
-        </div>
-        <div style={{color:totalSemana>0?"#60a5fa":"#34d399",fontSize:32,fontWeight:900}}>R${totalSemana.toFixed(2)}</div>
-        {totalSemana>0 ? (
-          <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{planoSemanalEmp ? `${entregasSemana.length} semana(s) com saldo pendente` : `${entregasSemana.length} entrega${entregasSemana.length!==1?"s":""} ainda pendente${entregasSemana.length!==1?"s":""} no total`}</div>
-        ) : (
-          <div style={{color:"#34d399",fontSize:12,marginTop:2}}>✅ {todasEntregasSemana.length>0 ? "Tudo pago" : "Nenhuma entrega registrada"}</div>
-        )}
-      </Card>
+      {/* Total PENDENTE — pro plano DIÁRIO continua igual (um valor só, soma tudo
+          não pago). Pro plano SEMANAL, agora aparece SEPARADO: o que já é uma
+          semana fechada (cobrável agora de verdade) fica num card, e o que ainda
+          está acumulando na semana atual (só vence quando ela virar semana
+          anterior, na próxima segunda) fica em outro — pra nunca mais confundir
+          o empresário achando que precisa pagar algo que ainda nem venceu. */}
+      {planoSemanalEmp ? (
+        <>
+          {/* Este card resumo só aparece se realmente tiver alguma semana fechada
+              pendente — se estiver tudo pago, ele simplesmente some da tela, pra
+              não poluir com um "R$0,00 tudo pago" que não ajuda em nada. */}
+          {totalSemanasAnteriores>0 && (
+            <Card style={{marginBottom:14,background:"#0d2a4a",border:"1px solid #60a5fa"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>📆 Falta pagar (semana(s) já fechada(s))</div>
+                {carregandoSemana && <span style={{color:"#6b7280",fontSize:11}}>⏳</span>}
+              </div>
+              <div style={{color:"#60a5fa",fontSize:32,fontWeight:900}}>R${totalSemanasAnteriores.toFixed(2)}</div>
+              <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{semanasAnterioresPendentes.length} semana(s) já encerrada(s) com saldo pendente — pode pagar agora</div>
+            </Card>
+          )}
+
+          {/* Lista de cada semana anterior pendente, com as datas exatas, igual
+              o Admin já vê do lado dele — evita qualquer dúvida de "qual semana é essa". */}
+          {semanasAnterioresPendentes.length>0 && (
+            <Card style={{marginBottom:14}}>
+              <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📅 Semanas anteriores pendentes</div>
+              {semanasAnterioresPendentes.map(([semana,total])=>{
+                const pago = empresa?.pagamentosSemanais?.[semana] || 0;
+                const pendente = Math.max(0, total-pago);
+                const fimDaSemana = (()=>{ const d=new Date(semana+"T12:00:00"); d.setDate(d.getDate()+6); return dataLocalISO(d); })();
+                return (
+                  <div key={semana} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0f172a",border:"1px solid #1f2937",borderRadius:8,padding:"9px 14px",marginBottom:6,flexWrap:"wrap",gap:6}}>
+                    <span style={{color:"#d1d5db",fontSize:13,fontWeight:600}}>{fmtDiaMesCurto(semana)} a {fmtDiaMesCurto(fimDaSemana)}</span>
+                    <span style={{color:"#60a5fa",fontWeight:700,fontSize:14}}>R${pendente.toFixed(2)}</span>
+                    <Tag label="⏳ Pendente" cor="#fbbf24"/>
+                  </div>
+                );
+              })}
+            </Card>
+          )}
+
+          {/* Semana atual — só acumulando, nunca é cobrada ainda. Some sozinha
+              dessa "categoria" e vira uma semana anterior automaticamente assim
+              que a segunda-feira seguinte chegar. */}
+          <Card style={{marginBottom:14,background:"#1a1000",border:"1px solid #f59e0b"}}>
+            <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>🕐 Semana atual — em andamento (ainda não vence)</div>
+            <div style={{color:"#fbbf24",fontSize:32,fontWeight:900}}>R${totalSemanaAtualPendente.toFixed(2)}</div>
+            <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>Acumulando desde {fmtDiaMesCurto(segundaAtualEmpFixa)} — só vira cobrança na próxima segunda-feira</div>
+          </Card>
+        </>
+      ) : (
+        <Card style={{marginBottom:14,background:"#0d2a4a",border:"1px solid #60a5fa"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>📆 Falta repassar (tudo pendente)</div>
+            {carregandoSemana && <span style={{color:"#6b7280",fontSize:11}}>⏳</span>}
+          </div>
+          <div style={{color:totalSemana>0?"#60a5fa":"#34d399",fontSize:32,fontWeight:900}}>R${totalSemana.toFixed(2)}</div>
+          {totalSemana>0 ? (
+            <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasSemana.length} entrega{entregasSemana.length!==1?"s":""} ainda pendente{entregasSemana.length!==1?"s":""} no total</div>
+          ) : (
+            <div style={{color:"#34d399",fontSize:12,marginTop:2}}>✅ {todasEntregasSemana.length>0 ? "Tudo pago" : "Nenhuma entrega registrada"}</div>
+          )}
+        </Card>
+      )}
 
       {/* Lista das entregas do dia selecionado — cliente, bairro e valor */}
       {entregasDia.length>0 && (
