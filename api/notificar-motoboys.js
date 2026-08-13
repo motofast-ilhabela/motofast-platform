@@ -41,6 +41,18 @@ export default async function handler(req, res) {
       }),
     });
     const data = await response.json();
+
+    // LOG DE DIAGNÓSTICO — mostra SEMPRE a resposta completa do OneSignal no
+    // painel de Logs do Vercel, mesmo quando o status HTTP volta 200 (sucesso).
+    // Isso é essencial porque o OneSignal pode aceitar o pedido (200 OK) e ainda
+    // assim reportar 0 destinatários reais (campo "recipients") — nesse caso, a
+    // chamada "funciona" tecnicamente, mas nenhuma notificação de verdade sai.
+    console.log("[notificar-motoboys] Resposta completa do OneSignal:", JSON.stringify(data));
+    console.log(`[notificar-motoboys] Destinatários alcançados (recipients): ${data.recipients ?? "não informado"}`);
+    if (data.errors) {
+      console.error("[notificar-motoboys] OneSignal retornou erros mesmo com status 200:", JSON.stringify(data.errors));
+    }
+
     if (!response.ok) {
       console.error("Erro ao enviar notificação OneSignal:", data);
       return res.status(response.status).json({ error: data });
