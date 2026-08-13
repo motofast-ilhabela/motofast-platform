@@ -952,6 +952,33 @@ export default function AppMotoboy() {
   // pra esconder o mesmo pedido da tela dele por 1 minuto depois da recusa,
   // mesmo que ele continue "aguardando" no banco pra outros motoboys aceitarem.
   const recusadosRef = useRef({});
+  // Estado da permissão de notificação — usado pra mostrar (ou esconder) o botão
+  // "Ativar Notificações". No iPhone, pedir a permissão escondida dentro do
+  // carregamento automático quase nunca funciona (a Apple exige que o pedido
+  // aconteça bem na hora de um toque do dedo do motoboy na tela) — por isso
+  // existe esse botão manual, além da tentativa automática (que continua
+  // existindo, e funciona bem no Android).
+  const [permissaoNotificacao, setPermissaoNotificacao] = useState(()=>{
+    try { return ("Notification" in window) ? Notification.permission : "unsupported"; }
+    catch(e) { return "unsupported"; }
+  });
+
+  // Chamado direto por um clique do motoboy — precisa rodar exatamente na hora
+  // do toque, sem nenhuma etapa async no meio, pra o iPhone aceitar mostrar a
+  // telinha de permissão de verdade (diferente do pedido automático no login,
+  // que passa por várias etapas assíncronas antes e o iPhone acaba ignorando).
+  function ativarNotificacoesAgora() {
+    try {
+      if (window.OneSignalDeferred) {
+        window.OneSignalDeferred.push(async function(OneSignal) {
+          await OneSignal.Notifications.requestPermission();
+          try { setPermissaoNotificacao(Notification.permission); } catch(e) {}
+        });
+      } else if ("Notification" in window) {
+        Notification.requestPermission().then(p=>setPermissaoNotificacao(p));
+      }
+    } catch(e) { console.log("Erro ao pedir permissão manualmente:", e); }
+  }
 
   // Carrega o motoboy logado e busca pedidos reais
   useEffect(()=>{
@@ -1434,6 +1461,26 @@ export default function AppMotoboy() {
         {/* HOME */}
         {aba==="home" && (
           <div>
+            {/* Aviso pra ativar notificações — bem visível, no topo de tudo.
+                Só aparece se a permissão AINDA não foi concedida. Some sozinho
+                assim que o motoboy tocar e aceitar. Essencial principalmente no
+                iPhone, onde o pedido automático de permissão quase nunca funciona
+                — precisa ser um toque direto do motoboy pra Apple liberar. */}
+            {permissaoNotificacao!=="granted" && permissaoNotificacao!=="unsupported" && (
+              <Card style={{marginBottom:14,background:"#3d2a00",border:"2px solid #f59e0b"}}>
+                <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                  <div style={{fontSize:32}}>🔔</div>
+                  <div style={{flex:1,minWidth:180}}>
+                    <div style={{color:"#fbbf24",fontWeight:800,fontSize:15}}>Ative as notificações</div>
+                    <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>Sem isso, você só recebe pedido com o app aberto na tela. Toque no botão abaixo e depois em "Permitir".</div>
+                  </div>
+                </div>
+                <button onClick={ativarNotificacoesAgora} style={{marginTop:10,width:"100%",padding:"12px",borderRadius:10,background:"#f59e0b",border:"none",color:"#000",fontWeight:900,fontSize:15,cursor:"pointer"}}>
+                  🔔 Ativar Notificações Agora
+                </button>
+              </Card>
+            )}
+
             {/* Status card */}
             <Card style={{marginBottom:14,background:online?"#0d2a1e":"#1a1a1a",border:online?"1px solid #34d399":"1px solid #374151"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
