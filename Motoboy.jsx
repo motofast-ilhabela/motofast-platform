@@ -139,6 +139,10 @@ const SONS = {
 const TEMPO_PEDIDO = 30;       // segundos por rodada
 const INTERVALO_SOM = 5;       // toca a cada 5 segundos dentro da rodada
 const MAX_TENTATIVAS = 10;     // 10 rodadas × 30s = 5 minutos
+// Depois que o motoboy recusa um pedido, ele fica "escondido" da tela dele por esse
+// tempo — evita o pedido "voltar rápido demais" e parecer que nada aconteceu.
+// Se ninguém mais aceitar dentro desse tempo, o pedido volta a aparecer pra ele também.
+const TEMPO_COOLDOWN_RECUSA_MS = 60 * 1000; // 1 minuto
 const SUPORTE_TEL = "5512991213656"; // troque pelo seu WhatsApp
 const SUPORTE_HORARIO = "Seg-Sex 9h-22h • Sáb 9h-19h • Dom/feriados: fechado";
 
@@ -944,6 +948,10 @@ export default function AppMotoboy() {
   const [carregando, setCarregando] = useState(true);
   const tentativas = useRef(0);
   const pedidoRef = useRef(null);
+  // Guarda, por pedido, o horário (em ms) em que ESTE motoboy recusou — usado
+  // pra esconder o mesmo pedido da tela dele por 1 minuto depois da recusa,
+  // mesmo que ele continue "aguardando" no banco pra outros motoboys aceitarem.
+  const recusadosRef = useRef({});
 
   // Carrega o motoboy logado e busca pedidos reais
   useEffect(()=>{
@@ -1109,27 +1117,48 @@ export default function AppMotoboy() {
         return;
       }
 
+      // Busca até 10 pedidos aguardando (não só 1) — assim, se o primeiro da fila
+      // for exatamente o que ESTE motoboy acabou de recusar (ainda dentro da
+      // janela de 1 minuto de cooldown), dá pra pular ele e mostrar o próximo,
+      // em vez de simplesmente não achar nada.
       const { data } = await supabase
         .from("pedidos")
         .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
         .eq("status", "aguardando")
         .order("criado_em", { ascending: true })
-        .limit(1)
-        .maybeSingle();
+        .limit(10);
 
-      if (data && !pedidoRef.current) {
+      if (!data || data.length === 0) return;
+
+      // Limpa do "cache" de recusados qualquer entrada já vencida (mais de 1 min) —
+      // mantém o objeto pequeno e evita guardar lixo pra sempre.
+      const agora = Date.now();
+      Object.keys(recusadosRef.current).forEach(id=>{
+        if (agora - recusadosRef.current[id] >= TEMPO_COOLDOWN_RECUSA_MS) {
+          delete recusadosRef.current[id];
+        }
+      });
+
+      // Acha o primeiro pedido da fila que este motoboy NÃO recusou recentemente
+      const candidato = data.find(p=>{
+        const recusadoEm = recusadosRef.current[p.id];
+        return !recusadoEm || (agora - recusadoEm >= TEMPO_COOLDOWN_RECUSA_MS);
+      });
+      if (!candidato) return; // todos os pedidos disponíveis foram recusados recentemente por ele
+
+      if (candidato && !pedidoRef.current) {
         const novoPedido = {
-          id: data.id,
-          empresaNome: data.empresarios?.nome || "Estabelecimento",
-          empresaTel: data.empresarios?.telefone || "",
-          empresaEndereco: data.empresarios?.endereco_estabelecimento || "",
-          clienteNome: data.cliente_nome,
-          clienteTel: data.cliente_telefone,
-          rua: data.rua, num: data.numero,
-          bairro: data.bairro, ref: data.referencia,
-          pagamento: data.forma_pagamento, taxa: data.taxa_motoboy || data.taxa, obs: data.observacao,
-          valorPedido: data.valor_pedido, valorReceber: data.valor_receber, troco: data.valor_troco,
-          criadoEm: new Date(data.criado_em).getTime(),
+          id: candidato.id,
+          empresaNome: candidato.empresarios?.nome || "Estabelecimento",
+          empresaTel: candidato.empresarios?.telefone || "",
+          empresaEndereco: candidato.empresarios?.endereco_estabelecimento || "",
+          clienteNome: candidato.cliente_nome,
+          clienteTel: candidato.cliente_telefone,
+          rua: candidato.rua, num: candidato.numero,
+          bairro: candidato.bairro, ref: candidato.referencia,
+          pagamento: candidato.forma_pagamento, taxa: candidato.taxa_motoboy || candidato.taxa, obs: candidato.observacao,
+          valorPedido: candidato.valor_pedido, valorReceber: candidato.valor_receber, troco: candidato.valor_troco,
+          criadoEm: new Date(candidato.criado_em).getTime(),
         };
         pedidoRef.current = novoPedido;
         setPedidoDisponivel(novoPedido);
@@ -1294,7 +1323,15 @@ export default function AppMotoboy() {
     setAba("corrida");
   }
 
-  function recusar() { setPedidoDisponivel(null); pedidoRef.current = null; tentativas.current = 0; }
+  function recusar() {
+    // Marca AGORA como o horário de recusa desse pedido específico por ESTE
+    // motoboy — o pedido some da tela dele e não volta a aparecer por 1 minuto,
+    // mesmo que ele continue "aguardando" no banco pra outros motoboys.
+    if (pedidoDisponivel) {
+      recusadosRef.current[pedidoDisponivel.id] = Date.now();
+    }
+    setPedidoDisponivel(null); pedidoRef.current = null; tentativas.current = 0;
+  }
 
   async function finalizarCorrida() {
     if (!corridaAtiva) return;
