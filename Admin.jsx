@@ -2422,8 +2422,9 @@ function Avaliacoes({ avaliacoes, motoboys }) {
 }
 
 // ─── CORRIDAS ATIVAS ──────────────────────────────────────────────────────────
-function CorridasAtivas({ corridasAtivas }) {
+function CorridasAtivas({ corridasAtivas, onRecarregar }) {
   const [tick, setTick] = useState(0);
+  const [reenviando, setReenviando] = useState(null); // id do pedido sendo processado
   useEffect(()=>{
     const t = setInterval(()=>setTick(x=>x+1), 1000);
     return ()=>clearInterval(t);
@@ -2433,6 +2434,30 @@ function CorridasAtivas({ corridasAtivas }) {
     const s = Math.max(0, Math.floor(ms/1000));
     const m = Math.floor(s/60), r = s%60;
     return m>0?`${m}m ${r}s`:`${r}s`;
+  }
+
+  // Uso: quando um motoboy aceita por engano e pede pra trocar. Devolve o pedido
+  // pra fila ("aguardando") SEM apagar nem mudar nenhum dado do cliente/endereço/
+  // valor — o empresário não recebe alerta de cancelamento nenhum, só volta a ver
+  // o pedido como "Aguardando motoboy" (do jeito que já era antes de alguém aceitar).
+  // O criado_em é atualizado pra AGORA de propósito — isso reinicia o relógio de
+  // 5 minutos do lado do empresário (senão ele veria o aviso de "sem motoboy"
+  // quase na hora, já que o pedido tecnicamente já está "velho") e também faz o
+  // pedido entrar na fila de forma justa, atrás de quem já estava esperando.
+  async function reenviarPedidoParaFila(pedidoId, motoboyNome) {
+    if (!window.confirm(`Confirma? "${motoboyNome}" vai perder essa entrega e ela volta a tocar pra todos os motoboys online. Os dados do cliente continuam exatamente os mesmos — o empresário não vai ver nenhum alerta.`)) return;
+    setReenviando(pedidoId);
+    const { error } = await supabase.from("pedidos").update({
+      status: "aguardando",
+      motoboy_id: null,
+      corrida_id: null,
+      aceito_em: null,
+      saiu_estabelecimento_em: null,
+      criado_em: new Date().toISOString(),
+    }).eq("id", pedidoId);
+    setReenviando(null);
+    if (error) { alert("❌ Erro ao reenviar: " + error.message); return; }
+    if (onRecarregar) await onRecarregar();
   }
 
   const aguardando = corridasAtivas.filter(p=>p.status==="aguardando");
@@ -2512,6 +2537,13 @@ function CorridasAtivas({ corridasAtivas }) {
                       </div>
                       <Tag label={p.status==="saiu_estabelecimento"?"🚀 A caminho do cliente":"📦 Buscando no estabelecimento"} cor={p.status==="saiu_estabelecimento"?"#34d399":"#60a5fa"}/>
                     </div>
+                    {/* Uso raro — só quando o motoboy pediu pra trocar (ex: aceitou
+                        por engano). Fica discreto de propósito, dentro de cada
+                        pedido individual, pra não ser confundido com uma ação comum. */}
+                    <button onClick={()=>reenviarPedidoParaFila(p.id, primeiro.motoboyNome)} disabled={reenviando===p.id}
+                      style={{marginTop:8,width:"100%",padding:"7px",borderRadius:6,background:"#1a1a2e",border:"1px dashed #4b5563",color:"#6b7280",fontWeight:700,fontSize:11,cursor:reenviando===p.id?"not-allowed":"pointer",opacity:reenviando===p.id?0.5:1}}>
+                      {reenviando===p.id ? "Reenviando..." : "🔄 Motoboy pediu pra trocar — devolver pra fila"}
+                    </button>
                   </div>
                 ))}
                 {primeiro.motoboyTel && (
@@ -3004,7 +3036,7 @@ export default function App() {
         )}
 
         {aba==="dashboard" && <Dashboard historico={historico} motoboys={motoboys} empresarios={empresarios}/> }
-        {aba==="corridas"         && <CorridasAtivas corridasAtivas={corridasAtivas}/>}
+        {aba==="corridas"         && <CorridasAtivas corridasAtivas={corridasAtivas} onRecarregar={carregarTudo}/>}
         {aba==="repasse"          && <Repasse historico={historico} setHistorico={setHistorico} motoboys={motoboys} empresarios={empresarios}/>}
         {aba==="motoboys"         && <Motoboys motoboys={motoboys} setMotoboys={setMotoboys} historico={historico} focoBanidos={focoBanidosMb}/>}
         {aba==="estabelecimentos" && <Estabelecimentos empresarios={empresarios} setEmpresarios={setEmpresarios} historico={historico} motoboys={motoboys} onRecarregar={carregarTudo} focoBloqueados={focoBloqueadosEstab}/>}
