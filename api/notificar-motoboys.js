@@ -24,7 +24,14 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         app_id: APP_ID,
-        included_segments: ["Subscribed Users"],
+        // CORRIGIDO em 13/08/2026: o nome de segmento "Subscribed Users" não
+        // existe mais nesta conta do OneSignal (contas mais novas usam nomes
+        // diferentes para os segmentos padrão) — por isso 0 notificações
+        // estavam saindo, mesmo com o pedido sendo aceito com sucesso (200).
+        // "Total Subscriptions" é o nome interno correto, correspondente ao
+        // segmento "Total de assinaturas" (marcado como Padrão no painel),
+        // que inclui TODOS os inscritos, sem filtro de atividade recente.
+        included_segments: ["Total Subscriptions"],
         headings: { en: titulo },
         contents: { en: corpo },
         url: "https://motofast-platform.vercel.app/motoboy",
