@@ -936,35 +936,35 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   const [taxaKmReg, setTaxaKmReg] = useState({e:0, m:0});
   const [erroCalculoReg, setErroCalculoReg] = useState(false);
 
-  // Fórmula por km — REVISADA em 08/08/2026 (mesma tabela de faixas fixas aplicada
-  // no Empresario.jsx). PARA REVERTER pro sistema antigo, troca o corpo desta
-  // função de volta pela versão anterior (corte em 1km fixo, subindo km a km):
-  //   const kmArred = Math.max(1, Math.ceil(km));
-  //   if (kmArred === 1) return {e: 8, m: 6.50};
-  //   if (kmArred === 2) return {e: 10, m: 8.20};
-  //   let bandeiradaCliente, bandeiradaMotoboy, valorKmMotoboy;
-  //   if (kmArred <= 5) { bandeiradaCliente=7; bandeiradaMotoboy=5.60; valorKmMotoboy=1.80; }
-  //   else              { bandeiradaCliente=8; bandeiradaMotoboy=6.30; valorKmMotoboy=1.90; }
-  //   const valorKmCliente = 2;
-  //   const e = bandeiradaCliente + valorKmCliente*kmArred;
-  //   const m = bandeiradaMotoboy + valorKmMotoboy*kmArred;
-  //   return {e: +e.toFixed(2), m: +m.toFixed(2)};
+  // Fórmula por porcentagem — mesma lógica do Empresario.jsx (ver comentário
+  // completo lá): Alessandro fica com 23% de cada entrega, motoboy recebe os
+  // outros 77%, nunca menos que o piso de R$6,50. O valor do cliente (e) continua
+  // vindo da mesma tabela de faixas por distância de antes.
+  //
+  // PARA REVERTER pro modelo de valor fixo por faixa (o que rodava até
+  // 12/08/2026), troca a linha "const m = ..." pelos valores fixos, por faixa:
+  //   até 1,5km: m=6.50 · 1,51-2,5km: m=8.20 · 2,51-3,5km: m=11.00 · 3,51-4,5km: m=12.80
+  //   4,51-5,5km: m=14.60 · 5,51-6,5km: m=17.70 · 6,51-7,5km: m=17.00 · 7,51-8,5km: m=21.50
+  //   8,51-9,5km: m=20.00 · 9,51-10km: m=25.30 · acima de 10km: m = 6.30 + 1.90*kmArred
   function calcularTaxaPorKmReg(km) {
-    if (km <= 1.5) return {e: 8,  m: 6.50};
-    if (km <= 2.5) return {e: 10, m: 8.20};
-    if (km <= 3.5) return {e: 13, m: 11.00};
-    if (km <= 4.5) return {e: 15, m: 12.80};
-    if (km <= 5.5) return {e: 17, m: 14.60};
-    if (km <= 6.5) return {e: 20, m: 17.70};
-    if (km <= 7.5) return {e: 20, m: 17.00};
-    if (km <= 8.5) return {e: 24, m: 21.50};
-    if (km <= 9.5) return {e: 23, m: 20.00};
-    if (km <= 10)  return {e: 28, m: 25.30};
-    const kmArred = Math.ceil(km);
-    const bandeiradaCliente = 8, bandeiradaMotoboy = 6.30, valorKmMotoboy = 1.90;
-    const valorKmCliente = 2;
-    const e = bandeiradaCliente + valorKmCliente*kmArred;
-    const m = bandeiradaMotoboy + valorKmMotoboy*kmArred;
+    const PISO_MOTOBOY = 6.50;
+    const MARGEM_ADMIN_PCT = 0.23;
+    let e;
+    if (km <= 1.5) e = 8;
+    else if (km <= 2.5) e = 10;
+    else if (km <= 3.5) e = 13;
+    else if (km <= 4.5) e = 15;
+    else if (km <= 5.5) e = 17;
+    else if (km <= 6.5) e = 20;
+    else if (km <= 7.5) e = 20;
+    else if (km <= 8.5) e = 24;
+    else if (km <= 9.5) e = 23;
+    else if (km <= 10) e = 28;
+    else {
+      const kmArred = Math.ceil(km);
+      e = 8 + 2*kmArred;
+    }
+    const m = Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
     return {e: +e.toFixed(2), m: +m.toFixed(2)};
   }
 

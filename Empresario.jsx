@@ -177,44 +177,42 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   // estranho, sem precisar pedir print de mapa pro empresário de novo.
   const [metodoCalculoKm, setMetodoCalculoKm] = useState(null);
 
-  // Fórmula final aprovada — REVISADA em 08/08/2026 (teste em andamento, ver nota
-  // abaixo de como reverter):
-  // Tabela de faixas fixas até 10km, cada faixa cobrindo ~1km de "colchão" em volta
-  // do km cheio (ex: a faixa do "2km" vale de 1,51km a 2,50km) — isso evita que uma
-  // distância real tipo 1,2km ou 6,9km "salte" pro preço do km cheio seguinte, que
-  // estava deixando entregas mais longas caras demais (relatado pelos empresários
-  // Jrs Burguers e Casa Cardoso). Acima de 10km, volta pra fórmula antiga de sempre
-  // arredondar pro km cheio e subir R$2/km (cliente) e R$1,90/km (motoboy).
+  // Fórmula final aprovada — TESTE iniciado em 13/08/2026: mudou de "valor fixo por
+  // faixa de km" pra "porcentagem sobre o valor cobrado do cliente". Alessandro fica
+  // com 23% de cada entrega; o motoboy recebe os outros 77%, NUNCA menos que o piso
+  // de R$6,50 (esse piso é o que garante que entregas curtas continuem pagando pelo
+  // menos o mesmo mínimo que o iFood paga por rota).
   //
-  // PARA REVERTER pro sistema antigo (corte em 1km fixo, sobe km a km sem faixas
-  // largas), é só trocar o corpo desta função de volta para:
-  //   const kmArred = Math.max(1, Math.ceil(km));
-  //   if (kmArred === 1) return {e: 8, m: 6.50};
-  //   if (kmArred === 2) return {e: 10, m: 8.20};
-  //   let bandeiradaCliente, bandeiradaMotoboy, valorKmMotoboy;
-  //   if (kmArred <= 5) { bandeiradaCliente=7; bandeiradaMotoboy=5.60; valorKmMotoboy=1.80; }
-  //   else              { bandeiradaCliente=8; bandeiradaMotoboy=6.30; valorKmMotoboy=1.90; }
-  //   const valorKmCliente = 2;
-  //   const e = bandeiradaCliente + valorKmCliente*kmArred;
-  //   const m = bandeiradaMotoboy + valorKmMotoboy*kmArred;
-  //   return {e: +e.toFixed(2), m: +m.toFixed(2)};
+  // O valor que o CLIENTE paga (e) continua vindo da mesma tabela de faixas por
+  // distância de antes — só mudou como o motoboy (m) é calculado em cima desse "e".
+  //
+  // PARA REVERTER pro modelo de valor fixo por faixa (o que estava rodando até
+  // 12/08/2026), troca a linha "const m = ..." por estes valores fixos, por faixa,
+  // no lugar de calcular a porcentagem:
+  //   até 1,5km: m=6.50 · 1,51-2,5km: m=8.20 · 2,51-3,5km: m=11.00 · 3,51-4,5km: m=12.80
+  //   4,51-5,5km: m=14.60 · 5,51-6,5km: m=17.70 · 6,51-7,5km: m=17.00 · 7,51-8,5km: m=21.50
+  //   8,51-9,5km: m=20.00 · 9,51-10km: m=25.30 · acima de 10km: m = 6.30 + 1.90*kmArred
   function calcularTaxaPorKm(km) {
-    if (km <= 1.5) return {e: 8,  m: 6.50};
-    if (km <= 2.5) return {e: 10, m: 8.20};
-    if (km <= 3.5) return {e: 13, m: 11.00};
-    if (km <= 4.5) return {e: 15, m: 12.80};
-    if (km <= 5.5) return {e: 17, m: 14.60};
-    if (km <= 6.5) return {e: 20, m: 17.70};
-    if (km <= 7.5) return {e: 20, m: 17.00};
-    if (km <= 8.5) return {e: 24, m: 21.50};
-    if (km <= 9.5) return {e: 23, m: 20.00};
-    if (km <= 10)  return {e: 28, m: 25.30};
-    // Acima de 10km: volta pra fórmula antiga, arredondando pro km cheio pra cima
-    const kmArred = Math.ceil(km);
-    const bandeiradaCliente = 8, bandeiradaMotoboy = 6.30, valorKmMotoboy = 1.90;
-    const valorKmCliente = 2;
-    const e = bandeiradaCliente + valorKmCliente*kmArred;
-    const m = bandeiradaMotoboy + valorKmMotoboy*kmArred;
+    const PISO_MOTOBOY = 6.50; // motoboy nunca recebe menos que isso, não importa a %
+    const MARGEM_ADMIN_PCT = 0.23; // 23% fica com a MotoFast
+    let e;
+    if (km <= 1.5) e = 8;
+    else if (km <= 2.5) e = 10;
+    else if (km <= 3.5) e = 13;
+    else if (km <= 4.5) e = 15;
+    else if (km <= 5.5) e = 17;
+    else if (km <= 6.5) e = 20;
+    else if (km <= 7.5) e = 20;
+    else if (km <= 8.5) e = 24;
+    else if (km <= 9.5) e = 23;
+    else if (km <= 10) e = 28;
+    else {
+      // Acima de 10km: mesma fórmula de sempre pro valor do cliente, arredondando
+      // pro km cheio pra cima.
+      const kmArred = Math.ceil(km);
+      e = 8 + 2*kmArred;
+    }
+    const m = Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
     return {e: +e.toFixed(2), m: +m.toFixed(2)};
   }
 
@@ -679,23 +677,27 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   // estranho, sem precisar pedir print de mapa pro empresário de novo.
   const [metodoCalculoKm, setMetodoCalculoKm] = useState(null);
 
+  // Mesma fórmula por porcentagem da tela de Nova Entrega (ver comentário completo
+  // lá) — 23% de margem, motoboy nunca abaixo do piso de R$6,50.
   function calcularTaxaPorKm(km) {
-    if (km <= 1.5) return {e: 8,  m: 6.50};
-    if (km <= 2.5) return {e: 10, m: 8.20};
-    if (km <= 3.5) return {e: 13, m: 11.00};
-    if (km <= 4.5) return {e: 15, m: 12.80};
-    if (km <= 5.5) return {e: 17, m: 14.60};
-    if (km <= 6.5) return {e: 20, m: 17.70};
-    if (km <= 7.5) return {e: 20, m: 17.00};
-    if (km <= 8.5) return {e: 24, m: 21.50};
-    if (km <= 9.5) return {e: 23, m: 20.00};
-    if (km <= 10)  return {e: 28, m: 25.30};
-    // Acima de 10km: volta pra fórmula antiga, arredondando pro km cheio pra cima
-    const kmArred = Math.ceil(km);
-    const bandeiradaCliente = 8, bandeiradaMotoboy = 6.30, valorKmMotoboy = 1.90;
-    const valorKmCliente = 2;
-    const e = bandeiradaCliente + valorKmCliente*kmArred;
-    const m = bandeiradaMotoboy + valorKmMotoboy*kmArred;
+    const PISO_MOTOBOY = 6.50;
+    const MARGEM_ADMIN_PCT = 0.23;
+    let e;
+    if (km <= 1.5) e = 8;
+    else if (km <= 2.5) e = 10;
+    else if (km <= 3.5) e = 13;
+    else if (km <= 4.5) e = 15;
+    else if (km <= 5.5) e = 17;
+    else if (km <= 6.5) e = 20;
+    else if (km <= 7.5) e = 20;
+    else if (km <= 8.5) e = 24;
+    else if (km <= 9.5) e = 23;
+    else if (km <= 10) e = 28;
+    else {
+      const kmArred = Math.ceil(km);
+      e = 8 + 2*kmArred;
+    }
+    const m = Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
     return {e: +e.toFixed(2), m: +m.toFixed(2)};
   }
 
