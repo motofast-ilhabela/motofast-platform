@@ -2624,9 +2624,13 @@ export default function App() {
       })
       .subscribe();
 
+    // Reduzido de 60s pra 10s (13/08/2026) — o tempo real (canalPedidos acima)
+    // deveria mostrar mudanças instantaneamente, mas quando ele falha por
+    // instabilidade, esse verificador é quem garante a atualização. 60s estava
+    // gerando demora perceptível na tela de Corridas Ativas.
     const pollingPedidos = setInterval(() => {
       carregarTudo(true);
-    }, 60000);
+    }, 10000);
 
     return () => {
       supabase.removeChannel(canal);
