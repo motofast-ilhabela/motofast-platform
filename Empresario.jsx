@@ -212,7 +212,13 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       const kmArred = Math.ceil(km);
       e = 8 + 2*kmArred;
     }
-    const m = Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
+    // Ajuste específico pedido em 14/08/2026: na faixa 1,51-2,5km (e=10), R$7,70
+    // pro motoboy (23%) estava pouco pra rodar de um bairro pro outro — nessa
+    // faixa específica, ele recebe R$8,50 fixo (85% / margem de 15% só aqui).
+    // Todas as outras faixas continuam em 23%.
+    const m = (e === 10)
+      ? 8.50
+      : Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
     return {e: +e.toFixed(2), m: +m.toFixed(2)};
   }
 
@@ -697,7 +703,11 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       const kmArred = Math.ceil(km);
       e = 8 + 2*kmArred;
     }
-    const m = Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
+    // Mesmo ajuste da tela de Nova Entrega: faixa e=10 (1,51-2,5km) recebe
+    // R$8,50 fixo pro motoboy, em vez dos 23% padrão.
+    const m = (e === 10)
+      ? 8.50
+      : Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
     return {e: +e.toFixed(2), m: +m.toFixed(2)};
   }
 

@@ -964,7 +964,11 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
       const kmArred = Math.ceil(km);
       e = 8 + 2*kmArred;
     }
-    const m = Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
+    // Mesmo ajuste do Empresario.jsx: faixa e=10 (1,51-2,5km) recebe R$8,50
+    // fixo pro motoboy, em vez dos 23% padrão (pedido em 14/08/2026).
+    const m = (e === 10)
+      ? 8.50
+      : Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
     return {e: +e.toFixed(2), m: +m.toFixed(2)};
   }
 
