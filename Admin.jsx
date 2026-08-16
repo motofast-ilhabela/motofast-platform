@@ -947,7 +947,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   //   4,51-5,5km: m=14.60 · 5,51-6,5km: m=17.70 · 6,51-7,5km: m=17.00 · 7,51-8,5km: m=21.50
   //   8,51-9,5km: m=20.00 · 9,51-10km: m=25.30 · acima de 10km: m = 6.30 + 1.90*kmArred
   function calcularTaxaPorKmReg(km) {
-    const PISO_MOTOBOY = 6.50;
+    const PISO_MOTOBOY = 7.00; // atualizado 14/08/2026, era 6.50
     const MARGEM_ADMIN_PCT = 0.23;
     let e;
     if (km <= 1.5) e = 8;
