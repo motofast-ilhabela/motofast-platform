@@ -236,7 +236,7 @@ function Dashboard({ historico, motoboys, empresarios }) {
               <div style={{width:28,height:28,borderRadius:"50%",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:800,fontSize:13,background:i===0?"#f59e0b":i===1?"#9ca3af":i===2?"#b45309":"#1f2937",color:i<3?"#000":"#6b7280"}}>{i+1}</div>
               <div style={{flex:1}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <span style={{color:"#f9fafb",fontSize:13,fontWeight:700}}>{mb.nomeCompleto.split(" ").slice(0,2).join(" ")}</span>
+                  <span style={{color:"#f9fafb",fontSize:13,fontWeight:700}}>{mb.nomeCompleto}</span>
                   <span style={{color:"#60a5fa",fontSize:13,fontWeight:700}}>{mb.qtd}</span>
                 </div>
                 <Bar val={mb.qtd} max={maxQ} cor={i===0?"#f59e0b":"#34d399"}/>
@@ -421,7 +421,7 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
             <Card key={mb.id} style={{marginBottom:10}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
                 <div>
-                  <div style={{color:"#f9fafb",fontWeight:800,fontSize:15}}>{mb.nomeCompleto.split(" ").slice(0,2).join(" ")}</div>
+                  <div style={{color:"#f9fafb",fontWeight:800,fontSize:15}}>{mb.nomeCompleto}</div>
                   <div style={{color:"#6b7280",fontSize:12}}>PIX: {mb.pix}</div>
                   <div style={{color:"#9ca3af",fontSize:12}}>{mb.qtd} entrega{mb.qtd!==1?"s":""}</div>
                 </div>
@@ -2215,7 +2215,7 @@ function Historico({ historico, motoboys, empresarios }) {
           </select>
           <select value={filtroMb} onChange={e=>setFiltroMb(e.target.value)} style={ss}>
             <option value="Todos">Todos motoboys</option>
-            {motoboys.filter(m=>!m.banido).map(m=><option key={m.id} value={String(m.id)}>{m.nomeCompleto.split(" ")[0]}</option>)}
+            {motoboys.filter(m=>!m.banido).map(m=><option key={m.id} value={String(m.id)}>{m.nomeCompleto}</option>)}
           </select>
         </div>
       </div>
@@ -2249,7 +2249,7 @@ function Historico({ historico, motoboys, empresarios }) {
                     <td style={{padding:"8px 12px",color:"#f9fafb",fontWeight:600}}>{e.clienteNome}</td>
                     <td style={{padding:"8px 12px",color:"#34d399"}}>{e.bairro}</td>
                     <td style={{padding:"8px 12px",color:"#a78bfa"}} title={e.metodoCalculoKm||"Sem registro do método de cálculo"}>{e.distanciaKm?`${e.distanciaKm}km`:"—"}</td>
-                    <td style={{padding:"8px 12px",color:"#d1d5db"}}>{mb?.nomeCompleto?.split(" ")[0]||"—"}</td>
+                    <td style={{padding:"8px 12px",color:"#d1d5db"}}>{mb?.nomeCompleto||"—"}</td>
                     <td style={{padding:"8px 12px",color:"#d1d5db",fontSize:11}}>{emp?.nome?.split(" ").slice(0,2).join(" ")||"—"}</td>
                     <td style={{padding:"8px 12px"}}><span style={{color:pg.cor,fontWeight:700}}>{pg.icon}</span></td>
                     <td style={{padding:"8px 12px",color:"#60a5fa",fontWeight:700}}>R${e.taxaEmpresario}</td>
@@ -2377,7 +2377,7 @@ function Avaliacoes({ avaliacoes, motoboys }) {
             style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"6px 10px",fontSize:12}}>
             <option value="Todos">Todos os motoboys</option>
             {motoboys.filter(m=>!m.banido).map(m=>(
-              <option key={m.id} value={m.nomeCompleto}>{m.nomeCompleto.split(" ")[0]}</option>
+              <option key={m.id} value={m.nomeCompleto}>{m.nomeCompleto}</option>
             ))}
           </select>
         </div>
