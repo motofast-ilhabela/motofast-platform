@@ -7,6 +7,12 @@ const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov"
 const MENSALIDADE = 95;
 const PG = { pix:{label:"Pix",icon:"💠",cor:"#34d399"}, dinheiro:{label:"Dinheiro",icon:"💵",cor:"#fbbf24"}, cartao:{label:"Cartão",icon:"💳",cor:"#60a5fa"} };
 
+// Bairros com preço FIXO especial, independente da distância calculada por km —
+// mesma lista do Empresario.jsx (ver comentário completo lá).
+const BAIRROS_TAXA_FIXA_KM = {
+  "pacuiba": {e: 30, m: 25},
+};
+
 // Retorna a data no formato AAAA-MM-DD usando o horário LOCAL (Brasil), nunca UTC.
 // IMPORTANTE: nunca usar date.toISOString().split("T")[0] para pegar "a data de hoje"
 // ou "a data de um pedido" — toISOString() converte pra UTC e desloca a data em
@@ -946,7 +952,10 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   //   até 1,5km: m=6.50 · 1,51-2,5km: m=8.20 · 2,51-3,5km: m=11.00 · 3,51-4,5km: m=12.80
   //   4,51-5,5km: m=14.60 · 5,51-6,5km: m=17.70 · 6,51-7,5km: m=17.00 · 7,51-8,5km: m=21.50
   //   8,51-9,5km: m=20.00 · 9,51-10km: m=25.30 · acima de 10km: m = 6.30 + 1.90*kmArred
-  function calcularTaxaPorKmReg(km) {
+  function calcularTaxaPorKmReg(km, bairro) {
+    const overrideBairro = BAIRROS_TAXA_FIXA_KM[normalizarTexto(bairro || "")];
+    if (overrideBairro) return {e: overrideBairro.e, m: overrideBairro.m};
+
     const PISO_MOTOBOY = 7.00; // atualizado 14/08/2026, era 6.50
     const MARGEM_ADMIN_PCT = 0.23;
     let e;
@@ -1001,7 +1010,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
         const data = await resp.json();
         if (!cancelado && data.ok) {
           setDistanciaKmReg(data.km.toFixed(1));
-          setTaxaKmReg(calcularTaxaPorKmReg(data.km));
+          setTaxaKmReg(calcularTaxaPorKmReg(data.km, bairro));
         } else if (!cancelado) {
           const resp2 = await fetch("/api/calcular-distancia", {
             method: "POST", headers: {"Content-Type":"application/json"},
@@ -1010,7 +1019,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
           const data2 = await resp2.json();
           if (!cancelado && data2.ok) {
             setDistanciaKmReg(data2.km.toFixed(1));
-            setTaxaKmReg(calcularTaxaPorKmReg(data2.km));
+            setTaxaKmReg(calcularTaxaPorKmReg(data2.km, bairro));
           } else if (!cancelado) {
             setDistanciaKmReg(null); setErroCalculoReg(true);
           }
@@ -2498,7 +2507,7 @@ function CorridasAtivas({ corridasAtivas, onRecarregar }) {
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
                 <div>
                   <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{p.clienteNome}</div>
-                  <div style={{color:"#6b7280",fontSize:12}}>🏪 {p.empresaNome} · 📍 {p.bairro}</div>
+                  <div style={{color:"#6b7280",fontSize:12}}>🏪 {p.empresaNome} · 📍 {p.bairro}{p.distanciaKm ? ` · 🛣️ ${p.distanciaKm}km` : ""}</div>
                 </div>
                 <div style={{textAlign:"right"}}>
                   <Tag label="⏳ Ninguém aceitou ainda" cor="#fbbf24"/>
@@ -2537,7 +2546,7 @@ function CorridasAtivas({ corridasAtivas, onRecarregar }) {
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
                       <div>
                         <span style={{color:"#60a5fa",fontSize:11,fontWeight:700}}>#{i+1} — {p.clienteNome}</span>
-                        <div style={{color:"#6b7280",fontSize:11,marginTop:1}}>🏪 {p.empresaNome} · 📍 {p.bairro}</div>
+                        <div style={{color:"#6b7280",fontSize:11,marginTop:1}}>🏪 {p.empresaNome} · 📍 {p.bairro}{p.distanciaKm ? ` · 🛣️ ${p.distanciaKm}km` : ""}</div>
                       </div>
                       <Tag label={p.status==="saiu_estabelecimento"?"🚀 A caminho do cliente":"📦 Buscando no estabelecimento"} cor={p.status==="saiu_estabelecimento"?"#34d399":"#60a5fa"}/>
                     </div>
@@ -2805,6 +2814,7 @@ export default function App() {
         status: p.status,
         clienteNome: p.cliente_nome || "",
         bairro: p.bairro || "",
+        distanciaKm: p.distancia_km || null,
         motoboyId: p.motoboy_id,
         motoboyNome: p.motoboys?.nome_completo || null,
         motoboyTel: p.motoboys?.telefone || null,

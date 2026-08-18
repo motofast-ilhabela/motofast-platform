@@ -32,6 +32,16 @@ const PG = {
   cartao:   { label:"Cartão",   icon:"💳", cor:"#60a5fa" },
 };
 
+// Bairros com preço FIXO especial, independente da distância calculada por km —
+// usado quando um bairro específico precisa de valor diferente do que a fórmula
+// por km daria (ex: bairro muito longe, comparação sempre sem acento/maiúscula
+// via normalizarTexto, então funciona não importa como foi digitado o bairro).
+// Pedido em 14/08/2026: Pacuíba estava saindo R$23 pela fórmula, mas o mínimo
+// real pra esse bairro é R$30 (motoboy R$25, lucro R$5).
+const BAIRROS_TAXA_FIXA_KM = {
+  "pacuiba": {e: 30, m: 25},
+};
+
 
 const SUPORTE_TEL = "5512991213656";
 const SUPORTE_HORARIO = "Seg-Sex 9h-22h • Sáb 9h-19h • Dom/feriados: fechado";
@@ -192,7 +202,12 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   //   até 1,5km: m=6.50 · 1,51-2,5km: m=8.20 · 2,51-3,5km: m=11.00 · 3,51-4,5km: m=12.80
   //   4,51-5,5km: m=14.60 · 5,51-6,5km: m=17.70 · 6,51-7,5km: m=17.00 · 7,51-8,5km: m=21.50
   //   8,51-9,5km: m=20.00 · 9,51-10km: m=25.30 · acima de 10km: m = 6.30 + 1.90*kmArred
-  function calcularTaxaPorKm(km) {
+  function calcularTaxaPorKm(km, bairro) {
+    // Bairro com preço fixo especial (ver BAIRROS_TAXA_FIXA_KM lá em cima) — se
+    // bater, ignora toda a fórmula por km e usa o valor fixo direto.
+    const overrideBairro = BAIRROS_TAXA_FIXA_KM[normalizarTexto(bairro || "")];
+    if (overrideBairro) return {e: overrideBairro.e, m: overrideBairro.m};
+
     const PISO_MOTOBOY = 7.00; // motoboy nunca recebe menos que isso, não importa a % (atualizado 14/08/2026, era 6.50)
     const MARGEM_ADMIN_PCT = 0.23; // 23% fica com a MotoFast
     let e;
@@ -272,7 +287,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
 
         if (!cancelado && data.ok) {
           setDistanciaKm(data.km.toFixed(1));
-          setTaxaKm(calcularTaxaPorKm(data.km));
+          setTaxaKm(calcularTaxaPorKm(data.km, bairro));
           setMetodoCalculoKm("Google Maps — endereço completo");
           return;
         }
@@ -289,7 +304,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
           const data2 = await resp2.json();
           if (!cancelado && data2.ok) {
             setDistanciaKm(data2.km.toFixed(1));
-            setTaxaKm(calcularTaxaPorKm(data2.km));
+            setTaxaKm(calcularTaxaPorKm(data2.km, bairro));
             setMetodoCalculoKm("Google Maps — bairro (endereço específico não encontrado)");
           } else if (!cancelado) {
             setDistanciaKm(null);
@@ -685,7 +700,10 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
 
   // Mesma fórmula por porcentagem da tela de Nova Entrega (ver comentário completo
   // lá) — 23% de margem, motoboy nunca abaixo do piso de R$6,50.
-  function calcularTaxaPorKm(km) {
+  function calcularTaxaPorKm(km, bairro) {
+    const overrideBairro = BAIRROS_TAXA_FIXA_KM[normalizarTexto(bairro || "")];
+    if (overrideBairro) return {e: overrideBairro.e, m: overrideBairro.m};
+
     const PISO_MOTOBOY = 7.00; // atualizado 14/08/2026, era 6.50
     const MARGEM_ADMIN_PCT = 0.23;
     let e;
@@ -749,7 +767,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
 
         if (!cancelado && data.ok) {
           setDistanciaKm(data.km.toFixed(1));
-          setTaxaKm(calcularTaxaPorKm(data.km));
+          setTaxaKm(calcularTaxaPorKm(data.km, bairro));
           setMetodoCalculoKm("Google Maps — endereço completo");
           return;
         }
@@ -764,7 +782,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
           const data2 = await resp2.json();
           if (!cancelado && data2.ok) {
             setDistanciaKm(data2.km.toFixed(1));
-            setTaxaKm(calcularTaxaPorKm(data2.km));
+            setTaxaKm(calcularTaxaPorKm(data2.km, bairro));
             setMetodoCalculoKm("Google Maps — bairro (endereço específico não encontrado)");
           } else if (!cancelado) {
             setDistanciaKm(null);
