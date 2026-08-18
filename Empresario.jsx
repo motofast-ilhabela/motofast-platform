@@ -1752,6 +1752,7 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
               </div>
               <div style={{color:"#60a5fa",fontSize:32,fontWeight:900}}>R${totalSemanasAnteriores.toFixed(2)}</div>
               <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{semanasAnterioresPendentes.length} semana(s) já encerrada(s) com saldo pendente — pode pagar agora</div>
+              <CartaoPix/>
             </Card>
           )}
 
@@ -1796,6 +1797,7 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
           ) : (
             <div style={{color:"#34d399",fontSize:12,marginTop:2}}>✅ {todasEntregasSemana.length>0 ? "Tudo pago" : "Nenhuma entrega registrada"}</div>
           )}
+          {totalSemana>0 && <CartaoPix/>}
         </Card>
       )}
 
@@ -2071,6 +2073,33 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
 // Tela mostrada no lugar de "Nova Entrega" quando o estabelecimento não está em
 // nenhum plano pago (nem grátis, nem mensalidade em dia) e já bateu o limite
 // mensal. Pede pra escolher um dos dois planos e mandar o comprovante pro suporte.
+// ─── CARTÃO DE PAGAMENTO PIX (copiar/colar rápido) ────────────────────────────
+// Mostra a chave PIX da MotoFast com um botão "Copiar", pra o empresário nunca
+// mais precisar pedir a chave por WhatsApp — ela já fica ali do lado do valor
+// que ele deve, tanto no card semanal quanto no diário.
+function CartaoPix() {
+  const [copiado, setCopiado] = useState(false);
+  function copiar() {
+    navigator.clipboard.writeText(PIX_MOTOFAST.chave)
+      .then(()=>{ setCopiado(true); setTimeout(()=>setCopiado(false), 2500); })
+      .catch(()=>{});
+  }
+  return (
+    <div style={{background:"#0f172a",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px",marginTop:10}}>
+      <div style={{color:"#9ca3af",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>💠 Pagar com Pix</div>
+      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:160}}>
+          <div style={{color:"#f9fafb",fontWeight:700,fontSize:12,wordBreak:"break-all"}}>{PIX_MOTOFAST.chave}</div>
+          <div style={{color:"#6b7280",fontSize:11,marginTop:2}}>{PIX_MOTOFAST.nome} — {PIX_MOTOFAST.banco}</div>
+        </div>
+        <button onClick={copiar} style={{background:copiado?"#0d3d2e":"#10b981",border:"none",borderRadius:6,color:"#fff",padding:"7px 14px",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
+          {copiado ? "✅ Copiado!" : "📋 Copiar chave"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function BloqueioLimiteEntregas({ empresa }) {
   return (
     <Card style={{textAlign:"center",padding:"32px 24px",border:"1px solid #f59e0b"}}>
