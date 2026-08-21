@@ -943,7 +943,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   const [erroCalculoReg, setErroCalculoReg] = useState(false);
 
   // Fórmula por porcentagem — mesma lógica do Empresario.jsx (ver comentário
-  // completo lá): Alessandro fica com 23% de cada entrega, motoboy recebe os
+  // completo lá): Alessandro fica com 21% de cada entrega, motoboy recebe os
   // outros 77%, nunca menos que o piso de R$6,50. O valor do cliente (e) continua
   // vindo da mesma tabela de faixas por distância de antes.
   //
@@ -957,7 +957,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
     if (overrideBairro) return {e: overrideBairro.e, m: overrideBairro.m};
 
     const PISO_MOTOBOY = 7.00; // atualizado 14/08/2026, era 6.50
-    const MARGEM_ADMIN_PCT = 0.23;
+    const MARGEM_ADMIN_PCT = 0.21; // atualizado 19/08/2026, era 0.23
     let e;
     if (km <= 1.5) e = 8;
     else if (km <= 2.5) e = 10;
@@ -974,7 +974,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
       e = 8 + 2*kmArred;
     }
     // Mesmo ajuste do Empresario.jsx: faixa e=10 (1,51-2,5km) recebe R$8,50
-    // fixo pro motoboy, em vez dos 23% padrão (pedido em 14/08/2026).
+    // fixo pro motoboy, em vez dos 21% padrão (pedido em 14/08/2026).
     const m = (e === 10)
       ? 8.50
       : Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
