@@ -212,7 +212,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
     const MARGEM_ADMIN_PCT = 0.20; // atualizado 22/08/2026, era 0.21 (20% fica com a MotoFast)
     let e;
     if (km <= 1.5) e = 8;
-    else if (km <= 2.5) e = 10;
+    else if (km <= 2.5) e = 11;
     else if (km <= 3.5) e = 13;
     else if (km <= 4.5) e = 15;
     else if (km <= 5.5) e = 17;
@@ -227,12 +227,15 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       const kmArred = Math.ceil(km);
       e = 8 + 2*kmArred;
     }
-    // Ajuste específico pedido em 14/08/2026: na faixa 1,51-2,5km (e=10), R$7,70
-    // pro motoboy (padrão) estava pouco pra rodar de um bairro pro outro — nessa
-    // faixa específica, ele recebe R$8,50 fixo (85% / margem de 15% só aqui).
-    // Todas as outras faixas continuam na margem padrão (20%).
-    const m = (e === 10)
-      ? 8.50
+    // Ajuste específico pedido em 14/08/2026: na faixa 1,51-2,5km, R$7,70 pro
+    // motoboy (padrão) estava pouco pra rodar de um bairro pro outro — nessa
+    // faixa específica, ele recebe valor fixo em vez da margem padrão (20%).
+    // Atualizado em 22/08/2026: R$8,50 subiu pra R$9,00 (motoboy ainda não
+    // estava aceitando essa faixa) E o valor do cliente subiu de R$10 pra R$11
+    // (era e===10, agora e===11) — margem da MotoFast passa de R$1 pra R$2
+    // nessa faixa, teste pra ver se resolve o problema de aceite.
+    const m = (e === 11)
+      ? 9.00
       : Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
     return {e: +e.toFixed(2), m: +m.toFixed(2)};
   }
@@ -708,7 +711,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
     const MARGEM_ADMIN_PCT = 0.20; // atualizado 22/08/2026, era 0.21
     let e;
     if (km <= 1.5) e = 8;
-    else if (km <= 2.5) e = 10;
+    else if (km <= 2.5) e = 11;
     else if (km <= 3.5) e = 13;
     else if (km <= 4.5) e = 15;
     else if (km <= 5.5) e = 17;
@@ -721,10 +724,12 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       const kmArred = Math.ceil(km);
       e = 8 + 2*kmArred;
     }
-    // Mesmo ajuste da tela de Nova Entrega: faixa e=10 (1,51-2,5km) recebe
-    // R$8,50 fixo pro motoboy, em vez dos 20% padrão.
-    const m = (e === 10)
-      ? 8.50
+    // Mesmo ajuste da tela de Nova Entrega: faixa 1,51-2,5km recebe R$9,00
+    // fixo pro motoboy, em vez dos 20% padrão (atualizado 22/08/2026 — valor
+    // do cliente subiu de R$10 pra R$11, motoboy segue com R$9,00 fixo,
+    // margem da MotoFast passa de R$1 pra R$2 nessa faixa).
+    const m = (e === 11)
+      ? 9.00
       : Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
     return {e: +e.toFixed(2), m: +m.toFixed(2)};
   }
