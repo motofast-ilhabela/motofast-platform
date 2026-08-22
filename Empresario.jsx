@@ -189,8 +189,8 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
 
   // Fórmula final aprovada — TESTE iniciado em 13/08/2026: mudou de "valor fixo por
   // faixa de km" pra "porcentagem sobre o valor cobrado do cliente". Alessandro fica
-  // com 21% de cada entrega; o motoboy recebe os outros 77%, NUNCA menos que o piso
-  // de R$6,50 (esse piso é o que garante que entregas curtas continuem pagando pelo
+  // com 20% de cada entrega; o motoboy recebe os outros 80%, NUNCA menos que o piso
+  // de R$7,00 (esse piso é o que garante que entregas curtas continuem pagando pelo
   // menos o mesmo mínimo que o iFood paga por rota).
   //
   // O valor que o CLIENTE paga (e) continua vindo da mesma tabela de faixas por
@@ -209,7 +209,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
     if (overrideBairro) return {e: overrideBairro.e, m: overrideBairro.m};
 
     const PISO_MOTOBOY = 7.00; // motoboy nunca recebe menos que isso, não importa a % (atualizado 14/08/2026, era 6.50)
-    const MARGEM_ADMIN_PCT = 0.21; // atualizado 19/08/2026, era 0.23 (21% fica com a MotoFast)
+    const MARGEM_ADMIN_PCT = 0.20; // atualizado 22/08/2026, era 0.21 (20% fica com a MotoFast)
     let e;
     if (km <= 1.5) e = 8;
     else if (km <= 2.5) e = 10;
@@ -230,7 +230,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
     // Ajuste específico pedido em 14/08/2026: na faixa 1,51-2,5km (e=10), R$7,70
     // pro motoboy (padrão) estava pouco pra rodar de um bairro pro outro — nessa
     // faixa específica, ele recebe R$8,50 fixo (85% / margem de 15% só aqui).
-    // Todas as outras faixas continuam na margem padrão (21%).
+    // Todas as outras faixas continuam na margem padrão (20%).
     const m = (e === 10)
       ? 8.50
       : Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
@@ -699,13 +699,13 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   const [metodoCalculoKm, setMetodoCalculoKm] = useState(null);
 
   // Mesma fórmula por porcentagem da tela de Nova Entrega (ver comentário completo
-  // lá) — 21% de margem, motoboy nunca abaixo do piso de R$6,50.
+  // lá) — 20% de margem, motoboy nunca abaixo do piso de R$7,00.
   function calcularTaxaPorKm(km, bairro) {
     const overrideBairro = BAIRROS_TAXA_FIXA_KM[normalizarTexto(bairro || "")];
     if (overrideBairro) return {e: overrideBairro.e, m: overrideBairro.m};
 
     const PISO_MOTOBOY = 7.00; // atualizado 14/08/2026, era 6.50
-    const MARGEM_ADMIN_PCT = 0.21; // atualizado 19/08/2026, era 0.23
+    const MARGEM_ADMIN_PCT = 0.20; // atualizado 22/08/2026, era 0.21
     let e;
     if (km <= 1.5) e = 8;
     else if (km <= 2.5) e = 10;
@@ -722,7 +722,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       e = 8 + 2*kmArred;
     }
     // Mesmo ajuste da tela de Nova Entrega: faixa e=10 (1,51-2,5km) recebe
-    // R$8,50 fixo pro motoboy, em vez dos 21% padrão.
+    // R$8,50 fixo pro motoboy, em vez dos 20% padrão.
     const m = (e === 10)
       ? 8.50
       : Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
