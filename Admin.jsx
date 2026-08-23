@@ -943,8 +943,8 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   const [erroCalculoReg, setErroCalculoReg] = useState(false);
 
   // Fórmula por porcentagem — mesma lógica do Empresario.jsx (ver comentário
-  // completo lá): Alessandro fica com 21% de cada entrega, motoboy recebe os
-  // outros 77%, nunca menos que o piso de R$6,50. O valor do cliente (e) continua
+  // completo lá): Alessandro fica com 20% de cada entrega, motoboy recebe os
+  // outros 80%, nunca menos que o piso de R$7,00. O valor do cliente (e) continua
   // vindo da mesma tabela de faixas por distância de antes.
   //
   // PARA REVERTER pro modelo de valor fixo por faixa (o que rodava até
@@ -957,10 +957,10 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
     if (overrideBairro) return {e: overrideBairro.e, m: overrideBairro.m};
 
     const PISO_MOTOBOY = 7.00; // atualizado 14/08/2026, era 6.50
-    const MARGEM_ADMIN_PCT = 0.21; // atualizado 19/08/2026, era 0.23
+    const MARGEM_ADMIN_PCT = 0.20; // atualizado 22/08/2026, era 0.21
     let e;
     if (km <= 1.5) e = 8;
-    else if (km <= 2.5) e = 10;
+    else if (km <= 2.5) e = 11;
     else if (km <= 3.5) e = 13;
     else if (km <= 4.5) e = 15;
     else if (km <= 5.5) e = 17;
@@ -973,10 +973,11 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
       const kmArred = Math.ceil(km);
       e = 8 + 2*kmArred;
     }
-    // Mesmo ajuste do Empresario.jsx: faixa e=10 (1,51-2,5km) recebe R$8,50
-    // fixo pro motoboy, em vez dos 21% padrão (pedido em 14/08/2026).
-    const m = (e === 10)
-      ? 8.50
+    // Mesmo ajuste do Empresario.jsx: faixa 1,51-2,5km recebe R$9,00 fixo pro
+    // motoboy, em vez dos 20% padrão (atualizado 22/08/2026 — valor do cliente
+    // subiu de R$10 pra R$11, motoboy segue com R$9,00 fixo).
+    const m = (e === 11)
+      ? 9.00
       : Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
     return {e: +e.toFixed(2), m: +m.toFixed(2)};
   }
@@ -2747,7 +2748,12 @@ export default function App() {
           }
           const taxaEmp = p.taxa_empresario || p.taxa || 0;
           const taxaMb  = p.taxa_motoboy || 0;
-          const lucroEntrega = taxaEmp - taxaMb;
+          // Arredonda o lucro pra 2 casas decimais antes de guardar — sem isso,
+          // subtrações tipo 13 - 10.4 podem gerar erro de ponto flutuante do
+          // JavaScript (ex: 2.5999999999996 em vez de 2.60), que aparecia feio
+          // direto na tela do Admin. +(...).toFixed(2) converte de volta pra
+          // número (não string), então continua funcionando normal nas somas.
+          const lucroEntrega = +(taxaEmp - taxaMb).toFixed(2);
           return {
             id: p.id,
             motoboyId: p.motoboy_id,
