@@ -1567,14 +1567,26 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
   const [semanaEntregasRaw, setSemanaEntregasRaw] = useState([]);
   const [carregandoSemana, setCarregandoSemana] = useState(false);
 
-  // Status de pagamento por dia — só existe (e faz sentido) pra quem está no plano
-  // "diário" de repasse ao motoboy. É o MESMO campo que o Admin marca como pago na
-  // aba Pagamentos dele — aqui só espelha, pra você nunca ficar em dúvida se já
-  // acertou ou não com a plataforma.
+  // Status de pagamento por dia — pro plano "diário", espelha o campo que o Admin
+  // marca como pago na aba Pagamentos dele. Pro plano "semanal", agrupa pela
+  // semana (segunda a domingo) usando os últimos ~120 dias já carregados
+  // (semanaEntregasRaw) e compara o total dessa semana com o que já foi
+  // registrado como pago em pagamentosSemanais — mesma lógica que o Admin já usa
+  // na aba "Por Dia" de cada estabelecimento. Antes disso, essa função sempre
+  // retornava null pra quem paga semanal, e a lista de "Dias anteriores" ficava
+  // sem nenhuma tag de Pago/Pendente, deixando difícil saber o que já foi pago.
   const planoDiario = empresa?.planoPagamentoMotoboy === "diario";
   function statusDoDia(dataISO) {
-    if (!planoDiario) return null;
-    return empresa?.pagamentosDiarios?.[dataISO] ? "pago" : "pendente";
+    if (planoDiario) {
+      return empresa?.pagamentosDiarios?.[dataISO] ? "pago" : "pendente";
+    }
+    const semanaDoDia = segundaFeiraDaSemana(new Date(dataISO+"T12:00:00"));
+    const totalSemanaDoDia = semanaEntregasRaw
+      .filter(e=>segundaFeiraDaSemana(new Date(e.dataISO+"T12:00:00"))===semanaDoDia)
+      .reduce((s,e)=>s+e.taxa,0);
+    if (totalSemanaDoDia === 0) return null; // ainda não carregou dados dessa semana
+    const pagoSemanaDoDia = empresa?.pagamentosSemanais?.[semanaDoDia] || 0;
+    return (totalSemanaDoDia - pagoSemanaDoDia <= 0.001) ? "pago" : "pendente";
   }
 
   // historico ja vem com status normalizado (Entregue / Cancelada) do App principal
