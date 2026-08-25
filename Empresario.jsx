@@ -2176,6 +2176,47 @@ export default function AppEmpresario() {
   const notificadosCancelamento = useRef(new Set());
   const [empresa, setEmpresa] = useState({...EMPRESA, id:null}); // começa SEM id até carregar o real do Supabase
   const [carregando, setCarregando] = useState(true);
+  // Valor exato pendente quando a conta está bloqueada — pra mostrar na tela de
+  // bloqueio, junto com o PIX, e o empresário já pagar sem precisar chamar o
+  // suporte só pra saber quanto deve. Só calcula quando realmente bloqueado,
+  // buscando os últimos 120 dias de entregas (mesmo período usado no Histórico)
+  // e aplicando a mesma lógica de pendência: diário soma os dias não marcados
+  // como pagos, semanal soma o saldo (total - já pago) de cada semana.
+  const [valorPendenteBloqueio, setValorPendenteBloqueio] = useState(null);
+  useEffect(()=>{
+    if (!empresa?.bloqueado || !empresa?.id) { setValorPendenteBloqueio(null); return; }
+    let cancelado = false;
+    (async()=>{
+      const inicioObj = new Date();
+      inicioObj.setDate(inicioObj.getDate()-120);
+      const { data, error } = await supabase
+        .from("pedidos")
+        .select("taxa, criado_em")
+        .eq("empresario_id", empresa.id)
+        .eq("status", "entregue")
+        .gte("criado_em", inicioObj.toISOString());
+      if (cancelado || error || !data) return;
+      let total = 0;
+      if (empresa.planoPagamentoMotoboy === "diario") {
+        data.forEach(p=>{
+          const diaISO = dataLocalISO(new Date(p.criado_em));
+          if (!empresa.pagamentosDiarios?.[diaISO]) total += p.taxa;
+        });
+      } else {
+        const porSemana = {};
+        data.forEach(p=>{
+          const semana = segundaFeiraDaSemana(new Date(p.criado_em));
+          porSemana[semana] = (porSemana[semana]||0) + p.taxa;
+        });
+        Object.entries(porSemana).forEach(([semana,tot])=>{
+          const pago = empresa.pagamentosSemanais?.[semana] || 0;
+          total += Math.max(0, tot-pago);
+        });
+      }
+      if (!cancelado) setValorPendenteBloqueio(+total.toFixed(2));
+    })();
+    return () => { cancelado = true; };
+  }, [empresa?.bloqueado, empresa?.id, empresa?.planoPagamentoMotoboy, empresa?.pagamentosDiarios, empresa?.pagamentosSemanais]);
 
   // Carrega dados reais do Supabase ao entrar
   useEffect(()=>{
@@ -2582,10 +2623,20 @@ export default function AppEmpresario() {
               Para reativar sua conta, entre em contato com o MotoFast e regularize seu pagamento.
             </div>
           </div>
-          <a href={`https://wa.me/${SUPORTE_TEL}?text=Olá, minha conta no MotoFast está bloqueada. Quero regularizar o pagamento.`}
+          {/* Valor exato pendente + PIX pra pagar na hora, sem precisar chamar
+              o suporte só pra saber quanto deve. Só aparece depois de calculado
+              (evita mostrar R$0 piscando enquanto ainda está buscando). */}
+          {valorPendenteBloqueio !== null && (
+            <div style={{background:"#111827",border:"1px solid #ef4444",borderRadius:12,padding:"18px 22px",marginBottom:16,textAlign:"left"}}>
+              <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Valor pendente</div>
+              <div style={{color:"#ef4444",fontSize:34,fontWeight:900}}>R${valorPendenteBloqueio.toFixed(2)}</div>
+              <CartaoPix/>
+            </div>
+          )}
+          <a href={`https://wa.me/${SUPORTE_TEL}?text=${encodeURIComponent(`Olá, minha conta no MotoFast está bloqueada${valorPendenteBloqueio!==null?` (valor pendente: R$${valorPendenteBloqueio.toFixed(2)})`:""}. Já fiz o pix, segue o comprovante.`)}`}
             target="_blank" rel="noreferrer"
             style={{display:"inline-flex",alignItems:"center",gap:8,background:"#10b981",borderRadius:10,padding:"14px 24px",textDecoration:"none",fontWeight:700,fontSize:15,color:"#fff"}}>
-            💬 Falar com MotoFast
+            💬 Enviar comprovante pro MotoFast
           </a>
           <div style={{marginTop:16}}>
             <button onClick={async()=>{ await supabase.auth.signOut(); window.location.href="/"; }}
