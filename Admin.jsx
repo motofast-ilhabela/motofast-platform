@@ -11,6 +11,7 @@ const PG = { pix:{label:"Pix",icon:"💠",cor:"#34d399"}, dinheiro:{label:"Dinhe
 // mesma lista do Empresario.jsx (ver comentário completo lá).
 const BAIRROS_TAXA_FIXA_KM = {
   "pacuiba": {e: 30, m: 25},
+  "siriuba": {e: 25, m: 20},
 };
 
 // Retorna a data no formato AAAA-MM-DD usando o horário LOCAL (Brasil), nunca UTC.

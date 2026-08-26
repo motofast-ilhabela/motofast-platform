@@ -38,8 +38,12 @@ const PG = {
 // via normalizarTexto, então funciona não importa como foi digitado o bairro).
 // Pedido em 14/08/2026: Pacuíba estava saindo R$23 pela fórmula, mas o mínimo
 // real pra esse bairro é R$30 (motoboy R$25, lucro R$5).
+// Pedido em 25/08/2026: Siriúba é muito longe (9km) — pela fórmula normal saía
+// R$23/R$18,40 e nenhum motoboy aceitava. Valor fixo: R$25 cliente / R$20
+// motoboy (margem R$5).
 const BAIRROS_TAXA_FIXA_KM = {
   "pacuiba": {e: 30, m: 25},
+  "siriuba": {e: 25, m: 20},
 };
 
 
