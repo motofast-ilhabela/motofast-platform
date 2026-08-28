@@ -100,7 +100,13 @@ export default async function handler(req, res) {
       .eq('banido', false);
 
     if (erroMotoboys || !motoboysOnline || motoboysOnline.length === 0) {
-      return res.status(200).json({ ok: true, motivo: 'nenhum motoboy online no momento' });
+      return res.status(200).json({
+        ok: true,
+        motivo: 'nenhum motoboy online no momento',
+        erroMotoboys: erroMotoboys ? erroMotoboys.message : null,
+        quantidadeEncontrada: motoboysOnline ? motoboysOnline.length : null,
+        debugInfo,
+      });
     }
 
     // 4) Remove as contas de monitoramento da lista de elegíveis pro rodízio
