@@ -39,6 +39,16 @@ const CONTAS_MONITORAMENTO = [
 ];
 
 export default async function handler(req, res) {
+  // Grava no banco que a função foi chamada — o PRIMEIRO teste é: será que
+  // essa gravação aparece? Se não aparecer nunca, a função nem está sendo
+  // executada de verdade (problema de rota, deploy ou chamada do front-end).
+  try {
+    await supabaseAdmin.from('debug_log').insert({
+      mensagem: 'avancar-fila-pedido CHAMADO',
+      dados: { method: req.method, body: req.body },
+    });
+  } catch (e) { /* não deixa o log quebrar o fluxo principal */ }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Método não permitido' });
   }
@@ -58,6 +68,10 @@ export default async function handler(req, res) {
       .maybeSingle();
 
     if (erroPedido || !pedido) {
+      await supabaseAdmin.from('debug_log').insert({
+        mensagem: 'pedido não encontrado ou erro ao buscar',
+        dados: { pedido_id, erroPedido },
+      });
       return res.status(200).json({ ok: true, motivo: 'pedido não encontrado, encerrando' });
     }
     if (pedido.status !== 'aguardando') {
@@ -210,6 +224,12 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error('Erro no avancar-fila-pedido:', err);
+    try {
+      await supabaseAdmin.from('debug_log').insert({
+        mensagem: 'ERRO CAPTURADO no avancar-fila-pedido',
+        dados: { pedido_id, erro: err.message, stack: err.stack },
+      });
+    } catch (e2) { /* nem isso deu certo, mas não trava a resposta */ }
     return res.status(500).json({ error: err.message });
   }
 }
