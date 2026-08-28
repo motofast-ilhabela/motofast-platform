@@ -2437,6 +2437,61 @@ function Avaliacoes({ avaliacoes, motoboys }) {
 }
 
 // ─── CORRIDAS ATIVAS ──────────────────────────────────────────────────────────
+// ─── FILA DO RODÍZIO (ao vivo) ─────────────────────────────────────────────
+// Mostra, pra um pedido específico ainda "aguardando", por quem o sistema já
+// passou (aceitou/recusou/não respondeu a tempo) e pra quem está oferecendo
+// AGORA — dá pra ver ao vivo o rodízio acontecendo, sem precisar de SQL.
+// Consulta a tabela nova ofertas_pedido (isolada, criada em 28/08/2026 pro
+// sistema de rodízio) — não mexe em nada da tabela pedidos.
+function FilaRodizioPedido({ pedidoId }) {
+  const [ofertas, setOfertas] = useState([]);
+  const [tick, setTick] = useState(0);
+
+  useEffect(()=>{
+    let cancelado = false;
+    async function carregar() {
+      const { data } = await supabase
+        .from("ofertas_pedido")
+        .select("motoboy_id, oferecido_em, expira_em, respondido, aceito, motoboys(nome_completo)")
+        .eq("pedido_id", pedidoId)
+        .order("oferecido_em", { ascending: true });
+      if (!cancelado) setOfertas(data || []);
+    }
+    carregar();
+    const intervalo = setInterval(carregar, 3000);
+    const relogio = setInterval(()=>setTick(x=>x+1), 1000);
+    return () => { cancelado = true; clearInterval(intervalo); clearInterval(relogio); };
+  },[pedidoId]);
+
+  if (ofertas.length === 0) {
+    return <div style={{color:"#6b7280",fontSize:11,marginTop:8,fontStyle:"italic"}}>Aguardando o sistema escolher o primeiro motoboy...</div>;
+  }
+
+  return (
+    <div style={{marginTop:10,background:"#0f172a",borderRadius:8,padding:"8px 12px"}}>
+      <div style={{color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🔄 Fila do rodízio, ao vivo</div>
+      {ofertas.map((o,i)=>{
+        const nome = o.motoboys?.nome_completo || "Motoboy";
+        const expirou = new Date(o.expira_em).getTime() < Date.now();
+        let status, cor;
+        if (o.aceito) { status = "✅ Aceitou"; cor = "#34d399"; }
+        else if (o.respondido) { status = "❌ Recusou"; cor = "#f87171"; }
+        else if (expirou) { status = "⌛ Não respondeu a tempo"; cor = "#6b7280"; }
+        else {
+          const restam = Math.max(0, Math.ceil((new Date(o.expira_em).getTime() - Date.now())/1000));
+          status = `🔔 Tocando agora — ${restam}s`; cor = "#fbbf24";
+        }
+        return (
+          <div key={i} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"3px 0"}}>
+            <span style={{color:"#d1d5db"}}>{i+1}º — {nome}</span>
+            <span style={{color:cor,fontWeight:700}}>{status}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function CorridasAtivas({ corridasAtivas, onRecarregar }) {
   const [tick, setTick] = useState(0);
   const [reenviando, setReenviando] = useState(null); // id do pedido sendo processado
@@ -2516,6 +2571,7 @@ function CorridasAtivas({ corridasAtivas, onRecarregar }) {
                   <div style={{color:"#6b7280",fontSize:11,marginTop:4}}>{formatTempo(Date.now()-p.criadoEm)} atrás</div>
                 </div>
               </div>
+              <FilaRodizioPedido pedidoId={p.id}/>
             </Card>
           ))}
         </div>
