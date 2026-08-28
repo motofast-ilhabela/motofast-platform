@@ -96,7 +96,7 @@ export default async function handler(req, res) {
       .from('motoboys')
       .select('id, nome_completo, bairro_base')
       .eq('online', true)
-      .eq('bloqueado', false)
+      .eq('ativo', true)
       .eq('banido', false);
 
     if (erroMotoboys || !motoboysOnline || motoboysOnline.length === 0) {
