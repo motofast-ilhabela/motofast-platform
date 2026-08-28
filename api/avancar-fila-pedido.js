@@ -151,7 +151,7 @@ export default async function handler(req, res) {
     const ehPrimeiraChamada = (jaOfertadosDB || []).length === 0;
     if (ehPrimeiraChamada) {
       const idsOnlineMonitor = new Set(motoboysOnline.map(m => m.id));
-      const urlBaseMonitor = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '';
+      const urlBaseMonitor = 'https://motofast-platform.vercel.app';
       for (const conta of CONTAS_MONITORAMENTO) {
         if (!idsOnlineMonitor.has(conta.id)) continue; // só notifica se estiver online
         try {
@@ -208,7 +208,7 @@ export default async function handler(req, res) {
     // external_id dele — precisa que o app do motoboy já esteja fazendo
     // OneSignal.login(motoboyId), que o Motoboy.jsx já faz hoje)
     try {
-      await fetch(`${process.env.VERCEL_URL ? 'https://' + process.env.VERCEL_URL : ''}/api/notificar-motoboy-especifico`, {
+      await fetch(`https://motofast-platform.vercel.app/api/notificar-motoboy-especifico`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -223,14 +223,26 @@ export default async function handler(req, res) {
 
     // 11) Agenda a PRÓXIMA verificação em 30 segundos via QStash — só se ainda
     // não vai estourar os 10 minutos totais nesse meio tempo
+    let qstashInfo = { agendado: false, erro: null, messageId: null };
     if (decorrido + TEMPO_OFERTA_MS < JANELA_TOTAL_MS) {
-      const urlBase = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '';
-      await qstash.publish({
-        url: `${urlBase}/api/avancar-fila-pedido`,
-        body: JSON.stringify({ pedido_id }),
-        headers: { 'Content-Type': 'application/json' },
-        delay: 30, // segundos
-      });
+      const urlBase = 'https://motofast-platform.vercel.app';
+      try {
+        const resultado = await qstash.publish({
+          url: `${urlBase}/api/avancar-fila-pedido`,
+          body: JSON.stringify({ pedido_id }),
+          headers: { 'Content-Type': 'application/json' },
+          delay: 30, // segundos
+        });
+        qstashInfo = { agendado: true, erro: null, messageId: resultado?.messageId || null };
+      } catch (eq) {
+        qstashInfo = { agendado: false, erro: eq.message, messageId: null };
+      }
+      try {
+        await supabaseAdmin.from('debug_log').insert({
+          mensagem: 'Resultado do agendamento QStash',
+          dados: { pedido_id, qstashInfo },
+        });
+      } catch (e3) { /* não trava a resposta */ }
     }
 
     return res.status(200).json({
@@ -238,6 +250,7 @@ export default async function handler(req, res) {
       oferecido_para: escolhido.id,
       nome: escolhido.nome_completo,
       expira_em: expiraEm.toISOString(),
+      qstashInfo,
       debugInfo,
     });
   } catch (err) {
