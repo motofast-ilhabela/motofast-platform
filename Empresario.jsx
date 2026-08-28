@@ -2584,11 +2584,18 @@ export default function AppEmpresario() {
       status: "aguardando",
     }).select().single();
 
-    // Notifica os motoboys via push real — chega mesmo com o app fechado
-    notificarMotoboysPush(
-      "🏍️ Novo Pedido MotoFast!",
-      `Entrega em ${pedido.bairro} — R$${pedido.taxaMotoboy || pedido.taxa}`
-    );
+    // Notifica os motoboys via push real — chega mesmo com o app fechado.
+    // ATUALIZADO em 28/08/2026: trocado o "avisa todo mundo de uma vez" pelo
+    // novo sistema de rodízio — oferece pra um motoboy de cada vez (30s cada),
+    // priorizando quem tem menos corridas hoje. As duas contas de
+    // monitoramento continuam recebendo sempre, à parte.
+    if (pedidoDB?.id) {
+      fetch("/api/avancar-fila-pedido", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pedido_id: pedidoDB.id }),
+      }).catch(e => console.log("Erro ao iniciar rodízio:", e));
+    }
 
     // Recarrega a lista do banco, garantindo consistência total
     await carregarPedidos(empresa.id);
@@ -2724,7 +2731,7 @@ export default function AppEmpresario() {
               onClick={async()=>{
                 // Reenvia o pedido salvando no Supabase de verdade
                 if (!empresa?.id) return;
-                const { error } = await supabase.from("pedidos").insert({
+                const { data: pedidoReenviado, error } = await supabase.from("pedidos").insert({
                   empresario_id: empresa.id,
                   cliente_nome: avisoSemMotoboy.clienteNome,
                   cliente_telefone: avisoSemMotoboy.clienteTel,
@@ -2743,12 +2750,16 @@ export default function AppEmpresario() {
                   distancia_km: avisoSemMotoboy.distanciaKm,
                   metodo_calculo_km: avisoSemMotoboy.metodoCalculoKm,
                   status: "aguardando",
-                });
+                }).select().single();
                 if (error) { console.error("Erro ao reenviar pedido:", error); return; }
-                notificarMotoboysPush(
-                  "🏍️ Novo Pedido MotoFast!",
-                  `Entrega em ${avisoSemMotoboy.bairro} — R$${avisoSemMotoboy.taxaMotoboy || avisoSemMotoboy.taxa}`
-                );
+                // ATUALIZADO em 28/08/2026: novo sistema de rodízio, igual ao publicarPedido
+                if (pedidoReenviado?.id) {
+                  fetch("/api/avancar-fila-pedido", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ pedido_id: pedidoReenviado.id }),
+                  }).catch(e => console.log("Erro ao iniciar rodízio:", e));
+                }
                 await carregarPedidos(empresa.id);
                 setAvisoSemMotoboy(null);
                 setAba("ativos");
