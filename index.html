@@ -26,6 +26,52 @@
         });
       });
     </script>
+    <!-- ═══ VERIFICADOR AUTOMÁTICO DE ATUALIZAÇÃO — adicionado em 28/08/2026 ═══
+         Problema: o app é um PWA instalado na tela do celular, e por isso não
+         busca versão nova sozinho ao abrir — fica preso na versão de quando foi
+         instalado, mesmo depois de a gente subir código novo no ar. Isso fez
+         vários motoboys ficarem rodando código de dias atrás sem saber, e
+         perderem pedidos do sistema de rodízio novo sem perceber nada de errado
+         na tela deles.
+         Solução: esse script (puro, sem depender do React) roda escondido,
+         verificando a cada 60 segundos (e toda vez que o app volta a ficar em
+         primeiro plano) se o arquivo dessa mesma página mudou no servidor. Se
+         mudou, recarrega a página sozinho, sem avisar nada — o motoboy/
+         empresário nunca precisa fechar app, sair de conta, nem limpar cache
+         manualmente nunca mais. Funciona porque o Vite troca o nome do arquivo
+         principal (main-XXXXX.js) toda vez que a gente sobe código novo — então
+         comparar esse nome é a forma mais confiável de saber se saiu versão nova. -->
+    <script>
+      (function () {
+        function pegarBundleAtual() {
+          var s = document.querySelector('script[type="module"]');
+          return s ? s.getAttribute('src') : null;
+        }
+        var bundleAtual = pegarBundleAtual();
+
+        async function checarVersaoNova() {
+          try {
+            var resp = await fetch('/', { cache: 'no-store' });
+            var html = await resp.text();
+            var m = html.match(/<script[^>]+type=["']module["'][^>]+src=["']([^"']+)["']/i);
+            var bundleNovo = m ? m[1] : null;
+            if (bundleNovo && bundleAtual && bundleNovo !== bundleAtual) {
+              console.log('[MotoFast] Nova versão detectada — recarregando automaticamente...');
+              window.location.reload();
+            }
+          } catch (e) {
+            // Sem internet no momento — tenta de novo na próxima checagem, sem travar nada
+          }
+        }
+
+        // Checa a cada 60 segundos, e também sempre que o app volta a ficar visível
+        // (ex: motoboy que estava com a tela apagada e reabre o celular)
+        setInterval(checarVersaoNova, 60000);
+        document.addEventListener('visibilitychange', function () {
+          if (document.visibilityState === 'visible') checarVersaoNova();
+        });
+      })();
+    </script>
     <style>
       body { background: #0a0f1a; margin: 0; }
     </style>
