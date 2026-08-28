@@ -39,18 +39,24 @@ const CONTAS_MONITORAMENTO = [
 ];
 
 export default async function handler(req, res) {
-  // Grava no banco que a função foi chamada — o PRIMEIRO teste é: será que
-  // essa gravação aparece? Se não aparecer nunca, a função nem está sendo
-  // executada de verdade (problema de rota, deploy ou chamada do front-end).
+  // Grava no banco que a função foi chamada, e guarda o resultado dessa
+  // gravação numa variável — vamos devolver isso DIRETO na resposta da API,
+  // pra ver o erro exato sem precisar de SQL nem dos logs da Vercel.
+  const debugInfo = { logInsertOk: null, logInsertError: null };
   try {
-    await supabaseAdmin.from('debug_log').insert({
+    const { error: logErr } = await supabaseAdmin.from('debug_log').insert({
       mensagem: 'avancar-fila-pedido CHAMADO',
       dados: { method: req.method, body: req.body },
     });
-  } catch (e) { /* não deixa o log quebrar o fluxo principal */ }
+    debugInfo.logInsertOk = !logErr;
+    debugInfo.logInsertError = logErr ? logErr.message : null;
+  } catch (e) {
+    debugInfo.logInsertOk = false;
+    debugInfo.logInsertError = e.message;
+  }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Método não permitido' });
+    return res.status(405).json({ error: 'Método não permitido', debugInfo });
   }
 
   const { pedido_id } = req.body;
@@ -75,7 +81,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, motivo: 'pedido não encontrado, encerrando' });
     }
     if (pedido.status !== 'aguardando') {
-      return res.status(200).json({ ok: true, motivo: `pedido já está '${pedido.status}', encerrando rodízio` });
+      return res.status(200).json({ ok: true, motivo: `pedido já está '${pedido.status}', encerrando rodízio`, debugInfo });
     }
 
     // 2) Confere se já estourou os 10 minutos totais — se sim, para de tentar
@@ -221,6 +227,7 @@ export default async function handler(req, res) {
       oferecido_para: escolhido.id,
       nome: escolhido.nome_completo,
       expira_em: expiraEm.toISOString(),
+      debugInfo,
     });
   } catch (err) {
     console.error('Erro no avancar-fila-pedido:', err);
