@@ -39,8 +39,24 @@ const CONTAS_MONITORAMENTO = [
 ];
 
 export default async function handler(req, res) {
+  // Grava no banco que a função foi chamada, e guarda o resultado dessa
+  // gravação numa variável — vamos devolver isso DIRETO na resposta da API,
+  // pra ver o erro exato sem precisar de SQL nem dos logs da Vercel.
+  const debugInfo = { logInsertOk: null, logInsertError: null };
+  try {
+    const { error: logErr } = await supabaseAdmin.from('debug_log').insert({
+      mensagem: 'avancar-fila-pedido CHAMADO',
+      dados: { method: req.method, body: req.body },
+    });
+    debugInfo.logInsertOk = !logErr;
+    debugInfo.logInsertError = logErr ? logErr.message : null;
+  } catch (e) {
+    debugInfo.logInsertOk = false;
+    debugInfo.logInsertError = e.message;
+  }
+
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Método não permitido' });
+    return res.status(405).json({ error: 'Método não permitido', debugInfo });
   }
 
   const { pedido_id } = req.body;
@@ -58,10 +74,14 @@ export default async function handler(req, res) {
       .maybeSingle();
 
     if (erroPedido || !pedido) {
+      await supabaseAdmin.from('debug_log').insert({
+        mensagem: 'pedido não encontrado ou erro ao buscar',
+        dados: { pedido_id, erroPedido },
+      });
       return res.status(200).json({ ok: true, motivo: 'pedido não encontrado, encerrando' });
     }
     if (pedido.status !== 'aguardando') {
-      return res.status(200).json({ ok: true, motivo: `pedido já está '${pedido.status}', encerrando rodízio` });
+      return res.status(200).json({ ok: true, motivo: `pedido já está '${pedido.status}', encerrando rodízio`, debugInfo });
     }
 
     // 2) Confere se já estourou os 10 minutos totais — se sim, para de tentar
@@ -80,7 +100,13 @@ export default async function handler(req, res) {
       .eq('banido', false);
 
     if (erroMotoboys || !motoboysOnline || motoboysOnline.length === 0) {
-      return res.status(200).json({ ok: true, motivo: 'nenhum motoboy online no momento' });
+      return res.status(200).json({
+        ok: true,
+        motivo: 'nenhum motoboy online no momento',
+        erroMotoboys: erroMotoboys ? erroMotoboys.message : null,
+        quantidadeEncontrada: motoboysOnline ? motoboysOnline.length : null,
+        debugInfo,
+      });
     }
 
     // 4) Remove as contas de monitoramento da lista de elegíveis pro rodízio
@@ -111,6 +137,32 @@ export default async function handler(req, res) {
     let candidatos = livres.filter(m => !idsJaOfertados.has(m.id));
     if (candidatos.length === 0) {
       candidatos = livres; // ciclo completo, reinicia permitindo repetir
+    }
+
+    // 6.5) Se é a PRIMEIRA vez que esse pedido passa por aqui (ninguém foi
+    // ofertado ainda), avisa as duas contas de monitoramento — só uma vez,
+    // não a cada 30s. Elas recebem sempre que estiverem online, mesmo não
+    // participando do rodízio de justiça.
+    const ehPrimeiraChamada = (jaOfertadosDB || []).length === 0;
+    if (ehPrimeiraChamada) {
+      const idsOnlineMonitor = new Set(motoboysOnline.map(m => m.id));
+      const urlBaseMonitor = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '';
+      for (const conta of CONTAS_MONITORAMENTO) {
+        if (!idsOnlineMonitor.has(conta.id)) continue; // só notifica se estiver online
+        try {
+          await fetch(`${urlBaseMonitor}/api/notificar-motoboy-especifico`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              motoboyId: conta.id,
+              titulo: '🏍️ Novo Pedido MotoFast!',
+              corpo: `Entrega em ${pedido.bairro} — R$${pedido.taxa_motoboy}.`,
+            }),
+          });
+        } catch (e) {
+          console.log('Erro ao notificar conta de monitoramento (não bloqueia o fluxo):', e);
+        }
+      }
     }
 
     // 7) Busca o contador de corridas de HOJE de cada candidato — se não tem
@@ -181,9 +233,16 @@ export default async function handler(req, res) {
       oferecido_para: escolhido.id,
       nome: escolhido.nome_completo,
       expira_em: expiraEm.toISOString(),
+      debugInfo,
     });
   } catch (err) {
     console.error('Erro no avancar-fila-pedido:', err);
+    try {
+      await supabaseAdmin.from('debug_log').insert({
+        mensagem: 'ERRO CAPTURADO no avancar-fila-pedido',
+        dados: { pedido_id, erro: err.message, stack: err.stack },
+      });
+    } catch (e2) { /* nem isso deu certo, mas não trava a resposta */ }
     return res.status(500).json({ error: err.message });
   }
 }
