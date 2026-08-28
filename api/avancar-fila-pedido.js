@@ -26,7 +26,12 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-const qstash = new QStashClient({ token: process.env.QSTASH_TOKEN });
+// Aponta explicitamente pra região dos EUA (a mesma escolhida na conta do
+// Upstash) — sem isso, o SDK tenta usar a região errada por padrão.
+const qstash = new QStashClient({
+  token: process.env.QSTASH_TOKEN,
+  baseUrl: 'https://qstash-us-east-1.upstash.io',
+});
 
 const TEMPO_OFERTA_MS = 30 * 1000;        // 30 segundos por motoboy
 const JANELA_TOTAL_MS = 10 * 60 * 1000;   // 10 minutos no total
