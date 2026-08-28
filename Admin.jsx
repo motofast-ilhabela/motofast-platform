@@ -2450,12 +2450,32 @@ function FilaRodizioPedido({ pedidoId }) {
   useEffect(()=>{
     let cancelado = false;
     async function carregar() {
-      const { data } = await supabase
+      // Busca em DUAS etapas separadas, sem depender de junção automática —
+      // as tabelas ofertas_pedido e motoboys não têm vínculo direto (FK) de
+      // propósito, então o "motoboys(nome_completo)" embutido numa consulta
+      // só nunca funcionava (falhava calado, sem erro visível), e por isso a
+      // fila nunca aparecia pra ninguém, mesmo com dados reais no banco.
+      const { data: ofertasDB, error: erroOfertas } = await supabase
         .from("ofertas_pedido")
-        .select("motoboy_id, oferecido_em, expira_em, respondido, aceito, motoboys(nome_completo)")
+        .select("motoboy_id, oferecido_em, expira_em, respondido, aceito")
         .eq("pedido_id", pedidoId)
         .order("oferecido_em", { ascending: true });
-      if (!cancelado) setOfertas(data || []);
+      if (erroOfertas) { console.error("Erro ao buscar ofertas_pedido:", erroOfertas); return; }
+      if (!ofertasDB || ofertasDB.length === 0) { if (!cancelado) setOfertas([]); return; }
+
+      const idsMotoboys = [...new Set(ofertasDB.map(o => o.motoboy_id))];
+      const { data: motoboysDB } = await supabase
+        .from("motoboys")
+        .select("id, nome_completo")
+        .in("id", idsMotoboys);
+      const mapaNomes = {};
+      (motoboysDB || []).forEach(m => { mapaNomes[m.id] = m.nome_completo; });
+
+      const combinado = ofertasDB.map(o => ({
+        ...o,
+        motoboys: { nome_completo: mapaNomes[o.motoboy_id] || "Motoboy" },
+      }));
+      if (!cancelado) setOfertas(combinado);
     }
     carregar();
     const intervalo = setInterval(carregar, 3000);
