@@ -1,10 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient.js";
 
-// Retorna a data no formato AAAA-MM-DD usando o horário LOCAL (Brasil), nunca UTC.
-// IMPORTANTE: nunca usar date.toISOString().split("T")[0] para pegar "a data de hoje"
-// ou "a data de um pedido" — toISOString() converte pra UTC e desloca a data em
-// horários próximos da meia-noite (ex: pedido às 21h no Brasil vira dia seguinte em UTC).
 function dataLocalISO(date = new Date()) {
   const y = date.getFullYear();
   const m = String(date.getMonth()+1).padStart(2,"0");
@@ -12,19 +8,15 @@ function dataLocalISO(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
-// Retorna a data (AAAA-MM-DD) da segunda-feira que inicia a semana REAL (segunda a domingo)
-// que contém a data informada. Usado pra agrupar "semana" de forma consistente com o
-// calendário de verdade, sem depender de blocos fixos de 7 dias do mês.
 function segundaFeiraDaSemana(date) {
   const d = new Date(date);
-  const diaSemana = d.getDay(); // 0=domingo, 1=segunda, ..., 6=sábado
+  const diaSemana = d.getDay();
   const diff = diaSemana === 0 ? -6 : 1 - diaSemana;
   const segunda = new Date(d);
   segunda.setDate(d.getDate() + diff);
   return dataLocalISO(segunda);
 }
 
-// ─── DADOS DO MOTOBOY (carregados do banco) ──────────────────────────────────
 const MOTOBOY_VAZIO = {
   id: null,
   nomeCompleto: "Carregando...",
@@ -39,8 +31,11 @@ const PG = {
   cartao:   { label:"Cartão",   icon:"💳", cor:"#60a5fa" },
 };
 
+const CONTAS_MONITORAMENTO_IDS = [
+  "c98107a7-1fd1-4429-9502-d8496501347d",
+  "a8cc6740-ca4d-4bb1-9292-0b81ce8f18be",
+];
 
-// ─── ATOMS ────────────────────────────────────────────────────────────────────
 function Card({ children, style={} }) {
   return <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"18px 22px",...style}}>{children}</div>;
 }
@@ -67,7 +62,6 @@ function Overlay({ children, maxW=480, borderColor="#1f2937" }) {
   );
 }
 
-// ─── SONS DISPONÍVEIS ────────────────────────────────────────────────────────
 const SONS = {
   bipe_triplo: {
     label:"Bipe Triplo", emoji:"📳", descricao:"3 bipes rápidos e agudos",
@@ -136,17 +130,13 @@ const SONS = {
   },
 };
 
-const TEMPO_PEDIDO = 30;       // segundos por rodada
-const INTERVALO_SOM = 5;       // toca a cada 5 segundos dentro da rodada
-const MAX_TENTATIVAS = 10;     // 10 rodadas × 30s = 5 minutos
-// Depois que o motoboy recusa um pedido, ele fica "escondido" da tela dele por esse
-// tempo — evita o pedido "voltar rápido demais" e parecer que nada aconteceu.
-// Se ninguém mais aceitar dentro desse tempo, o pedido volta a aparecer pra ele também.
-const TEMPO_COOLDOWN_RECUSA_MS = 60 * 1000; // 1 minuto
-const SUPORTE_TEL = "5512991213656"; // troque pelo seu WhatsApp
+const TEMPO_PEDIDO = 30;
+const INTERVALO_SOM = 5;
+const MAX_TENTATIVAS = 10;
+const TEMPO_COOLDOWN_RECUSA_MS = 60 * 1000;
+const SUPORTE_TEL = "5512991213656";
 const SUPORTE_HORARIO = "Seg-Sex 9h-22h • Sáb 9h-19h • Dom/feriados: fechado";
 
-// ─── SOM DE NOTIFICAÇÃO ───────────────────────────────────────────────────────
 let _audioCtx = null;
 
 function getAudioCtx() {
@@ -166,15 +156,11 @@ function tocarSomEscolhido(tipoSom) {
   } catch(e) { console.log("Som bloqueado:", e); }
 }
 
-// Dispara notificação push via OneSignal (funciona com qualquer app aberto ou tela bloqueada)
 async function dispararNotificacaoPush(titulo, corpo) {
   try {
-    // Tenta pelo OneSignal primeiro (mais confiável)
     if (window.OneSignal) {
-      // OneSignal cuida de mandar a notificação pro celular
       console.log("Push OneSignal:", titulo);
     }
-    // Fallback: notificação nativa do navegador
     if (!("Notification" in window)) return;
     if (Notification.permission !== "granted") return;
     if (!("serviceWorker" in navigator)) return;
@@ -190,7 +176,6 @@ async function dispararNotificacaoPush(titulo, corpo) {
   } catch(e) { console.log("Push bloqueado:", e); }
 }
 
-// ─── PEDIDO DISPONÍVEL (modal que aparece com som) ────────────────────────────
 function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
   const [tick, setTick] = useState(0);
   const [pulsando, setPulsando] = useState(true);
@@ -200,8 +185,6 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
     return ()=>clearInterval(t);
   },[]);
 
-  // Toca o som correspondente ao tempo decorrido — sincronizado com o criadoEm do pedido
-  // Isso garante que sempre toque certinho a cada rodada de 30s, mesmo se o componente não remontar
   const ultimoToqueRef = useRef(-1);
   useEffect(()=>{
     const intervalo = setInterval(()=>{
@@ -211,11 +194,10 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
         ultimoToqueRef.current = toqueAtual;
         tocarSomEscolhido(tipoSom);
       }
-    }, 500); // checa 2x por segundo pra não perder o momento exato
+    }, 500);
     return ()=>clearInterval(intervalo);
   },[pedido.criadoEm, tipoSom]);
 
-  // Pisca borda
   useEffect(()=>{
     const t = setInterval(()=>setPulsando(x=>!x), 500);
     return ()=>clearInterval(t);
@@ -234,7 +216,6 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
         <div style={{color:"#6b7280",fontSize:13,marginTop:4}}>Aceite rápido — primeiro a aceitar fica com a entrega</div>
       </div>
 
-      {/* Timer 30s */}
       <div style={{marginBottom:16}}>
         <div style={{background:"#1f2937",borderRadius:6,height:10,overflow:"hidden",marginBottom:6}}>
           <div style={{background:corTimer,height:10,width:`${pct}%`,transition:"width 1s linear",borderRadius:6}}/>
@@ -245,7 +226,6 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
         </div>
       </div>
 
-      {/* Valor em destaque */}
       <div style={{background:"#0f172a",borderRadius:12,padding:"16px",marginBottom:14}}>
         <div style={{textAlign:"center",marginBottom:14,paddingBottom:14,borderBottom:"1px solid #1f2937"}}>
           <div style={{color:"#6b7280",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Você vai receber</div>
@@ -317,7 +297,6 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
   );
 }
 
-// ─── CORRIDA EM ANDAMENTO ─────────────────────────────────────────────────────
 function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
   const [pedidosEntregues, setPedidosEntregues] = useState([]);
   const [saiuEstab, setSaiuEstab] = useState({});
@@ -343,7 +322,6 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
   }
 
   function abrirGPSEstab(p) {
-    // Usa o endereço completo do estabelecimento se disponível, senão busca pelo nome
     const destino = p.empresaEndereco
       ? `${p.empresaEndereco}, Ilhabela, SP`
       : `${p.empresaNome}, Ilhabela, SP, Brasil`;
@@ -351,13 +329,9 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
     window.open(`https://www.google.com/maps/dir/?api=1&destination=${end}&travelmode=driving`,"_blank");
   }
   function abrirGPSCliente(p) {
-    // Abre direto no endereço do cliente — funciona mesmo em ruas sem rota traçada
     const destino = `${p.rua}, ${p.num}, ${p.bairro}, Ilhabela, SP`;
     const end = encodeURIComponent(destino);
-    // Tenta abrir no app Google Maps nativo primeiro (mais preciso no celular)
-    const urlApp = `comgooglemaps://?q=${end}&directionsmode=driving`;
     const urlWeb = `https://www.google.com/maps/search/?api=1&query=${end}`;
-    // No celular abre o app, no computador abre o site
     window.open(urlWeb, "_blank");
   }
 
@@ -368,7 +342,6 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
         <div style={{color:"#6b7280",fontSize:13}}>{corrida.pedidos.length} pedido{corrida.pedidos.length!==1?"s":""} · {pedidosEntregues.length}/{corrida.pedidos.length} entregues</div>
       </div>
 
-      {/* Barra de progresso */}
       <div style={{background:"#1f2937",borderRadius:6,height:8,marginBottom:16}}>
         <div style={{background:"#34d399",borderRadius:6,height:8,width:`${(pedidosEntregues.length/corrida.pedidos.length)*100}%`,transition:"width 0.5s"}}/>
       </div>
@@ -391,7 +364,6 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
               </div>
             </div>
 
-            {/* FASE 1 — Buscar no estabelecimento (antes de clicar "saí") */}
             {!entregue && !saiu && (
               <div>
                 <div style={{background:"#1a2f4a",border:"1px solid #3b82f6",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
@@ -416,10 +388,6 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
                   )}
                 </div>
 
-                {/* Endereço do cliente já visível, mesmo antes de sair — facilita a vida do motoboy.
-                    O CONTATO do cliente (WhatsApp/Ligar) só aparece depois de clicar em "Saí do
-                    estabelecimento" — isso força o clique, que é o que libera o link de rastreio
-                    pro cliente e registra o horário de saída. */}
                 <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
                   <div style={{color:"#6b7280",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏠 2º — Depois, entregar para</div>
                   <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{p.clienteNome}</div>
@@ -450,7 +418,6 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
                   </div>
                 )}
 
-                {/* BOTÃO OBRIGATÓRIO */}
                 <button onClick={()=>sairEstabelecimento(p.id, p)} style={{width:"100%",padding:"14px",borderRadius:10,background:"#f59e0b",border:"none",color:"#000",fontWeight:900,fontSize:16,cursor:"pointer"}}>
                   🏍️ Saí do estabelecimento — iniciar entrega
                 </button>
@@ -460,7 +427,6 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
               </div>
             )}
 
-            {/* FASE 2 — A caminho do cliente (depois de clicar "saí") */}
             {!entregue && saiu && (
               <div>
                 <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
@@ -483,7 +449,6 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
                   </button>
                 </div>
 
-                {/* Lembrete de cobrança — visível também na hora da entrega */}
                 {p.pagamento==="dinheiro" && (
                   <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
                     {p.valorPedido ? (
@@ -513,7 +478,6 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
                   <div style={{color:"#9ca3af",fontSize:12,fontWeight:700}}>ℹ️ O estabelecimento já avisa o cliente que o pedido saiu.</div>
                 </div>
 
-                {/* Botão de contato com o estabelecimento — útil se o cliente não responder ou o endereço estiver errado */}
                 {p.empresaTel && (
                   <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:10,padding:"10px 14px",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
                     <div>
@@ -540,14 +504,12 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
         );
       })}
 
-      {/* Botão problema na entrega */}
       <div style={{marginTop:10}}>
         <button onClick={()=>setModalCancelar(true)} style={{width:"100%",padding:"12px",borderRadius:10,background:"#1f2937",border:"1px solid #ef444466",color:"#f87171",fontWeight:700,fontSize:14,cursor:"pointer"}}>
           ⚠️ Problema na entrega
         </button>
       </div>
 
-      {/* Modal cancelamento com motivo obrigatório */}
       {modalCancelar && (
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div style={{background:"#111827",border:"2px solid #ef4444",borderRadius:16,width:"100%",maxWidth:420,padding:24}}>
@@ -605,7 +567,6 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
   );
 }
 
-// ─── GANHOS ───────────────────────────────────────────────────────────────────
 function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy }) {
   const [verTudo, setVerTudo] = useState(false);
   const [dataSelecionada, setDataSelecionada] = useState(dataLocalISO());
@@ -621,35 +582,22 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
 
   const entregues = historico.filter(e=>e.status==="Entregue");
 
-  // Semana atual (não pago ainda) — semana real, sempre segunda a domingo
   const semanaAtual = entregues.filter(e=>e.semana===segundaAtual&&!e.repasePago);
   const saldoSemana = semanaAtual.reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
 
-  // Pendente de SEMANAS ANTERIORES — tudo que ainda não foi pago de qualquer semana já
-  // fechada (normalmente só a de segunda a domingo passada, que cai pra pagar nesta
-  // terça). Fica separado do "esta semana" de propósito: assim que a nova semana começa
-  // (hoje, segunda), o "esta semana" zera do jeito certo, mas o valor que ainda falta
-  // receber da semana anterior não some — continua visível aqui até ser marcado como pago.
   const semanasAnteriores = entregues.filter(e=>e.semana<segundaAtual&&!e.repasePago);
   const saldoSemanasAnteriores = semanasAnteriores.reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
 
-  // Total histórico
   const totalHistorico = entregues.reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
   const totalEntregas  = entregues.length;
 
-  // Taxa do dia selecionado (Hoje/Ontem/qualquer data) — usa TODAS as entregas do dia,
-  // independente de já ter sido paga ou não. Assim, mesmo depois do motoboy ser pago
-  // na terça, ele sempre consegue conferir quanto fez em qualquer dia específico,
-  // pra bater com o comprovante do PIX e não sobrar dúvida.
   const entregasDoDia = entregues.filter(e=>e.dataISO===dataSelecionada);
   const totalDoDia = entregasDoDia.reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
   const dataDoDiaFmt = new Date(dataSelecionada+"T12:00:00").toLocaleDateString("pt-BR");
 
-  // Resumo agrupado por dia — todos os dias que tiveram entrega, mais recente primeiro,
-  // sempre visível independente de status de pagamento.
   const porDia = {};
   entregues.forEach(e=>{
-    if (!e.dataISO) return; // ignora entregas antigas sem data preenchida corretamente
+    if (!e.dataISO) return;
     if (!porDia[e.dataISO]) porDia[e.dataISO] = {qtd:0, total:0, todasPagas:true};
     porDia[e.dataISO].qtd++;
     porDia[e.dataISO].total += (Number(e.taxa)||0);
@@ -657,17 +605,13 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
   });
   const diasOrdenados = Object.entries(porDia).sort((a,b)=>b[0].localeCompare(a[0]));
 
-  // Este mês — dinâmico
   const mesMes = entregues.filter(e=>e.mes===mesAtual);
   const ganhosMes = mesMes.reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
 
-  // Entregas hoje — data dinâmica
   const entregasHoje = entregues.filter(e=>e.data===hojeStr).length;
 
-  // Ranking real — compara com todos os motoboys
   const ranking = (() => {
     if (!todosHistorico || todosHistorico.length === 0) return null;
-    // Agrupa por motoboyId e conta entregas do mês atual
     const contagem = {};
     todosHistorico.filter(e=>e.status==="Entregue"&&e.mes===mesAtual).forEach(e=>{
       contagem[e.motoboyId] = (contagem[e.motoboyId]||0) + 1;
@@ -686,7 +630,6 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
         <div style={{color:"#6b7280",fontSize:13}}>Repasse toda terça-feira</div>
       </div>
 
-      {/* Taxa por dia — sempre visível, mesmo depois de já ter sido pago */}
       <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:12,padding:"16px 18px",marginBottom:14}}>
         <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📅 Taxas por dia</div>
         <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
@@ -700,7 +643,6 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
         <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasDoDia.length} entrega{entregasDoDia.length!==1?"s":""} nesta data{entregasDoDia.length>0 && (entregasDoDia.every(e=>e.repasePago) ? " · ✅ já paga" : " · ⏳ ainda não paga")}</div>
       </div>
 
-      {/* Lista de entregas do dia selecionado */}
       {entregasDoDia.length>0 && (
         <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"14px 16px",marginBottom:14}}>
           <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Entregas de {dataDoDiaFmt}</div>
@@ -716,7 +658,6 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
         </div>
       )}
 
-      {/* Dias anteriores — nunca some, mesmo depois de pago */}
       {diasOrdenados.length>0 && (
         <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"14px 16px",marginBottom:16}}>
           <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📆 Dias anteriores</div>
@@ -736,7 +677,6 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
         </div>
       )}
 
-      {/* Cards de ganhos */}
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
         <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"16px 18px",flex:1,minWidth:130}}>
           <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>A receber esta semana</div>
@@ -747,8 +687,6 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
           </div>
           <div style={{color:"#4b5563",fontSize:10,marginTop:4}}>Pago toda terça-feira via PIX</div>
         </div>
-        {/* Só aparece quando tiver algo de semana(s) já fechada(s) ainda não pago —
-            some sozinho assim que o Admin marcar como pago, sem precisar fazer nada. */}
         {semanasAnteriores.length>0 && (
           <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:10,padding:"16px 18px",flex:1,minWidth:130}}>
             <div style={{color:"#fbbf24",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>⏳ A receber semana passada</div>
@@ -769,14 +707,12 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
         </div>
       </div>
 
-      {/* Ranking completo */}
       {rankingGeral && rankingGeral.length > 0 && (
         <div style={{marginBottom:16}}>
           <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>
             🏆 Ranking de {nomeMesAtual} — {rankingGeral.length} motoboy{rankingGeral.length!==1?"s":""}
           </div>
 
-          {/* Minha posição em destaque */}
           {(()=>{
             const minhaPosicao = rankingGeral.findIndex(m=>m.id===motoboyId);
             const minhasEntregas = minhaPosicao>=0 ? rankingGeral[minhaPosicao].qtd : mesMes.length;
@@ -805,13 +741,11 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
             );
           })()}
 
-          {/* Lista completa do ranking */}
           <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,overflow:"hidden"}}>
             {rankingGeral.map((mb, i)=>{
               const isEu = mb.id === motoboyId;
               const medal = i===0?"🥇":i===1?"🥈":i===2?"🥉":null;
               const corBg = isEu?"#0d2a1e":i<3?"#0f172a":"transparent";
-              const corBorda = isEu?"#34d399":i<3?"#f59e0b33":"#1f2937";
               const maxQtd = rankingGeral[0]?.qtd || 1;
 
               return (
@@ -822,7 +756,6 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
                   padding:"10px 14px",
                 }}>
                   <div style={{display:"flex",alignItems:"center",gap:10}}>
-                    {/* Posição */}
                     <div style={{
                       width:28,height:28,borderRadius:"50%",flexShrink:0,
                       display:"flex",alignItems:"center",justifyContent:"center",
@@ -833,7 +766,6 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
                       {medal || i+1}
                     </div>
 
-                    {/* Info */}
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
                         <span style={{
@@ -848,7 +780,6 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
                           <span style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>{mb.qtd} entrega{mb.qtd!==1?"s":""}</span>
                         </div>
                       </div>
-                      {/* Barra de progresso */}
                       <div style={{background:"#1f2937",borderRadius:4,height:4}}>
                         <div style={{
                           background:isEu?"#34d399":i===0?"#f59e0b":"#374151",
@@ -866,7 +797,6 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
         </div>
       )}
 
-      {/* Se não tem ranking ainda */}
       {(!rankingGeral || rankingGeral.length === 0) && mesMes.length > 0 && (
         <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:12}}>
           <div style={{fontSize:32}}>🏆</div>
@@ -877,7 +807,6 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
         </div>
       )}
 
-      {/* Extrato */}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
         <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>
           {verTudo?"Histórico completo":"Extrato desta semana"}
@@ -929,7 +858,6 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
   );
 }
 
-// ─── APP MOTOBOY ──────────────────────────────────────────────────────────────
 export default function AppMotoboy() {
   const [somAtivado, setSomAtivado] = useState(()=>{
     try { return localStorage.getItem("motofast_som_ativado") === "1"; } catch(e) { return false; }
@@ -948,25 +876,15 @@ export default function AppMotoboy() {
   const [carregando, setCarregando] = useState(true);
   const tentativas = useRef(0);
   const pedidoRef = useRef(null);
-  // Guarda, por pedido, o horário (em ms) em que ESTE motoboy recusou — usado
-  // pra esconder o mesmo pedido da tela dele por 1 minuto depois da recusa,
-  // mesmo que ele continue "aguardando" no banco pra outros motoboys aceitarem.
+  const ofertaAtivaRef = useRef(null);
   const recusadosRef = useRef({});
-  // Estado da permissão de notificação — usado pra mostrar (ou esconder) o botão
-  // "Ativar Notificações". No iPhone, pedir a permissão escondida dentro do
-  // carregamento automático quase nunca funciona (a Apple exige que o pedido
-  // aconteça bem na hora de um toque do dedo do motoboy na tela) — por isso
-  // existe esse botão manual, além da tentativa automática (que continua
-  // existindo, e funciona bem no Android).
   const [permissaoNotificacao, setPermissaoNotificacao] = useState(()=>{
     try { return ("Notification" in window) ? Notification.permission : "unsupported"; }
     catch(e) { return "unsupported"; }
   });
 
-  // Chamado direto por um clique do motoboy — precisa rodar exatamente na hora
-  // do toque, sem nenhuma etapa async no meio, pra o iPhone aceitar mostrar a
-  // telinha de permissão de verdade (diferente do pedido automático no login,
-  // que passa por várias etapas assíncronas antes e o iPhone acaba ignorando).
+  const ehContaMonitoramento = motoboyId ? CONTAS_MONITORAMENTO_IDS.includes(motoboyId) : false;
+
   function ativarNotificacoesAgora() {
     try {
       if (window.OneSignalDeferred) {
@@ -980,7 +898,6 @@ export default function AppMotoboy() {
     } catch(e) { console.log("Erro ao pedir permissão manualmente:", e); }
   }
 
-  // Carrega o motoboy logado e busca pedidos reais
   useEffect(()=>{
     async function carregar() {
       try {
@@ -996,13 +913,10 @@ export default function AppMotoboy() {
         if (error) console.error("Erro ao buscar motoboy:", error);
         if (mb) {
           setMotoboyId(mb.id);
-          // Associa este dispositivo ao ID do motoboy no OneSignal (não trava se falhar)
           try {
             if (window.OneSignalDeferred) {
               window.OneSignalDeferred.push(async function(OneSignal) {
                 await OneSignal.login(String(mb.id));
-                // Pede a permissão de notificação automaticamente, assim que ele entra —
-                // não depende de nenhum clique em botão.
                 await OneSignal.Notifications.requestPermission();
               });
             } else if ("Notification" in window && Notification.permission === "default") {
@@ -1016,10 +930,8 @@ export default function AppMotoboy() {
             pix: mb.pix,
             bairroBase: mb.bairro_base,
           });
-          // Carrega o status online/offline real do banco
           setOnline(mb.online || false);
 
-          // Carrega histórico real de entregas desse motoboy
           const { data: pedidosDB } = await supabase
             .from("pedidos")
             .select("*, empresarios(nome)")
@@ -1027,8 +939,6 @@ export default function AppMotoboy() {
             .in("status", ["entregue", "cancelado"])
             .order("criado_em", { ascending: false });
 
-          // Verifica se já existe uma corrida ativa (aceita ou em rota) para este motoboy —
-          // isso recupera a tela após um recarregamento acidental da página, sem perder a corrida em andamento
           const { data: pedidosAtivosDB } = await supabase
             .from("pedidos")
             .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
@@ -1077,7 +987,6 @@ export default function AppMotoboy() {
             }));
           }
 
-          // Busca ranking de todos os motoboys do mês atual
           const mesAtualRank = new Date().getMonth()+1;
           const anoAtualRank = new Date().getFullYear();
           const inicioMes = new Date(anoAtualRank, mesAtualRank-1, 1).toISOString();
@@ -1115,15 +1024,11 @@ export default function AppMotoboy() {
     carregar();
   },[]);
 
-  // Busca pedidos reais aguardando aceite + escuta novos em tempo real
   useEffect(()=>{
     if (!online || corridaAtiva || !motoboyId) return;
-    // Se já tem um pedido na tela esperando resposta, não busca de novo (evita sobrescrever / piscar)
     if (pedidoRef.current) return;
 
     async function buscarPedidoReal() {
-      // Se já tem pedido na tela, verifica se ele ainda está "aguardando" no banco
-      // Se foi cancelado pelo empresário, limpa a tela do motoboy
       if (pedidoRef.current) {
         const { data: verificacao } = await supabase
           .from("pedidos")
@@ -1131,47 +1036,70 @@ export default function AppMotoboy() {
           .eq("id", pedidoRef.current.id)
           .maybeSingle();
         if (!verificacao || verificacao.status !== "aguardando") {
-          // Pedido foi cancelado pelo empresário ou aceito por outro motoboy
           if (verificacao && verificacao.status === "cancelado") {
-            // Mostra aviso de cancelamento por 4 segundos
             setPedidoCancelado(true);
             setTimeout(() => setPedidoCancelado(false), 4000);
           }
           setPedidoDisponivel(null);
           pedidoRef.current = null;
+          ofertaAtivaRef.current = null;
           tentativas.current = 0;
         }
         return;
       }
 
-      // Busca até 10 pedidos aguardando (não só 1) — assim, se o primeiro da fila
-      // for exatamente o que ESTE motoboy acabou de recusar (ainda dentro da
-      // janela de 1 minuto de cooldown), dá pra pular ele e mostrar o próximo,
-      // em vez de simplesmente não achar nada.
-      const { data } = await supabase
-        .from("pedidos")
-        .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
-        .eq("status", "aguardando")
-        .order("criado_em", { ascending: true })
-        .limit(10);
+      let candidato = null;
 
-      if (!data || data.length === 0) return;
+      if (ehContaMonitoramento) {
+        const { data } = await supabase
+          .from("pedidos")
+          .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
+          .eq("status", "aguardando")
+          .order("criado_em", { ascending: true })
+          .limit(10);
 
-      // Limpa do "cache" de recusados qualquer entrada já vencida (mais de 1 min) —
-      // mantém o objeto pequeno e evita guardar lixo pra sempre.
-      const agora = Date.now();
-      Object.keys(recusadosRef.current).forEach(id=>{
-        if (agora - recusadosRef.current[id] >= TEMPO_COOLDOWN_RECUSA_MS) {
-          delete recusadosRef.current[id];
-        }
-      });
+        if (!data || data.length === 0) return;
 
-      // Acha o primeiro pedido da fila que este motoboy NÃO recusou recentemente
-      const candidato = data.find(p=>{
-        const recusadoEm = recusadosRef.current[p.id];
-        return !recusadoEm || (agora - recusadoEm >= TEMPO_COOLDOWN_RECUSA_MS);
-      });
-      if (!candidato) return; // todos os pedidos disponíveis foram recusados recentemente por ele
+        const agora = Date.now();
+        Object.keys(recusadosRef.current).forEach(id=>{
+          if (agora - recusadosRef.current[id] >= TEMPO_COOLDOWN_RECUSA_MS) {
+            delete recusadosRef.current[id];
+          }
+        });
+
+        candidato = data.find(p=>{
+          const recusadoEm = recusadosRef.current[p.id];
+          return !recusadoEm || (agora - recusadoEm >= TEMPO_COOLDOWN_RECUSA_MS);
+        });
+        if (!candidato) return;
+      } else {
+        const agoraISO = new Date().toISOString();
+        const { data: ofertas } = await supabase
+          .from("ofertas_pedido")
+          .select("id, pedido_id, expira_em")
+          .eq("motoboy_id", motoboyId)
+          .eq("respondido", false)
+          .gt("expira_em", agoraISO)
+          .order("oferecido_em", { ascending: true })
+          .limit(3);
+
+        if (!ofertas || ofertas.length === 0) return;
+
+        const idsPedidosOfertados = ofertas.map(o => o.pedido_id);
+        const { data: pedidosOfertados } = await supabase
+          .from("pedidos")
+          .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
+          .in("id", idsPedidosOfertados)
+          .eq("status", "aguardando");
+
+        if (!pedidosOfertados || pedidosOfertados.length === 0) return;
+
+        const primeiraOferta = ofertas.find(o => pedidosOfertados.some(p => p.id === o.pedido_id));
+        if (!primeiraOferta) return;
+        candidato = pedidosOfertados.find(p => p.id === primeiraOferta.pedido_id);
+        if (!candidato) return;
+        ofertaAtivaRef.current = primeiraOferta.id;
+      }
 
       if (candidato && !pedidoRef.current) {
         const novoPedido = {
@@ -1189,7 +1117,6 @@ export default function AppMotoboy() {
         };
         pedidoRef.current = novoPedido;
         setPedidoDisponivel(novoPedido);
-        // Dispara notificação push (funciona com tela bloqueada)
         dispararNotificacaoPush(
           "🏍️ Novo Pedido MotoFast!",
           `Entrega para ${novoPedido.clienteNome} em ${novoPedido.bairro} — R$${novoPedido.taxa}. Você tem 30 segundos para aceitar!`
@@ -1199,7 +1126,6 @@ export default function AppMotoboy() {
 
     buscarPedidoReal();
 
-    // Escuta em tempo real — assim que um pedido novo é publicado, aparece na hora
     const canal = supabase
       .channel("pedidos-motoboy")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "pedidos" }, () => {
@@ -1207,33 +1133,27 @@ export default function AppMotoboy() {
       })
       .subscribe();
 
-    // Rede de segurança — verifica a cada 8s, caso o Realtime não esteja ativo no banco
     const intervalo = setInterval(buscarPedidoReal, 2000);
 
     return () => { supabase.removeChannel(canal); clearInterval(intervalo); };
-  },[online, corridaAtiva, motoboyId]);
+  },[online, corridaAtiva, motoboyId, ehContaMonitoramento]);
 
-  // Repete som a cada 30s se ninguém aceitou, por até 5 minutos (10 tentativas)
   useEffect(()=>{
     if (!pedidoDisponivel) return;
     const t = setTimeout(()=>{
       tentativas.current += 1;
       if (tentativas.current >= MAX_TENTATIVAS) {
-        // 5 minutos sem aceite — cancela e avisa empresário
         setPedidoDisponivel(null);
         pedidoRef.current = null;
+        ofertaAtivaRef.current = null;
         tentativas.current = 0;
-        // Aviso ao empresário é tratado na interface do empresário
       } else {
-        // Nova rodada — recria o pedido com criadoEm atualizado pra resetar o timer visual e o som
         setPedidoDisponivel(p=>p ? {...p, criadoEm:Date.now()} : null);
       }
     }, TEMPO_PEDIDO * 1000);
     return ()=>clearTimeout(t);
   },[pedidoDisponivel]);
 
-  // Mantém a corrida sempre sincronizada com o banco — versão simplificada,
-  // só com polling direto (sem Realtime/canal, que mostrou instabilidade)
   async function recarregarCorrida(corridaId) {
     if (!corridaId || !motoboyId) return;
     const { data, error } = await supabase
@@ -1245,7 +1165,6 @@ export default function AppMotoboy() {
 
     if (error || !data || data.length === 0) return;
 
-    // Verifica se todos os pedidos foram cancelados pelo empresário
     const todosCancelados = data.every(p => p.status === "cancelado");
     if (todosCancelados) {
       setPedidoCancelado(true);
@@ -1288,8 +1207,6 @@ export default function AppMotoboy() {
     return () => clearInterval(intervalo);
   },[motoboyId]);
 
-  // ─── GPS EM TEMPO REAL ────────────────────────────────────────────────────
-  // Envia localização do motoboy ao banco a cada 5s enquanto há corrida ativa
   useEffect(()=>{
     if (!motoboyId || !corridaAtiva) return;
 
@@ -1316,14 +1233,12 @@ export default function AppMotoboy() {
   async function aceitar() {
     if (!pedidoDisponivel || !motoboyId) return;
 
-    // Cria a corrida no banco primeiro
     const { data: corridaDB } = await supabase
       .from("corridas")
       .insert({ motoboy_id: motoboyId, status: "ativa" })
       .select()
       .single();
 
-    // Tenta aceitar no banco — só funciona se ainda estiver "aguardando" (evita 2 motoboys pegarem o mesmo pedido)
     const { data, error } = await supabase
       .from("pedidos")
       .update({ status: "aceito", motoboy_id: motoboyId, corrida_id: corridaDB?.id, aceito_em: new Date().toISOString() })
@@ -1333,11 +1248,29 @@ export default function AppMotoboy() {
       .maybeSingle();
 
     if (!data) {
-      // Outro motoboy já aceitou primeiro
       setPedidoDisponivel(null);
       pedidoRef.current = null;
+      ofertaAtivaRef.current = null;
       tentativas.current = 0;
       return;
+    }
+
+    if (ofertaAtivaRef.current) {
+      await supabase.from("ofertas_pedido").update({ respondido: true, aceito: true }).eq("id", ofertaAtivaRef.current);
+    }
+    if (!ehContaMonitoramento) {
+      const hojeISO = dataLocalISO();
+      const { data: contadorAtual } = await supabase
+        .from("rodizio_contador")
+        .select("corridas_hoje, data_referencia")
+        .eq("motoboy_id", motoboyId)
+        .maybeSingle();
+      const valorBase = (contadorAtual && contadorAtual.data_referencia === hojeISO) ? contadorAtual.corridas_hoje : 0;
+      await supabase.from("rodizio_contador").upsert({
+        motoboy_id: motoboyId,
+        corridas_hoje: valorBase + 1,
+        data_referencia: hojeISO,
+      });
     }
 
     setCorridaAtiva({
@@ -1346,23 +1279,33 @@ export default function AppMotoboy() {
     });
     setPedidoDisponivel(null);
     pedidoRef.current = null;
+    ofertaAtivaRef.current = null;
     tentativas.current = 0;
     setAba("corrida");
   }
 
   function recusar() {
-    // Marca AGORA como o horário de recusa desse pedido específico por ESTE
-    // motoboy — o pedido some da tela dele e não volta a aparecer por 1 minuto,
-    // mesmo que ele continue "aguardando" no banco pra outros motoboys.
     if (pedidoDisponivel) {
       recusadosRef.current[pedidoDisponivel.id] = Date.now();
     }
-    setPedidoDisponivel(null); pedidoRef.current = null; tentativas.current = 0;
+    if (ofertaAtivaRef.current) {
+      const pedidoIdRecusado = pedidoDisponivel?.id;
+      supabase.from("ofertas_pedido").update({ respondido: true, aceito: false }).eq("id", ofertaAtivaRef.current)
+        .then(()=>{
+          if (pedidoIdRecusado) {
+            fetch("/api/avancar-fila-pedido", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ pedido_id: pedidoIdRecusado }),
+            }).catch(e => console.log("Erro ao avançar fila após recusa:", e));
+          }
+        });
+    }
+    setPedidoDisponivel(null); pedidoRef.current = null; ofertaAtivaRef.current = null; tentativas.current = 0;
   }
 
   async function finalizarCorrida() {
     if (!corridaAtiva) return;
-    // Marca cada pedido como entregue no banco real
     for (const p of corridaAtiva.pedidos) {
       await supabase.from("pedidos").update({
         status: "entregue",
@@ -1397,7 +1340,6 @@ export default function AppMotoboy() {
       await supabase.from("motoboys").update({online: false}).eq("id", motoboyId);
     }
     setAba("home");
-    // No sistema real: notifica admin e empresário com o motivo
   }
 
   const _agora = new Date();
@@ -1423,7 +1365,6 @@ export default function AppMotoboy() {
 
   return (
     <div style={{minHeight:"100vh",background:"#0a0f1a",fontFamily:"'Inter','Segoe UI',sans-serif",color:"#f9fafb"}}>
-      {/* Header */}
       <div style={{background:"#111827",borderBottom:"1px solid #1f2937",padding:"0 20px",position:"sticky",top:0,zIndex:100}}>
         <div style={{maxWidth:600,margin:"0 auto",display:"flex",alignItems:"center",gap:0}}>
           <div style={{padding:"12px 16px 12px 0",borderRight:"1px solid #1f2937",marginRight:14,flexShrink:0}}>
@@ -1438,7 +1379,6 @@ export default function AppMotoboy() {
               </button>
             ))}
           </nav>
-          {/* Toggle online/offline */}
           <button onClick={async()=>{
             const novoStatus = !online;
             setOnline(novoStatus);
@@ -1455,17 +1395,10 @@ export default function AppMotoboy() {
         </div>
       </div>
 
-      {/* Conteúdo */}
       <div style={{maxWidth:600,margin:"0 auto",padding:"20px 16px"}}>
 
-        {/* HOME */}
         {aba==="home" && (
           <div>
-            {/* Aviso pra ativar notificações — bem visível, no topo de tudo.
-                Só aparece se a permissão AINDA não foi concedida. Some sozinho
-                assim que o motoboy tocar e aceitar. Essencial principalmente no
-                iPhone, onde o pedido automático de permissão quase nunca funciona
-                — precisa ser um toque direto do motoboy pra Apple liberar. */}
             {permissaoNotificacao!=="granted" && permissaoNotificacao!=="unsupported" && (
               <Card style={{marginBottom:14,background:"#3d2a00",border:"2px solid #f59e0b"}}>
                 <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
@@ -1481,7 +1414,6 @@ export default function AppMotoboy() {
               </Card>
             )}
 
-            {/* Status card */}
             <Card style={{marginBottom:14,background:online?"#0d2a1e":"#1a1a1a",border:online?"1px solid #34d399":"1px solid #374151"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <div>
@@ -1509,7 +1441,6 @@ export default function AppMotoboy() {
               )}
             </Card>
 
-            {/* Saldo rápido */}
             <div style={{display:"flex",gap:10,marginBottom:14}}>
               <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"14px 16px",flex:1,textAlign:"center"}}>
                 <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>A receber terça</div>
@@ -1534,7 +1465,6 @@ export default function AppMotoboy() {
               </div>
             </div>
 
-            {/* Corrida ativa resumo */}
             {corridaAtiva && (
               <Card style={{marginBottom:14,border:"1px solid #34d399",background:"#0a1f14"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -1547,7 +1477,6 @@ export default function AppMotoboy() {
               </Card>
             )}
 
-            {/* Seletor de som */}
             <Card style={{background:"#0f172a",border:"1px solid #1f2937",marginBottom:14}}>
               <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>🔔 Som de Notificação</div>
               <div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -1569,7 +1498,6 @@ export default function AppMotoboy() {
               </div>
             </Card>
 
-            {/* Dicas */}
             {online && !corridaAtiva && (
               <Card style={{background:"#0f172a",border:"1px solid #1f2937"}}>
                 <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>📌 Lembretes</div>
@@ -1592,7 +1520,6 @@ export default function AppMotoboy() {
           </div>
         )}
 
-        {/* CORRIDA */}
         {aba==="corrida" && (
           corridaAtiva
             ? <CorridaAtiva corrida={corridaAtiva} onEntregar={finalizarCorrida} onCancelar={cancelarCorrida}/>
@@ -1604,12 +1531,10 @@ export default function AppMotoboy() {
               </Card>
         )}
 
-        {/* GANHOS */}
         {aba==="ganhos" && <Ganhos historico={historico} motoboyId={motoboyId} todosHistorico={historico} rankingGeral={rankingGeral} motoboy={motoboy}/>}
       </div>
 
 
-      {/* Aviso de pedido cancelado pelo empresário */}
       {pedidoCancelado && (
         <div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",zIndex:500,
           background:"#3d1010",border:"2px solid #ef4444",borderRadius:12,padding:"16px 24px",
@@ -1620,7 +1545,6 @@ export default function AppMotoboy() {
         </div>
       )}
 
-      {/* Suporte no rodapé */}
       <div style={{maxWidth:600,margin:"0 auto",padding:"0 16px 30px"}}>
         <a href={`https://wa.me/${SUPORTE_TEL}?text=Olá, sou motoboy no MotoFast e preciso de suporte`}
           target="_blank" rel="noreferrer"
