@@ -1050,6 +1050,9 @@ export default function AppMotoboy() {
 
       let candidato = null;
 
+      // REATIVADO em 28/08/2026: bugs reais corrigidos (coluna errada e
+      // região do QStash) — contas de monitoramento continuam vendo tudo,
+      // motoboys normais só veem o que foi oferecido pra eles.
       if (ehContaMonitoramento) {
         const { data } = await supabase
           .from("pedidos")
@@ -1255,6 +1258,9 @@ export default function AppMotoboy() {
       return;
     }
 
+    // REATIVADO em 28/08/2026: marca a oferta como aceita e soma +1 no
+    // contador do rodízio de hoje (exclusivo pra fila, nunca mexe no
+    // histórico/ranking real, que continuam vindo só da tabela "pedidos").
     if (ofertaAtivaRef.current) {
       await supabase.from("ofertas_pedido").update({ respondido: true, aceito: true }).eq("id", ofertaAtivaRef.current);
     }
