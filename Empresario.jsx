@@ -2503,7 +2503,11 @@ export default function AppEmpresario() {
     }
   },[aba, mesHistorico, empresa?.id]);
 
-  // Após 5 minutos sem aceite → avisa empresário e cancela no banco
+  // ATUALIZADO em 28/08/2026: de 5 pra 10 minutos, pra bater exatamente com a
+  // janela total do sistema de rodízio (JANELA_TOTAL_MS no
+  // avancar-fila-pedido.js). Antes, esse timer cancelava o pedido aos 5
+  // minutos enquanto o rodízio ainda estava tentando até os 10 — um conflito
+  // real que podia interromper o rodízio no meio do caminho.
   useEffect(()=>{
     const aguardando = pedidos.filter(p=>p.status==="aguardando");
     if (aguardando.length===0) return;
@@ -2511,10 +2515,10 @@ export default function AppEmpresario() {
     // Cria um timer separado para CADA pedido aguardando, baseado no criadoEm de cada um
     const timers = aguardando.map(pedidoAlvo => {
       const decorrido = Date.now() - pedidoAlvo.criadoEm;
-      const restante = Math.max(1000, 5*60*1000 - decorrido); // mínimo 1s para não cancelar na hora
+      const restante = Math.max(1000, 10*60*1000 - decorrido); // mínimo 1s para não cancelar na hora
       return setTimeout(async ()=>{
         await supabase.from("pedidos")
-          .update({ status: "cancelado", motivo_cancelamento: "Nenhum motoboy aceitou em 5 minutos" })
+          .update({ status: "cancelado", motivo_cancelamento: "Nenhum motoboy aceitou em 10 minutos" })
           .eq("id", pedidoAlvo.id)
           .eq("status","aguardando");
         setAvisoSemMotoboy(pedidoAlvo);
@@ -2722,7 +2726,7 @@ export default function AppEmpresario() {
               Infelizmente, nenhum motoboy aceitou a entrega para{" "}
               <strong style={{color:"#f9fafb"}}>{avisoSemMotoboy.clienteNome}</strong>{" "}
               em <strong style={{color:"#f9fafb"}}>{avisoSemMotoboy.bairro}</strong>{" "}
-              nos últimos 5 minutos.
+              nos últimos 10 minutos.
               <br/><br/>
               <strong style={{color:"#fbbf24"}}>Aguarde 1 minutinho e tente solicitar novamente.</strong>
               {" "}Os motoboys serão notificados assim que você reenviar o pedido. Continue tentando — alguém vai aceitar!
