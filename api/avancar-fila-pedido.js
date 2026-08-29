@@ -155,6 +155,8 @@ export default async function handler(req, res) {
       for (const conta of CONTAS_MONITORAMENTO) {
         if (!idsOnlineMonitor.has(conta.id)) continue; // só notifica se estiver online
         try {
+          const controladorMonitor = new AbortController();
+          const timeoutMonitor = setTimeout(() => controladorMonitor.abort(), 5000);
           await fetch(`${urlBaseMonitor}/api/notificar-motoboy-especifico`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -163,9 +165,11 @@ export default async function handler(req, res) {
               titulo: '🏍️ Novo Pedido MotoFast!',
               corpo: `Entrega em ${pedido.bairro} — R$${pedido.taxa_motoboy}.`,
             }),
+            signal: controladorMonitor.signal,
           });
+          clearTimeout(timeoutMonitor);
         } catch (e) {
-          console.log('Erro ao notificar conta de monitoramento (não bloqueia o fluxo):', e);
+          console.log('Erro ou timeout ao notificar conta de monitoramento (não bloqueia o fluxo):', e.message);
         }
       }
     }
@@ -204,25 +208,11 @@ export default async function handler(req, res) {
       respondido: false,
     });
 
-    // 10) Notifica só esse motoboy específico (via OneSignal, direcionado ao
-    // external_id dele — precisa que o app do motoboy já esteja fazendo
-    // OneSignal.login(motoboyId), que o Motoboy.jsx já faz hoje)
-    try {
-      await fetch(`https://motofast-platform.vercel.app/api/notificar-motoboy-especifico`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          motoboyId: escolhido.id,
-          titulo: '🏍️ Novo Pedido MotoFast!',
-          corpo: `Entrega em ${pedido.bairro} — R$${pedido.taxa_motoboy}. Você tem 30 segundos!`,
-        }),
-      });
-    } catch (e) {
-      console.log('Erro ao notificar motoboy específico (não bloqueia o fluxo):', e);
-    }
-
-    // 11) Agenda a PRÓXIMA verificação em 30 segundos via QStash — só se ainda
-    // não vai estourar os 10 minutos totais nesse meio tempo
+    // 10) INVERTIDO em 29/08/2026: agenda a PRÓXIMA verificação em 30
+    // segundos via QStash ANTES de notificar — isso é o mais crítico e mais
+    // rápido, e não pode ficar refém da notificação (que faz uma chamada
+    // pra fora, ao OneSignal, e pode demorar). Um caso real travou 4+
+    // minutos porque a notificação vinha antes e segurava tudo atrás dela.
     let qstashInfo = { agendado: false, erro: null, messageId: null };
     if (decorrido + TEMPO_OFERTA_MS < JANELA_TOTAL_MS) {
       const urlBase = 'https://motofast-platform.vercel.app';
@@ -243,6 +233,28 @@ export default async function handler(req, res) {
           dados: { pedido_id, qstashInfo },
         });
       } catch (e3) { /* não trava a resposta */ }
+    }
+
+    // 11) Notifica só esse motoboy específico — agora com um limite de 5
+    // segundos (AbortController). Se o OneSignal travar ou demorar, a gente
+    // desiste dessa notificação específica e segue em frente — o rodízio já
+    // está garantido pelo passo acima, independente disso funcionar ou não.
+    try {
+      const controlador = new AbortController();
+      const timeoutId = setTimeout(() => controlador.abort(), 5000);
+      await fetch(`https://motofast-platform.vercel.app/api/notificar-motoboy-especifico`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          motoboyId: escolhido.id,
+          titulo: '🏍️ Novo Pedido MotoFast!',
+          corpo: `Entrega em ${pedido.bairro} — R$${pedido.taxa_motoboy}. Você tem 30 segundos!`,
+        }),
+        signal: controlador.signal,
+      });
+      clearTimeout(timeoutId);
+    } catch (e) {
+      console.log('Erro ou timeout ao notificar motoboy específico (não bloqueia o fluxo):', e.message);
     }
 
     return res.status(200).json({
