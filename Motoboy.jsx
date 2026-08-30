@@ -1050,10 +1050,14 @@ export default function AppMotoboy() {
 
       let candidato = null;
 
-      // REATIVADO em 28/08/2026: bugs reais corrigidos (coluna errada e
-      // região do QStash) — contas de monitoramento continuam vendo tudo,
-      // motoboys normais só veem o que foi oferecido pra eles.
-      if (ehContaMonitoramento) {
+      // PAUSADO em 30/08/2026 a pedido do Alessandro: plataforma ainda
+      // pequena, rodízio de 30s por motoboy demorando demais pra achar
+      // alguém disponível. Todo mundo volta a ver todo pedido "aguardando",
+      // igual sempre foi. O bloco do rodízio (comentado no else abaixo, na
+      // versão anterior) NÃO foi apagado do histórico do projeto — quando a
+      // base de motoboys crescer, é só reverter esse "if" pra usar de novo a
+      // lógica de ofertas_pedido específica de cada motoboy.
+      {
         const { data } = await supabase
           .from("pedidos")
           .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
@@ -1075,33 +1079,6 @@ export default function AppMotoboy() {
           return !recusadoEm || (agora - recusadoEm >= TEMPO_COOLDOWN_RECUSA_MS);
         });
         if (!candidato) return;
-      } else {
-        const agoraISO = new Date().toISOString();
-        const { data: ofertas } = await supabase
-          .from("ofertas_pedido")
-          .select("id, pedido_id, expira_em")
-          .eq("motoboy_id", motoboyId)
-          .eq("respondido", false)
-          .gt("expira_em", agoraISO)
-          .order("oferecido_em", { ascending: true })
-          .limit(3);
-
-        if (!ofertas || ofertas.length === 0) return;
-
-        const idsPedidosOfertados = ofertas.map(o => o.pedido_id);
-        const { data: pedidosOfertados } = await supabase
-          .from("pedidos")
-          .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
-          .in("id", idsPedidosOfertados)
-          .eq("status", "aguardando");
-
-        if (!pedidosOfertados || pedidosOfertados.length === 0) return;
-
-        const primeiraOferta = ofertas.find(o => pedidosOfertados.some(p => p.id === o.pedido_id));
-        if (!primeiraOferta) return;
-        candidato = pedidosOfertados.find(p => p.id === primeiraOferta.pedido_id);
-        if (!candidato) return;
-        ofertaAtivaRef.current = primeiraOferta.id;
       }
 
       if (candidato && !pedidoRef.current) {
@@ -1405,7 +1382,9 @@ export default function AppMotoboy() {
 
         {aba==="home" && (
           <div>
-            {permissaoNotificacao!=="granted" && permissaoNotificacao!=="unsupported" && (
+            {/* Caso 1: ainda não pediu permissão — o botão funciona normal,
+                mostra o pedido nativo do navegador */}
+            {permissaoNotificacao==="default" && (
               <Card style={{marginBottom:14,background:"#3d2a00",border:"2px solid #f59e0b"}}>
                 <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
                   <div style={{fontSize:32}}>🔔</div>
@@ -1417,6 +1396,33 @@ export default function AppMotoboy() {
                 <button onClick={ativarNotificacoesAgora} style={{marginTop:10,width:"100%",padding:"12px",borderRadius:10,background:"#f59e0b",border:"none",color:"#000",fontWeight:900,fontSize:15,cursor:"pointer"}}>
                   🔔 Ativar Notificações Agora
                 </button>
+              </Card>
+            )}
+
+            {/* Caso 2: JÁ FOI NEGADA — adicionado em 28/08/2026. Uma vez que o
+                Android nega, o navegador NUNCA mais mostra o pedido de
+                permissão sozinho, então o botão acima clicaria sem fazer
+                nada (aparência de "travado"). A única saída é o próprio
+                motoboy liberar manualmente nas configurações do site. */}
+            {permissaoNotificacao==="denied" && (
+              <Card style={{marginBottom:14,background:"#3d1010",border:"2px solid #ef4444"}}>
+                <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:10}}>
+                  <div style={{fontSize:32}}>🔕</div>
+                  <div style={{flex:1,minWidth:180}}>
+                    <div style={{color:"#f87171",fontWeight:800,fontSize:15}}>Notificações BLOQUEADAS no seu celular</div>
+                    <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>Você só recebe pedido com o app aberto na tela — sem isso, perde corrida quando sai do app. Precisa liberar manualmente, o botão sozinho não resolve mais.</div>
+                  </div>
+                </div>
+                <div style={{background:"#111827",borderRadius:8,padding:"12px 14px",fontSize:12,color:"#d1d5db",lineHeight:1.7}}>
+                  <strong style={{color:"#fbbf24"}}>Como liberar no Android (Chrome):</strong>
+                  <ol style={{margin:"6px 0 0 18px",padding:0}}>
+                    <li>Toque nos <strong>3 pontinhos</strong> no canto superior direito do navegador</li>
+                    <li>Toque em <strong>"Configurações do site"</strong> (ou no cadeado/ícone ao lado do endereço)</li>
+                    <li>Toque em <strong>"Notificações"</strong></li>
+                    <li>Mude de "Bloqueado" para <strong>"Permitir"</strong></li>
+                    <li>Feche e abra o app de novo</li>
+                  </ol>
+                </div>
               </Card>
             )}
 

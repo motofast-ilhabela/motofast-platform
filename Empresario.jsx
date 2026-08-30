@@ -2589,17 +2589,16 @@ export default function AppEmpresario() {
     }).select().single();
 
     // Notifica os motoboys via push real — chega mesmo com o app fechado.
-    // REATIVADO em 28/08/2026: os dois bugs reais já foram achados e
-    // corrigidos (coluna errada "bloqueado"→"ativo" na consulta de motoboys, e
-    // região errada do QStash). Testado com sucesso via reqbin antes de
-    // religar aqui.
-    if (pedidoDB?.id) {
-      fetch("/api/avancar-fila-pedido", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pedido_id: pedidoDB.id }),
-      }).catch(e => console.log("Erro ao iniciar rodízio:", e));
-    }
+    // PAUSADO em 30/08/2026 a pedido do Alessandro: plataforma ainda pequena,
+    // o rodízio de 30s por motoboy estava demorando demais pra achar alguém
+    // disponível. Voltando pro "avisa todo mundo de uma vez" por enquanto —
+    // o código do rodízio (avancar-fila-pedido.js) continua intacto, pronto
+    // pra religar quando a base de motoboys crescer. NÃO REMOVER O CÓDIGO
+    // DO RODÍZIO, só está desligado aqui.
+    notificarMotoboysPush(
+      "🏍️ Novo Pedido MotoFast!",
+      `Entrega em ${pedido.bairro} — R$${pedido.taxaMotoboy || pedido.taxa}`
+    );
 
     // Recarrega a lista do banco, garantindo consistência total
     await carregarPedidos(empresa.id);
@@ -2756,14 +2755,11 @@ export default function AppEmpresario() {
                   status: "aguardando",
                 }).select().single();
                 if (error) { console.error("Erro ao reenviar pedido:", error); return; }
-                // REATIVADO em 28/08/2026: igual ao publicarPedido, bugs corrigidos
-                if (pedidoReenviado?.id) {
-                  fetch("/api/avancar-fila-pedido", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ pedido_id: pedidoReenviado.id }),
-                  }).catch(e => console.log("Erro ao iniciar rodízio:", e));
-                }
+                // PAUSADO em 30/08/2026, igual ao publicarPedido (ver comentário lá)
+                notificarMotoboysPush(
+                  "🏍️ Novo Pedido MotoFast!",
+                  `Entrega em ${avisoSemMotoboy.bairro} — R$${avisoSemMotoboy.taxaMotoboy || avisoSemMotoboy.taxa}`
+                );
                 await carregarPedidos(empresa.id);
                 setAvisoSemMotoboy(null);
                 setAba("ativos");
