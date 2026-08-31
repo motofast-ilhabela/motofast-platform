@@ -70,6 +70,19 @@ function dataLocalISO(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
+// Adicionada em 30/08/2026, pro sistema de "Turno Fixo" com prioridade.
+// Retorna 'dia' (09h-16h59), 'noite' (17h-23h59), ou null (00h-08h59, sem
+// turno fixo cobrindo esse horário) — sempre no horário de Brasília, não do
+// fuso do navegador, pra funcionar igual não importa onde o empresário esteja.
+function turnoAtual() {
+  const horaBrasilia = Number(new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false,
+  }).format(new Date()));
+  if (horaBrasilia >= 9 && horaBrasilia < 17) return 'dia';
+  if (horaBrasilia >= 17 && horaBrasilia <= 23) return 'noite';
+  return null;
+}
+
 // Retorna a data (AAAA-MM-DD) da segunda-feira que inicia a semana REAL (segunda a
 // domingo) que contém a data informada. Usado pra somar a taxa da semana inteira de
 // uma vez, pro empresário que paga toda segunda-feira não precisar somar dia por dia.
@@ -2566,6 +2579,37 @@ export default function AppEmpresario() {
       return;
     }
 
+    // ─── SISTEMA DE PRIORIDADE DO TURNO FIXO — criado em 30/08/2026 ───
+    // Confere se é horário de algum turno fixo, e se tem alguém desse turno
+    // online AGORA. Se sim, o pedido nasce com uma "janela de prioridade" de
+    // 20 segundos — só eles conseguem ver/aceitar nesse tempo (o Motoboy.jsx
+    // já respeita isso). Depois de 20s, libera pra todo mundo sozinho, sem
+    // precisar de nenhum serviço externo. Se ninguém do turno fixo estiver
+    // online, publica normal, sem prioridade nenhuma — igual sempre foi.
+    const turno = turnoAtual();
+    let idsOnlineTurnoFixo = [];
+    if (turno) {
+      const { data: turnoFixoDB } = await supabase
+        .from("motoboys_turno_fixo")
+        .select("motoboy_id")
+        .eq("turno", turno)
+        .eq("ativo", true);
+      const idsTurnoFixo = (turnoFixoDB || []).map(t => t.motoboy_id);
+      if (idsTurnoFixo.length > 0) {
+        const { data: onlineDB } = await supabase
+          .from("motoboys")
+          .select("id")
+          .in("id", idsTurnoFixo)
+          .eq("online", true)
+          .eq("ativo", true)
+          .eq("banido", false);
+        idsOnlineTurnoFixo = (onlineDB || []).map(m => m.id);
+      }
+    }
+    const temPrioridadeAtiva = idsOnlineTurnoFixo.length > 0;
+    const agoraISO = new Date().toISOString();
+    const prioridadeAte = temPrioridadeAtiva ? new Date(Date.now() + 20000).toISOString() : null;
+
     // Salva o pedido no Supabase
     const { data: pedidoDB } = await supabase.from("pedidos").insert({
       empresario_id: empresa.id,
@@ -2586,19 +2630,33 @@ export default function AppEmpresario() {
       distancia_km: pedido.distanciaKm,
       metodo_calculo_km: pedido.metodoCalculoKm,
       status: "aguardando",
+      prioridade_ate: prioridadeAte,
+      turno_prioridade: temPrioridadeAtiva ? turno : null,
     }).select().single();
 
     // Notifica os motoboys via push real — chega mesmo com o app fechado.
-    // PAUSADO em 30/08/2026 a pedido do Alessandro: plataforma ainda pequena,
-    // o rodízio de 30s por motoboy estava demorando demais pra achar alguém
-    // disponível. Voltando pro "avisa todo mundo de uma vez" por enquanto —
-    // o código do rodízio (avancar-fila-pedido.js) continua intacto, pronto
-    // pra religar quando a base de motoboys crescer. NÃO REMOVER O CÓDIGO
-    // DO RODÍZIO, só está desligado aqui.
-    notificarMotoboysPush(
-      "🏍️ Novo Pedido MotoFast!",
-      `Entrega em ${pedido.bairro} — R$${pedido.taxaMotoboy || pedido.taxa}`
-    );
+    if (temPrioridadeAtiva) {
+      // Só os do turno fixo recebem notificação direcionada agora — o
+      // restante só vai ver o pedido depois que a janela de 20s passar
+      // (o Motoboy.jsx deles já esconde automaticamente até lá).
+      idsOnlineTurnoFixo.forEach(motoboyId => {
+        fetch("/api/notificar-motoboy-especifico", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            motoboyId,
+            titulo: "🏍️ Novo Pedido MotoFast!",
+            corpo: `Entrega em ${pedido.bairro} — R$${pedido.taxaMotoboy || pedido.taxa}`,
+          }),
+        }).catch(e => console.log("Erro ao notificar motoboy do turno fixo:", e));
+      });
+    } else {
+      // Ninguém do turno fixo online agora — publica normal, pra todo mundo
+      notificarMotoboysPush(
+        "🏍️ Novo Pedido MotoFast!",
+        `Entrega em ${pedido.bairro} — R$${pedido.taxaMotoboy || pedido.taxa}`
+      );
+    }
 
     // Recarrega a lista do banco, garantindo consistência total
     await carregarPedidos(empresa.id);
@@ -2734,6 +2792,31 @@ export default function AppEmpresario() {
               onClick={async()=>{
                 // Reenvia o pedido salvando no Supabase de verdade
                 if (!empresa?.id) return;
+
+                // Mesma lógica de prioridade do turno fixo usada em publicarPedido
+                const turnoReenvio = turnoAtual();
+                let idsOnlineTurnoFixoReenvio = [];
+                if (turnoReenvio) {
+                  const { data: turnoFixoDB } = await supabase
+                    .from("motoboys_turno_fixo")
+                    .select("motoboy_id")
+                    .eq("turno", turnoReenvio)
+                    .eq("ativo", true);
+                  const idsTurnoFixo = (turnoFixoDB || []).map(t => t.motoboy_id);
+                  if (idsTurnoFixo.length > 0) {
+                    const { data: onlineDB } = await supabase
+                      .from("motoboys")
+                      .select("id")
+                      .in("id", idsTurnoFixo)
+                      .eq("online", true)
+                      .eq("ativo", true)
+                      .eq("banido", false);
+                    idsOnlineTurnoFixoReenvio = (onlineDB || []).map(m => m.id);
+                  }
+                }
+                const temPrioridadeReenvio = idsOnlineTurnoFixoReenvio.length > 0;
+                const prioridadeAteReenvio = temPrioridadeReenvio ? new Date(Date.now() + 20000).toISOString() : null;
+
                 const { data: pedidoReenviado, error } = await supabase.from("pedidos").insert({
                   empresario_id: empresa.id,
                   cliente_nome: avisoSemMotoboy.clienteNome,
@@ -2753,13 +2836,28 @@ export default function AppEmpresario() {
                   distancia_km: avisoSemMotoboy.distanciaKm,
                   metodo_calculo_km: avisoSemMotoboy.metodoCalculoKm,
                   status: "aguardando",
+                  prioridade_ate: prioridadeAteReenvio,
+                  turno_prioridade: temPrioridadeReenvio ? turnoReenvio : null,
                 }).select().single();
                 if (error) { console.error("Erro ao reenviar pedido:", error); return; }
-                // PAUSADO em 30/08/2026, igual ao publicarPedido (ver comentário lá)
-                notificarMotoboysPush(
-                  "🏍️ Novo Pedido MotoFast!",
-                  `Entrega em ${avisoSemMotoboy.bairro} — R$${avisoSemMotoboy.taxaMotoboy || avisoSemMotoboy.taxa}`
-                );
+                if (temPrioridadeReenvio) {
+                  idsOnlineTurnoFixoReenvio.forEach(motoboyId => {
+                    fetch("/api/notificar-motoboy-especifico", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        motoboyId,
+                        titulo: "🏍️ Novo Pedido MotoFast!",
+                        corpo: `Entrega em ${avisoSemMotoboy.bairro} — R$${avisoSemMotoboy.taxaMotoboy || avisoSemMotoboy.taxa}`,
+                      }),
+                    }).catch(e => console.log("Erro ao notificar motoboy do turno fixo:", e));
+                  });
+                } else {
+                  notificarMotoboysPush(
+                    "🏍️ Novo Pedido MotoFast!",
+                    `Entrega em ${avisoSemMotoboy.bairro} — R$${avisoSemMotoboy.taxaMotoboy || avisoSemMotoboy.taxa}`
+                  );
+                }
                 await carregarPedidos(empresa.id);
                 setAvisoSemMotoboy(null);
                 setAba("ativos");

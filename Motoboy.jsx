@@ -1074,9 +1074,27 @@ export default function AppMotoboy() {
           }
         });
 
+        // ─── PRIORIDADE DO TURNO FIXO — adicionado em 30/08/2026 ───
+        // Se um pedido nasceu com uma janela de prioridade ativa
+        // (prioridade_ate no futuro), só quem está cadastrado naquele turno
+        // específico consegue ver ele agora — todo mundo mais espera a
+        // janela passar sozinha (o próprio pedido libera geral depois,
+        // sem precisar de nada especial, só o tempo passar).
+        const { data: meuTurnoFixo } = await supabase
+          .from("motoboys_turno_fixo")
+          .select("turno")
+          .eq("motoboy_id", motoboyId)
+          .eq("ativo", true);
+        const meusTurnos = new Set((meuTurnoFixo || []).map(t => t.turno));
+
         candidato = data.find(p=>{
           const recusadoEm = recusadosRef.current[p.id];
-          return !recusadoEm || (agora - recusadoEm >= TEMPO_COOLDOWN_RECUSA_MS);
+          if (recusadoEm && (agora - recusadoEm < TEMPO_COOLDOWN_RECUSA_MS)) return false;
+          if (p.prioridade_ate && new Date(p.prioridade_ate).getTime() > agora) {
+            // Ainda dentro da janela de prioridade — só passa se eu for do turno certo
+            if (!meusTurnos.has(p.turno_prioridade)) return false;
+          }
+          return true;
         });
         if (!candidato) return;
       }
