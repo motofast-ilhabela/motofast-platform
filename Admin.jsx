@@ -2654,6 +2654,230 @@ function CorridasAtivas({ corridasAtivas, onRecarregar }) {
   );
 }
 
+// ─── TURNO FIXO ───────────────────────────────────────────────────────────────
+// Tela criada em 30/08/2026, pro plano de "motoboys de plantão" com piso
+// garantido semanal. Usa duas tabelas novas e isoladas (sem FK, sem risco de
+// ambiguidade com nenhuma consulta existente):
+// - motoboys_turno_fixo: quem está no turno agora (com histórico de quando
+//   entrou/saiu, pra nunca perder o valor de quem foi removido no meio da
+//   semana — só sai da tela depois que a semana fecha de vez)
+// - turno_fixo_fechamentos: uma linha PERMANENTE por semana fechada, criada
+//   automaticamente toda segunda de manhã (via cron), guardando quanto cada
+//   um ganhou, quanto faltou completar, e se já foi pago — nunca é apagada,
+//   dá pra comparar mês a mês, ano a ano, pra sempre.
+const PISO_SEMANAL_PADRAO = 455; // R$65/dia — ajustável aqui se o valor combinado mudar
+
+function TurnoFixo({ motoboys, historico }) {
+  const [turnoFixo, setTurnoFixo] = useState([]);
+  const [fechamentos, setFechamentos] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [novoMotoboyId, setNovoMotoboyId] = useState("");
+  const [novoTurno, setNovoTurno] = useState("dia");
+
+  async function carregar() {
+    // Busca TODOS (ativos e removidos recentemente) — a tela decide o que
+    // mostrar com base nas datas, não só no campo "ativo".
+    const { data: tfData } = await supabase
+      .from("motoboys_turno_fixo")
+      .select("*")
+      .order("criado_em", { ascending: true });
+    setTurnoFixo(tfData || []);
+
+    const { data: fechData } = await supabase
+      .from("turno_fixo_fechamentos")
+      .select("*")
+      .eq("pago", false)
+      .order("semana_referencia", { ascending: true });
+    setFechamentos(fechData || []);
+
+    setCarregando(false);
+  }
+
+  useEffect(()=>{ carregar(); }, []);
+
+  async function adicionar() {
+    if (!novoMotoboyId) return;
+    await supabase.from("motoboys_turno_fixo").insert({
+      motoboy_id: novoMotoboyId,
+      turno: novoTurno,
+      ativo: true,
+    });
+    setNovoMotoboyId("");
+    carregar();
+  }
+
+  // Remover NÃO apaga o registro — só marca ativo=false e guarda quando saiu.
+  // Isso garante que o valor dele continue aparecendo na semana atual até ela
+  // fechar de vez (segunda seguinte), em vez de sumir na hora.
+  async function remover(id) {
+    await supabase.from("motoboys_turno_fixo").update({
+      ativo: false,
+      removido_em: new Date().toISOString(),
+    }).eq("id", id);
+    carregar();
+  }
+
+  async function marcarPago(fechamentoId) {
+    await supabase.from("turno_fixo_fechamentos").update({
+      pago: true,
+      pago_em: new Date().toISOString(),
+    }).eq("id", fechamentoId);
+    carregar();
+  }
+
+  const segundaAtual = segundaFeiraDaSemana(new Date());
+  function fmtDiaMes(iso) {
+    const d = new Date(iso+"T12:00:00");
+    return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
+  }
+  const fimSemana = (()=>{ const d = new Date(segundaAtual+"T12:00:00"); d.setDate(d.getDate()+6); return dataLocalISO(d); })();
+  const inicioSemanaMs = new Date(segundaAtual+"T00:00:00").getTime();
+
+  const nomesMotoboys = {};
+  motoboys.forEach(m => { nomesMotoboys[m.id] = m.nomeCompleto; });
+
+  // Conta pra semana ATUAL quem: entrou antes/durante essa semana, E (ainda
+  // está ativo OU só saiu durante essa mesma semana — nunca antes dela).
+  // Isso resolve o problema de "troquei o motoboy no meio da semana e o
+  // valor dele sumiu": ele continua aparecendo até a semana fechar de vez.
+  const daSemanaAtual = turnoFixo.filter(tf => {
+    const entrouMs = new Date(tf.criado_em).getTime();
+    if (entrouMs > new Date(fimSemana+"T23:59:59").getTime()) return false; // entrou só numa semana futura, ainda não conta
+    if (tf.ativo) return true;
+    const saiuMs = tf.removido_em ? new Date(tf.removido_em).getTime() : 0;
+    return saiuMs >= inicioSemanaMs; // só saiu já dentro dessa semana
+  });
+
+  const linhas = daSemanaAtual.map(tf => {
+    const entregasDaSemana = historico.filter(e =>
+      e.motoboyId === tf.motoboy_id && e.status === "Entregue" && e.semana === segundaAtual
+    );
+    const ganhoSemana = +entregasDaSemana.reduce((s,e)=>s+e.taxaMotoboy, 0).toFixed(2);
+    const faltaCompletar = Math.max(0, +(PISO_SEMANAL_PADRAO - ganhoSemana).toFixed(2));
+    return { ...tf, nome: nomesMotoboys[tf.motoboy_id] || "Motoboy", ganhoSemana, faltaCompletar };
+  });
+
+  const totalACompletarAtual = +linhas.reduce((s,l)=>s+l.faltaCompletar, 0).toFixed(2);
+  const totalPendenteAnterior = +fechamentos.reduce((s,f)=>s+f.valor_completar, 0).toFixed(2);
+
+  // No dropdown de adicionar, só exclui quem JÁ está com uma vaga ativa
+  // agora — quem foi removido pode ser adicionado de novo tranquilamente.
+  const idsComVagaAtiva = new Set(turnoFixo.filter(tf=>tf.ativo).map(tf=>tf.motoboy_id));
+  const motoboysDisponiveis = motoboys.filter(m => !m.banido && !idsComVagaAtiva.has(m.id));
+
+  if (carregando) return <div style={{color:"#6b7280",padding:20}}>Carregando...</div>;
+
+  return (
+    <div>
+      <div style={{marginBottom:16}}>
+        <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>🔒 Turno Fixo — Piso Garantido</div>
+        <div style={{color:"#6b7280",fontSize:13}}>Semana atual: {fmtDiaMes(segundaAtual)} a {fmtDiaMes(fimSemana)} — fecha sozinho toda segunda de manhã</div>
+      </div>
+
+      {/* Cadastrar novo motoboy no turno fixo */}
+      <Card style={{marginBottom:16,background:"#0f172a"}}>
+        <SectionTitle>+ Adicionar motoboy ao turno fixo</SectionTitle>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
+          <div style={{flex:2,minWidth:200}}>
+            <div style={{color:"#9ca3af",fontSize:12,marginBottom:4,fontWeight:600}}>Motoboy</div>
+            <select value={novoMotoboyId} onChange={e=>setNovoMotoboyId(e.target.value)}
+              style={{background:"#111827",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"9px 12px",width:"100%",fontSize:14}}>
+              <option value="">Selecione...</option>
+              {motoboysDisponiveis.map(m => <option key={m.id} value={m.id}>{m.nomeCompleto}</option>)}
+            </select>
+          </div>
+          <div style={{flex:1,minWidth:140}}>
+            <div style={{color:"#9ca3af",fontSize:12,marginBottom:4,fontWeight:600}}>Turno</div>
+            <select value={novoTurno} onChange={e=>setNovoTurno(e.target.value)}
+              style={{background:"#111827",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"9px 12px",width:"100%",fontSize:14}}>
+              <option value="dia">☀️ Dia (09h-17h)</option>
+              <option value="noite">🌙 Noite (17h-00h)</option>
+            </select>
+          </div>
+          <Btn onClick={adicionar} disabled={!novoMotoboyId}>+ Adicionar</Btn>
+        </div>
+      </Card>
+
+      {/* Pendências de semanas ANTERIORES — não some sozinho, só depois de marcar como pago */}
+      {fechamentos.length > 0 && (
+        <div style={{marginBottom:20}}>
+          <div style={{color:"#f59e0b",fontWeight:700,fontSize:13,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>
+            ⚠️ Pendências de semanas anteriores — total R${totalPendenteAnterior.toFixed(2)}
+          </div>
+          {fechamentos.map(f => {
+            const fimDaquelaSemana = (()=>{ const d=new Date(f.semana_referencia+"T12:00:00"); d.setDate(d.getDate()+6); return dataLocalISO(d); })();
+            return (
+              <Card key={f.id} style={{marginBottom:8,border:"1px solid #f59e0b",background:"#1a1000"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:14,color:"#f9fafb"}}>{nomesMotoboys[f.motoboy_id] || "Motoboy"}</div>
+                    <div style={{color:"#6b7280",fontSize:12}}>Semana de {fmtDiaMes(f.semana_referencia)} a {fmtDiaMes(fimDaquelaSemana)} · Ganhou R${f.ganho_semana.toFixed(2)} de R${f.piso.toFixed(2)}</div>
+                  </div>
+                  <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                    <Tag label={`Falta R$${f.valor_completar.toFixed(2)}`} cor="#fbbf24"/>
+                    <Btn small cor="verde" onClick={()=>marcarPago(f.id)}>✅ Já paguei</Btn>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Resumo semanal ATUAL (ainda em andamento, não fechou) */}
+      {linhas.length > 0 && (
+        <Card style={{marginBottom:16,background:totalACompletarAtual>0?"#1a1000":"#0d3d2e",border:totalACompletarAtual>0?"1px solid #f59e0b":"1px solid #34d399"}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Semana atual — ainda contando, fecha na próxima segunda</div>
+          <div style={{color:totalACompletarAtual>0?"#fbbf24":"#34d399",fontSize:28,fontWeight:900}}>Faltaria R${totalACompletarAtual.toFixed(2)} se fechasse agora</div>
+        </Card>
+      )}
+
+      {/* Tabela dia/noite — semana atual */}
+      {["dia","noite"].map(turno => {
+        const doTurno = linhas.filter(l => l.turno === turno);
+        if (doTurno.length === 0) return null;
+        return (
+          <div key={turno} style={{marginBottom:20}}>
+            <div style={{color:turno==="dia"?"#fbbf24":"#60a5fa",fontWeight:700,fontSize:13,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>
+              {turno==="dia" ? "☀️ Turno Dia (09h-17h)" : "🌙 Turno Noite (17h-00h)"}
+            </div>
+            {doTurno.map(l => (
+              <Card key={l.id} style={{marginBottom:8,border:l.faltaCompletar>0?"1px solid #f59e0b":"1px solid #34d399",opacity:l.ativo?1:0.6}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+                  <div style={{fontWeight:700,fontSize:14,color:"#f9fafb"}}>
+                    {l.nome}{!l.ativo && <span style={{color:"#f87171",fontSize:11,marginLeft:8}}>(removido nesta semana)</span>}
+                  </div>
+                  <div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
+                    <div style={{textAlign:"center"}}>
+                      <div style={{color:"#6b7280",fontSize:10}}>Ganhou essa semana</div>
+                      <div style={{color:"#60a5fa",fontWeight:700,fontSize:14}}>R${l.ganhoSemana.toFixed(2)}</div>
+                    </div>
+                    <div style={{textAlign:"center"}}>
+                      <div style={{color:"#6b7280",fontSize:10}}>Piso prometido</div>
+                      <div style={{color:"#9ca3af",fontWeight:700,fontSize:14}}>R${PISO_SEMANAL_PADRAO.toFixed(2)}</div>
+                    </div>
+                    {l.faltaCompletar > 0
+                      ? <Tag label={`⚠️ Falta R$${l.faltaCompletar.toFixed(2)}`} cor="#fbbf24"/>
+                      : <Tag label="✅ Já bateu o piso" cor="#34d399"/>}
+                    {l.ativo && <Btn small cor="cinza" onClick={()=>remover(l.id)}>Remover do turno</Btn>}
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        );
+      })}
+
+      {linhas.length === 0 && fechamentos.length === 0 && (
+        <Card style={{textAlign:"center",padding:30}}>
+          <div style={{color:"#4b5563",fontSize:14}}>Nenhum motoboy no turno fixo ainda. Adicione acima pra começar.</div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+
 // ─── APP ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [aba, setAba] = useState("dashboard");
@@ -2987,6 +3211,7 @@ export default function App() {
     {id:"pendentes",label:"⏳ Pendentes", badge: pendentes.motoboys.length + pendentes.empresarios.length},
     {id:"repasse",label:"💰 Repasse"},
     {id:"motoboys",label:"🏍️ Motoboys"},
+    {id:"turnofixo",label:"🔒 Turno Fixo"},
     {id:"estabelecimentos",label:"🏪 Estabelecimentos"},
     {id:"clientes",label:"👤 Clientes"},
     {id:"historico",label:"📋 Histórico"},
@@ -3140,6 +3365,7 @@ export default function App() {
         {aba==="corridas"         && <CorridasAtivas corridasAtivas={corridasAtivas} onRecarregar={carregarTudo}/>}
         {aba==="repasse"          && <Repasse historico={historico} setHistorico={setHistorico} motoboys={motoboys} empresarios={empresarios}/>}
         {aba==="motoboys"         && <Motoboys motoboys={motoboys} setMotoboys={setMotoboys} historico={historico} focoBanidos={focoBanidosMb}/>}
+        {aba==="turnofixo"        && <TurnoFixo motoboys={motoboys} historico={historico}/>}
         {aba==="estabelecimentos" && <Estabelecimentos empresarios={empresarios} setEmpresarios={setEmpresarios} historico={historico} motoboys={motoboys} onRecarregar={carregarTudo} focoBloqueados={focoBloqueadosEstab}/>}
         {aba==="clientes"         && <Clientes clientes={clientes} setClientes={setClientes} historico={historico} empresarios={empresarios}/>}
         {aba==="historico"        && <Historico historico={historico} motoboys={motoboys} empresarios={empresarios}/>}
