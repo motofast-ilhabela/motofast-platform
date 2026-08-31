@@ -1274,6 +1274,14 @@ export default function AppMotoboy() {
       });
     }
 
+    // Registra ESSA ação, pra sempre — usado no Admin pra você ver quantas
+    // vezes cada motoboy do turno fixo aceitou vs recusou (adicionado em
+    // 30/08/2026, a pedido do Alessandro pra fiscalizar o compromisso do
+    // piso garantido)
+    supabase.from("acoes_motoboy").insert({
+      motoboy_id: motoboyId, pedido_id: pedidoDisponivel.id, acao: "aceito",
+    }).then(()=>{}, e=>console.log("Erro ao registrar aceite:", e));
+
     setCorridaAtiva({
       id: corridaDB?.id || Date.now(),
       pedidos: [{...pedidoDisponivel}],
@@ -1286,6 +1294,11 @@ export default function AppMotoboy() {
   }
 
   function recusar() {
+    if (pedidoDisponivel && motoboyId) {
+      supabase.from("acoes_motoboy").insert({
+        motoboy_id: motoboyId, pedido_id: pedidoDisponivel.id, acao: "recusado",
+      }).then(()=>{}, e=>console.log("Erro ao registrar recusa:", e));
+    }
     if (pedidoDisponivel) {
       recusadosRef.current[pedidoDisponivel.id] = Date.now();
     }

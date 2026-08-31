@@ -2670,6 +2670,7 @@ const PISO_SEMANAL_PADRAO = 455; // R$65/dia — ajustável aqui se o valor comb
 function TurnoFixo({ motoboys, historico }) {
   const [turnoFixo, setTurnoFixo] = useState([]);
   const [fechamentos, setFechamentos] = useState([]);
+  const [acoes, setAcoes] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [novoMotoboyId, setNovoMotoboyId] = useState("");
   const [novoTurno, setNovoTurno] = useState("dia");
@@ -2689,6 +2690,15 @@ function TurnoFixo({ motoboys, historico }) {
       .eq("pago", false)
       .order("semana_referencia", { ascending: true });
     setFechamentos(fechData || []);
+
+    // Aceite/recusa da semana atual, pra fiscalizar quem está cumprindo o
+    // compromisso do piso garantido (adicionado em 30/08/2026)
+    const inicioSemanaAtual = segundaFeiraDaSemana(new Date());
+    const { data: acoesData } = await supabase
+      .from("acoes_motoboy")
+      .select("motoboy_id, acao, criado_em")
+      .gte("criado_em", inicioSemanaAtual+"T00:00:00");
+    setAcoes(acoesData || []);
 
     setCarregando(false);
   }
@@ -2754,7 +2764,10 @@ function TurnoFixo({ motoboys, historico }) {
     );
     const ganhoSemana = +entregasDaSemana.reduce((s,e)=>s+e.taxaMotoboy, 0).toFixed(2);
     const faltaCompletar = Math.max(0, +(PISO_SEMANAL_PADRAO - ganhoSemana).toFixed(2));
-    return { ...tf, nome: nomesMotoboys[tf.motoboy_id] || "Motoboy", ganhoSemana, faltaCompletar };
+    const acoesDele = acoes.filter(a => a.motoboy_id === tf.motoboy_id);
+    const totalAceitos = acoesDele.filter(a => a.acao === "aceito").length;
+    const totalRecusados = acoesDele.filter(a => a.acao === "recusado").length;
+    return { ...tf, nome: nomesMotoboys[tf.motoboy_id] || "Motoboy", ganhoSemana, faltaCompletar, totalAceitos, totalRecusados };
   });
 
   const totalACompletarAtual = +linhas.reduce((s,l)=>s+l.faltaCompletar, 0).toFixed(2);
@@ -2855,6 +2868,14 @@ function TurnoFixo({ motoboys, historico }) {
                     <div style={{textAlign:"center"}}>
                       <div style={{color:"#6b7280",fontSize:10}}>Piso prometido</div>
                       <div style={{color:"#9ca3af",fontWeight:700,fontSize:14}}>R${PISO_SEMANAL_PADRAO.toFixed(2)}</div>
+                    </div>
+                    <div style={{textAlign:"center"}}>
+                      <div style={{color:"#6b7280",fontSize:10}}>Aceitou / Recusou (semana)</div>
+                      <div style={{fontWeight:700,fontSize:14}}>
+                        <span style={{color:"#34d399"}}>{l.totalAceitos} ✅</span>
+                        {" / "}
+                        <span style={{color:l.totalRecusados>0?"#f87171":"#6b7280"}}>{l.totalRecusados} ❌</span>
+                      </div>
                     </div>
                     {l.faltaCompletar > 0
                       ? <Tag label={`⚠️ Falta R$${l.faltaCompletar.toFixed(2)}`} cor="#fbbf24"/>
