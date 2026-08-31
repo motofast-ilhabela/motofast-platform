@@ -1060,7 +1060,7 @@ export default function AppMotoboy() {
       {
         const { data } = await supabase
           .from("pedidos")
-          .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
+          .select("*, empresarios(nome, telefone, endereco_estabelecimento, prioridade_paga)")
           .eq("status", "aguardando")
           .order("criado_em", { ascending: true })
           .limit(10);
@@ -1087,15 +1087,27 @@ export default function AppMotoboy() {
           .eq("ativo", true);
         const meusTurnos = new Set((meuTurnoFixo || []).map(t => t.turno));
 
-        candidato = data.find(p=>{
+        // ─── PRIORIDADE GARANTIDA (B2B) — adicionada em 30/08/2026 ───
+        // Entre os pedidos que EU já poderia ver (passou pela checagem do
+        // turno fixo acima), os de estabelecimentos com "Prioridade
+        // Garantida" contratada vêm sempre primeiro na lista, mesmo que
+        // outro pedido tenha sido feito antes — só entre pedidos que já
+        // eram visíveis pra mim, nunca pula a fila de turno fixo.
+        const candidatosValidos = data.filter(p=>{
           const recusadoEm = recusadosRef.current[p.id];
           if (recusadoEm && (agora - recusadoEm < TEMPO_COOLDOWN_RECUSA_MS)) return false;
           if (p.prioridade_ate && new Date(p.prioridade_ate).getTime() > agora) {
-            // Ainda dentro da janela de prioridade — só passa se eu for do turno certo
             if (!meusTurnos.has(p.turno_prioridade)) return false;
           }
           return true;
         });
+        candidatosValidos.sort((a,b)=>{
+          const prioA = a.empresarios?.prioridade_paga ? 1 : 0;
+          const prioB = b.empresarios?.prioridade_paga ? 1 : 0;
+          if (prioA !== prioB) return prioB - prioA;
+          return new Date(a.criado_em).getTime() - new Date(b.criado_em).getTime();
+        });
+        candidato = candidatosValidos[0];
         if (!candidato) return;
       }
 

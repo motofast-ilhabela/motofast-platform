@@ -1091,6 +1091,15 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
     setEmpresarios(p=>p.map(e=>e.id===id?{...e,bloqueado:!e.bloqueado}:e));
   }
 
+  // Adicionado em 30/08/2026 — plano B2B "Prioridade Garantida" (R$20/dia).
+  // Quando ativo, os pedidos desse estabelecimento passam na frente de
+  // outros que estejam esperando o mesmo motoboy ao mesmo tempo.
+  async function togglePrioridadePaga(id) {
+    const emp = empresarios.find(e=>e.id===id);
+    await supabase.from("empresarios").update({prioridade_paga: !emp.prioridadePaga}).eq("id", id);
+    setEmpresarios(p=>p.map(e=>e.id===id?{...e,prioridadePaga:!e.prioridadePaga}:e));
+  }
+
   async function mudarModeloPrecificacao(id, modelo) {
     const { error } = await supabase.from("empresarios").update({modelo_precificacao: modelo}).eq("id", id);
     if (error) {
@@ -1360,6 +1369,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                   </div>
                 )}
                 {!emp.mensalidadePaga&&!emp.planoGratis && <Btn small cor="amarelo" onClick={()=>marcarMensalidade(emp.id)}>💰 Mensalidade paga</Btn>}
+                <Btn small cor={emp.prioridadePaga?"roxo":"cinza"} onClick={()=>togglePrioridadePaga(emp.id)}>{emp.prioridadePaga?"⭐ Prioridade Ativa":"⭐ Ativar Prioridade"}</Btn>
                 <Btn small cor={emp.bloqueado?"verde":"perigo"} onClick={()=>toggleBloqueio(emp.id)}>{emp.bloqueado?"🔓 Desbloquear":"⛔ Bloquear"}</Btn>
                 <Btn small cor="cinza" onClick={()=>abrirEmp(emp)}>⚙️ Gerenciar</Btn>
               </div>
@@ -3024,6 +3034,7 @@ export default function App() {
         planoGratis: e.plano_gratis || false,
         dataFimGratis: e.data_fim_gratis || null,
         bloqueado: e.bloqueado || false,
+        prioridadePaga: e.prioridade_paga || false,
         mensalidadePaga: e.mensalidade_paga !== false,
         mensalidadePagaEm: e.mensalidade_paga_em || null,
         taxaSemanalPaga: e.taxa_semanal_paga || false,
