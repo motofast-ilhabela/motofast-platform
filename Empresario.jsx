@@ -2603,7 +2603,22 @@ export default function AppEmpresario() {
           .eq("online", true)
           .eq("ativo", true)
           .eq("banido", false);
-        idsOnlineTurnoFixo = (onlineDB || []).map(m => m.id);
+        const idsOnlineBrutos = (onlineDB || []).map(m => m.id);
+        // Confere quem está OCUPADO agora (entrega em andamento) — online
+        // sozinho não basta, precisa estar LIVRE pra valer como prioridade.
+        // Sem essa checagem, se os dois do turno fixo estiverem online mas
+        // ocupados, o sistema esperaria 20s à toa, achando que tinha
+        // prioridade disponível quando não tinha ninguém que pudesse responder.
+        let idsOcupados = [];
+        if (idsOnlineBrutos.length > 0) {
+          const { data: ocupadosDB } = await supabase
+            .from("pedidos")
+            .select("motoboy_id")
+            .in("motoboy_id", idsOnlineBrutos)
+            .in("status", ["aceito", "saiu_estabelecimento"]);
+          idsOcupados = (ocupadosDB || []).map(p => p.motoboy_id);
+        }
+        idsOnlineTurnoFixo = idsOnlineBrutos.filter(id => !idsOcupados.includes(id));
       }
     }
     const temPrioridadeAtiva = idsOnlineTurnoFixo.length > 0;
@@ -2811,7 +2826,17 @@ export default function AppEmpresario() {
                       .eq("online", true)
                       .eq("ativo", true)
                       .eq("banido", false);
-                    idsOnlineTurnoFixoReenvio = (onlineDB || []).map(m => m.id);
+                    const idsOnlineBrutosReenvio = (onlineDB || []).map(m => m.id);
+                    let idsOcupadosReenvio = [];
+                    if (idsOnlineBrutosReenvio.length > 0) {
+                      const { data: ocupadosDB } = await supabase
+                        .from("pedidos")
+                        .select("motoboy_id")
+                        .in("motoboy_id", idsOnlineBrutosReenvio)
+                        .in("status", ["aceito", "saiu_estabelecimento"]);
+                      idsOcupadosReenvio = (ocupadosDB || []).map(p => p.motoboy_id);
+                    }
+                    idsOnlineTurnoFixoReenvio = idsOnlineBrutosReenvio.filter(id => !idsOcupadosReenvio.includes(id));
                   }
                 }
                 const temPrioridadeReenvio = idsOnlineTurnoFixoReenvio.length > 0;
