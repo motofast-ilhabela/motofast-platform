@@ -2522,9 +2522,11 @@ function FilaRodizioPedido({ pedidoId }) {
   );
 }
 
-function CorridasAtivas({ corridasAtivas, onRecarregar }) {
+function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
   const [tick, setTick] = useState(0);
   const [reenviando, setReenviando] = useState(null); // id do pedido sendo processado
+  const [atribuindoId, setAtribuindoId] = useState(null); // pedido cujo dropdown está aberto
+  const [motoboySelecionado, setMotoboySelecionado] = useState({});
   useEffect(()=>{
     const t = setInterval(()=>setTick(x=>x+1), 1000);
     return ()=>clearInterval(t);
@@ -2534,6 +2536,44 @@ function CorridasAtivas({ corridasAtivas, onRecarregar }) {
     const s = Math.max(0, Math.floor(ms/1000));
     const m = Math.floor(s/60), r = s%60;
     return m>0?`${m}m ${r}s`:`${r}s`;
+  }
+
+  // Adicionado em 30/08/2026 — atribuição manual: o Alessandro escolhe
+  // direto qualquer motoboy (mesmo que já esteja em outra corrida — nesse
+  // caso, entra como um pedido A MAIS na mesma corrida dele) pra assumir um
+  // pedido "aguardando", sem precisar que ninguém aceite pelo app.
+  async function atribuirManualmente(pedidoId, motoboyId) {
+    if (!motoboyId) return;
+    // Confere se esse motoboy já tem uma corrida em andamento — se tiver,
+    // reaproveita ela (agrupa), em vez de criar uma corrida nova solta.
+    const { data: pedidoAtivoDele } = await supabase
+      .from("pedidos")
+      .select("corrida_id")
+      .eq("motoboy_id", motoboyId)
+      .in("status", ["aceito","saiu_estabelecimento"])
+      .limit(1)
+      .maybeSingle();
+
+    let corridaIdParaUsar = pedidoAtivoDele?.corrida_id;
+    if (!corridaIdParaUsar) {
+      const { data: corridaDB } = await supabase
+        .from("corridas")
+        .insert({ motoboy_id: motoboyId, status: "ativa" })
+        .select()
+        .single();
+      corridaIdParaUsar = corridaDB?.id;
+    }
+
+    const { error } = await supabase.from("pedidos").update({
+      status: "aceito",
+      motoboy_id: motoboyId,
+      corrida_id: corridaIdParaUsar,
+      aceito_em: new Date().toISOString(),
+    }).eq("id", pedidoId).eq("status", "aguardando");
+
+    if (error) { alert("❌ Erro ao atribuir: " + error.message); return; }
+    setAtribuindoId(null);
+    if (onRecarregar) await onRecarregar();
   }
 
   // Uso: quando um motoboy aceita por engano e pede pra trocar. Devolve o pedido
@@ -2602,6 +2642,15 @@ function CorridasAtivas({ corridasAtivas, onRecarregar }) {
                 </div>
               </div>
               <FilaRodizioPedido pedidoId={p.id}/>
+              <div style={{marginTop:10,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",borderTop:"1px solid #1f2937",paddingTop:10}}>
+                <span style={{color:"#6b7280",fontSize:12,fontWeight:600}}>👤 Atribuir manualmente:</span>
+                <select value={motoboySelecionado[p.id] || ""} onChange={e=>setMotoboySelecionado(prev=>({...prev,[p.id]:e.target.value}))}
+                  style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"6px 10px",fontSize:13}}>
+                  <option value="">Selecione um motoboy...</option>
+                  {(motoboys||[]).filter(m=>!m.banido).map(m => <option key={m.id} value={m.id}>{m.nomeCompleto}{m.online?" 🟢":" ⚫"}</option>)}
+                </select>
+                <Btn small cor="azul" disabled={!motoboySelecionado[p.id]} onClick={()=>atribuirManualmente(p.id, motoboySelecionado[p.id])}>Atribuir</Btn>
+              </div>
             </Card>
           ))}
         </div>
@@ -3394,7 +3443,7 @@ export default function App() {
         )}
 
         {aba==="dashboard" && <Dashboard historico={historico} motoboys={motoboys} empresarios={empresarios}/> }
-        {aba==="corridas"         && <CorridasAtivas corridasAtivas={corridasAtivas} onRecarregar={carregarTudo}/>}
+        {aba==="corridas"         && <CorridasAtivas corridasAtivas={corridasAtivas} onRecarregar={carregarTudo} motoboys={motoboys}/>}
         {aba==="repasse"          && <Repasse historico={historico} setHistorico={setHistorico} motoboys={motoboys} empresarios={empresarios}/>}
         {aba==="motoboys"         && <Motoboys motoboys={motoboys} setMotoboys={setMotoboys} historico={historico} focoBanidos={focoBanidosMb}/>}
         {aba==="turnofixo"        && <TurnoFixo motoboys={motoboys} historico={historico}/>}

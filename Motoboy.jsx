@@ -1025,7 +1025,13 @@ export default function AppMotoboy() {
   },[]);
 
   useEffect(()=>{
-    if (!online || corridaAtiva || !motoboyId) return;
+    // Adicionado em 30/08/2026: as duas contas de monitoramento (Alessandro/
+    // Alencar) continuam vendo pedido novo MESMO já estando numa corrida —
+    // pra não "ficarem queimadas" enquanto tampam um buraco de falta de
+    // motoboy. Motoboys comuns continuam bloqueados durante corrida, como
+    // sempre foi (não sobrecarrega ninguém sem querer).
+    if (!online || !motoboyId) return;
+    if (corridaAtiva && !ehContaMonitoramento) return;
     if (pedidoRef.current) return;
 
     async function buscarPedidoReal() {
@@ -1243,15 +1249,23 @@ export default function AppMotoboy() {
   async function aceitar() {
     if (!pedidoDisponivel || !motoboyId) return;
 
-    const { data: corridaDB } = await supabase
-      .from("corridas")
-      .insert({ motoboy_id: motoboyId, status: "ativa" })
-      .select()
-      .single();
+    // ATUALIZADO em 30/08/2026: se já existe uma corrida em andamento
+    // (relevante pras contas de monitoramento, que agora podem aceitar
+    // pedido novo mesmo em corrida), o pedido novo entra na MESMA corrida,
+    // em vez de criar uma nova e "perder de vista" a anterior.
+    let corridaIdParaUsar = corridaAtiva?.id;
+    if (!corridaIdParaUsar) {
+      const { data: corridaDB } = await supabase
+        .from("corridas")
+        .insert({ motoboy_id: motoboyId, status: "ativa" })
+        .select()
+        .single();
+      corridaIdParaUsar = corridaDB?.id;
+    }
 
     const { data, error } = await supabase
       .from("pedidos")
-      .update({ status: "aceito", motoboy_id: motoboyId, corrida_id: corridaDB?.id, aceito_em: new Date().toISOString() })
+      .update({ status: "aceito", motoboy_id: motoboyId, corrida_id: corridaIdParaUsar, aceito_em: new Date().toISOString() })
       .eq("id", pedidoDisponivel.id)
       .eq("status", "aguardando")
       .select()
@@ -1294,10 +1308,10 @@ export default function AppMotoboy() {
       motoboy_id: motoboyId, pedido_id: pedidoDisponivel.id, acao: "aceito",
     }).then(()=>{}, e=>console.log("Erro ao registrar aceite:", e));
 
-    setCorridaAtiva({
-      id: corridaDB?.id || Date.now(),
-      pedidos: [{...pedidoDisponivel}],
-    });
+    setCorridaAtiva(prev => prev
+      ? { ...prev, pedidos: [...prev.pedidos, {...pedidoDisponivel}] }
+      : { id: corridaIdParaUsar || Date.now(), pedidos: [{...pedidoDisponivel}] }
+    );
     setPedidoDisponivel(null);
     pedidoRef.current = null;
     ofertaAtivaRef.current = null;
@@ -1612,7 +1626,7 @@ export default function AppMotoboy() {
         </a>
       </div>
 
-      {pedidoDisponivel && online && !corridaAtiva && (
+      {pedidoDisponivel && online && (!corridaAtiva || ehContaMonitoramento) && (
         <ModalPedidoDisponivel
           pedido={pedidoDisponivel}
           tipoSom={tipoSom}
