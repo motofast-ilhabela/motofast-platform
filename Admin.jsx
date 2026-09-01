@@ -1122,12 +1122,19 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   async function atualizarValorPagoSemana(id, semanaChave, valor) {
     const emp = empresarios.find(e=>e.id===id);
     const novoPag = {...(emp.pagamentosSemanais||{}), [semanaChave]: valor};
-    const { error } = await supabase.from("empresarios").update({pagamentos_semanais: novoPag}).eq("id", id);
+    // CORRIGIDO em 01/09/2026: também grava taxa_semanal_paga_em = agora —
+    // sem isso, o cron de bloqueio automático (que roda toda segunda 23h30)
+    // nunca ficava sabendo que o pagamento foi marcado aqui, e podia
+    // bloquear de novo o estabelecimento mesmo já tendo sido pago.
+    const { error } = await supabase.from("empresarios").update({
+      pagamentos_semanais: novoPag,
+      taxa_semanal_paga_em: new Date().toISOString(),
+    }).eq("id", id);
     if (error) {
       alert("❌ Erro ao salvar no banco de dados: " + error.message + "\n\nO valor NÃO foi salvo. Tenta de novo.");
       return;
     }
-    setEmpresarios(p=>p.map(e=>e.id===id?{...e,pagamentosSemanais:novoPag}:e));
+    setEmpresarios(p=>p.map(e=>e.id===id?{...e,pagamentosSemanais:novoPag,taxaSemanalPagaEm:new Date().toISOString()}:e));
   }
 
   async function marcarTaxaSemanalPaga(id, semanaChave, valorTotal) {
@@ -3282,7 +3289,20 @@ export default function App() {
   }
 
   const totalPendentes = pendentes.motoboys.length + pendentes.empresarios.length;
-  const saldo     = historico.filter(e=>e.status==="Entregue"&&!e.repasePago).reduce((s,e)=>s+e.lucro,0).toFixed(2);
+  // CORRIGIDO em 01/09/2026: antes, esse número só somava entregas com
+  // "repasse ainda não pago" — o que misturava semanas diferentes e não
+  // representava o lucro real de forma nenhuma, confundindo o Alessandro.
+  // Agora é o LUCRO REAL de TODAS as entregas já feitas, desde sempre — vai
+  // subindo sozinho conforme os motoboys forem entregando, sem depender de
+  // nenhuma marcação de pagamento.
+  // CORRIGIDO em 01/09/2026 (segunda vez): o Alessandro quer que resete toda
+  // semana (segunda a domingo), não que acumule pra sempre. Usa a mesma
+  // lógica de "semana" (segundaFeiraDaSemana) já usada no Turno Fixo e no
+  // Repasse, pra ficar 100% consistente com o resto do sistema.
+  const segundaAtualDash = segundaFeiraDaSemana(new Date());
+  const entregasDaSemanaDash = historico.filter(e=>e.status==="Entregue"&&e.semana===segundaAtualDash);
+  const saldo = entregasDaSemanaDash.reduce((s,e)=>s+e.lucro,0).toFixed(2);
+  const pagoMotoboysSemanaDash = entregasDaSemanaDash.reduce((s,e)=>s+e.taxaMotoboy,0).toFixed(2);
   const bloqueados = empresarios.filter(e=>e.bloqueado).length;
   const banidos   = motoboys.filter(m=>m.banido).length;
 
@@ -3328,7 +3348,8 @@ export default function App() {
             ))}
           </nav>
           <div style={{display:"flex",gap:8,padding:"8px 0",flexShrink:0}}>
-            {+saldo>0 && <button onClick={()=>setAba("repasse")} style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#34d399",fontWeight:700,cursor:"pointer"}}>💰 Meu lucro: R${saldo}</button>}
+            {+saldo>0 && <button onClick={()=>setAba("repasse")} style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#34d399",fontWeight:700,cursor:"pointer"}}>💰 Lucro da semana: R${saldo}</button>}
+            {+pagoMotoboysSemanaDash>0 && <button onClick={()=>setAba("repasse")} style={{background:"#1e3a5f",border:"1px solid #60a5fa",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#60a5fa",fontWeight:700,cursor:"pointer"}}>🏍️ Motoboys ganharam: R${pagoMotoboysSemanaDash}</button>}
             {bloqueados>0 && <button onClick={()=>{setAba("estabelecimentos");setFocoBloqueadosEstab(x=>x+1);}} style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#f87171",fontWeight:700,cursor:"pointer"}}>⛔ {bloqueados} bloqueado(s)</button>}
             {banidos>0 && <button onClick={()=>{setAba("motoboys");setFocoBanidosMb(x=>x+1);}} style={{background:"#1f2937",border:"1px solid #6b7280",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#9ca3af",fontWeight:700,cursor:"pointer"}}>⛔ {banidos} banido(s)</button>}
             <button onClick={async()=>{ await supabase.auth.signOut(); window.location.href = "/"; }}
