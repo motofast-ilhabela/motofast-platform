@@ -2737,9 +2737,13 @@ function TurnoFixo({ motoboys, historico }) {
   const [turnoFixo, setTurnoFixo] = useState([]);
   const [fechamentos, setFechamentos] = useState([]);
   const [acoes, setAcoes] = useState([]);
+  const [substituicoes, setSubstituicoes] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [novoMotoboyId, setNovoMotoboyId] = useState("");
   const [novoTurno, setNovoTurno] = useState("dia");
+  const [substTitularId, setSubstTitularId] = useState(null); // qual card abriu o formulário de substituição
+  const [substMotoboyId, setSubstMotoboyId] = useState("");
+  const [substData, setSubstData] = useState(dataLocalISO());
 
   async function carregar() {
     // Busca TODOS (ativos e removidos recentemente) — a tela decide o que
@@ -2766,10 +2770,38 @@ function TurnoFixo({ motoboys, historico }) {
       .gte("criado_em", inicioSemanaAtual+"T00:00:00");
     setAcoes(acoesData || []);
 
+    // Substituições da semana atual (adicionado em 01/09/2026) — quando um
+    // titular folga um dia e outro motoboy cobre, as entregas desse dia
+    // contam pra vaga do titular, não pro substituto.
+    const { data: substData } = await supabase
+      .from("substituicoes_turno_fixo")
+      .select("*")
+      .gte("data", inicioSemanaAtual);
+    setSubstituicoes(substData || []);
+
     setCarregando(false);
   }
 
   useEffect(()=>{ carregar(); }, []);
+
+  async function registrarSubstituicao(titularId, turno) {
+    if (!substMotoboyId || !substData) return;
+    const { error } = await supabase.from("substituicoes_turno_fixo").upsert({
+      motoboy_titular_id: titularId,
+      motoboy_substituto_id: substMotoboyId,
+      turno,
+      data: substData,
+    }, { onConflict: "motoboy_titular_id,data" });
+    if (error) { alert("❌ Erro ao registrar: " + error.message); return; }
+    setSubstTitularId(null);
+    setSubstMotoboyId("");
+    carregar();
+  }
+
+  async function removerSubstituicao(id) {
+    await supabase.from("substituicoes_turno_fixo").delete().eq("id", id);
+    carregar();
+  }
 
   async function adicionar() {
     if (!novoMotoboyId) return;
@@ -2825,15 +2857,29 @@ function TurnoFixo({ motoboys, historico }) {
   });
 
   const linhas = daSemanaAtual.map(tf => {
-    const entregasDaSemana = historico.filter(e =>
-      e.motoboyId === tf.motoboy_id && e.status === "Entregue" && e.semana === segundaAtual
-    );
+    // Dias substituídos dessa vaga, essa semana (data → quem cobriu)
+    const substituicoesDele = {};
+    substituicoes.filter(s => s.motoboy_titular_id === tf.motoboy_id).forEach(s => {
+      substituicoesDele[s.data] = s.motoboy_substituto_id;
+    });
+
+    // Pra cada entrega da semana, decide de quem ela CONTA: se o dia dela
+    // tem substituição registrada, só conta se foi o SUBSTITUTO quem fez;
+    // se não tem substituição, conta normal se foi o TITULAR quem fez.
+    const entregasDaSemana = historico.filter(e => {
+      if (e.status !== "Entregue" || e.semana !== segundaAtual) return false;
+      const diaDaEntrega = dataLocalISO(new Date(e.criadoEm));
+      const substitutoDoDia = substituicoesDele[diaDaEntrega];
+      if (substitutoDoDia) return e.motoboyId === substitutoDoDia;
+      return e.motoboyId === tf.motoboy_id;
+    });
     const ganhoSemana = +entregasDaSemana.reduce((s,e)=>s+e.taxaMotoboy, 0).toFixed(2);
     const faltaCompletar = Math.max(0, +(PISO_SEMANAL_PADRAO - ganhoSemana).toFixed(2));
     const acoesDele = acoes.filter(a => a.motoboy_id === tf.motoboy_id);
     const totalAceitos = acoesDele.filter(a => a.acao === "aceito").length;
     const totalRecusados = acoesDele.filter(a => a.acao === "recusado").length;
-    return { ...tf, nome: nomesMotoboys[tf.motoboy_id] || "Motoboy", ganhoSemana, faltaCompletar, totalAceitos, totalRecusados };
+    const substituicoesAtivas = substituicoes.filter(s => s.motoboy_titular_id === tf.motoboy_id);
+    return { ...tf, nome: nomesMotoboys[tf.motoboy_id] || "Motoboy", ganhoSemana, faltaCompletar, totalAceitos, totalRecusados, substituicoesAtivas };
   });
 
   const totalACompletarAtual = +linhas.reduce((s,l)=>s+l.faltaCompletar, 0).toFixed(2);
@@ -2947,8 +2993,44 @@ function TurnoFixo({ motoboys, historico }) {
                       ? <Tag label={`⚠️ Falta R$${l.faltaCompletar.toFixed(2)}`} cor="#fbbf24"/>
                       : <Tag label="✅ Já bateu o piso" cor="#34d399"/>}
                     {l.ativo && <Btn small cor="cinza" onClick={()=>remover(l.id)}>Remover do turno</Btn>}
+                    <Btn small cor="azul" onClick={()=>{setSubstTitularId(substTitularId===l.id?null:l.id); setSubstMotoboyId(""); setSubstData(dataLocalISO());}}>🔁 Substituição</Btn>
                   </div>
                 </div>
+
+                {/* Substituições já registradas essa semana pra essa vaga */}
+                {l.substituicoesAtivas.length > 0 && (
+                  <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #1f2937"}}>
+                    {l.substituicoesAtivas.map(s => {
+                      const dFmt = new Date(s.data+"T12:00:00").toLocaleDateString("pt-BR");
+                      return (
+                        <div key={s.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:12,padding:"4px 0"}}>
+                          <span style={{color:"#9ca3af"}}>📅 {dFmt} — cobre: <strong style={{color:"#f9fafb"}}>{nomesMotoboys[s.motoboy_substituto_id]||"Motoboy"}</strong></span>
+                          <Btn small cor="cinza" onClick={()=>removerSubstituicao(s.id)}>Remover</Btn>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Formulário de registrar nova substituição, só abre quando clica no botão */}
+                {substTitularId === l.id && (
+                  <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #1f2937",display:"flex",gap:8,flexWrap:"wrap",alignItems:"flex-end"}}>
+                    <div>
+                      <div style={{color:"#9ca3af",fontSize:11,marginBottom:4}}>Data que ele vai folgar</div>
+                      <input type="date" value={substData} onChange={e=>setSubstData(e.target.value)}
+                        style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"7px 10px",fontSize:13}}/>
+                    </div>
+                    <div style={{flex:1,minWidth:180}}>
+                      <div style={{color:"#9ca3af",fontSize:11,marginBottom:4}}>Quem vai cobrir</div>
+                      <select value={substMotoboyId} onChange={e=>setSubstMotoboyId(e.target.value)}
+                        style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"7px 10px",width:"100%",fontSize:13}}>
+                        <option value="">Selecione...</option>
+                        {motoboys.filter(m=>!m.banido && m.id!==l.motoboy_id).map(m => <option key={m.id} value={m.id}>{m.nomeCompleto}</option>)}
+                      </select>
+                    </div>
+                    <Btn small cor="verde" disabled={!substMotoboyId} onClick={()=>registrarSubstituicao(l.motoboy_id, l.turno)}>Confirmar</Btn>
+                  </div>
+                )}
               </Card>
             ))}
           </div>
