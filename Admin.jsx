@@ -646,20 +646,62 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
 
   async function bloquear(id) {
     const mb = motoboys.find(m=>m.id===id);
-    await supabase.from("motoboys").update({bloqueado: mb.ativo}).eq("id", id);
-    setMotoboys(p=>p.map(m=>m.id===id?{...m,ativo:!m.ativo}:m));
+    const acao = mb.ativo ? "bloquear" : "desbloquear";
+    try {
+      const resp = await fetch("/api/bloquear-motoboy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, acao }),
+      });
+      const result = await resp.json();
+      if (!resp.ok || !result.success) {
+        alert("⚠️ Não consegui " + acao + " o motoboy: " + (result.error || "erro desconhecido") + "\n\nTente de novo — se persistir, avise o suporte técnico.");
+        return;
+      }
+      // Só atualiza a tela DEPOIS de confirmar que o banco realmente mudou —
+      // evita o bug de 03/09/2026 em que a tela mudava mas o banco não.
+      setMotoboys(p=>p.map(m=>m.id===id?{...m,ativo:!result.motoboy.bloqueado,online:result.motoboy.online}:m));
+    } catch (err) {
+      alert("⚠️ Erro de conexão ao tentar " + acao + " o motoboy. Tente de novo.");
+    }
   }
 
   async function banir(id) {
     if (!motivo.trim()) return;
-    await supabase.from("motoboys").update({banido:true, bloqueado:true, motivo_banimento:motivo, data_banimento:dataLocalISO()}).eq("id", id);
-    setMotoboys(p=>p.map(m=>m.id===id?{...m,banido:true,ativo:false,online:false,motivoBanimento:motivo,dataBanimento:dataLocalISO()}:m));
-    setModalBanir(null); setMotivo(""); setDetalhe(null);
+    try {
+      const resp = await fetch("/api/bloquear-motoboy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, acao: "banir", motivo }),
+      });
+      const result = await resp.json();
+      if (!resp.ok || !result.success) {
+        alert("⚠️ Não consegui banir o motoboy: " + (result.error || "erro desconhecido") + "\n\nTente de novo — se persistir, avise o suporte técnico.");
+        return;
+      }
+      setMotoboys(p=>p.map(m=>m.id===id?{...m,banido:true,ativo:false,online:false,motivoBanimento:motivo,dataBanimento:result.motoboy.data_banimento}:m));
+      setModalBanir(null); setMotivo(""); setDetalhe(null);
+    } catch (err) {
+      alert("⚠️ Erro de conexão ao tentar banir o motoboy. Tente de novo.");
+    }
   }
 
   async function desbanir(id) {
-    await supabase.from("motoboys").update({banido:false, bloqueado:false, motivo_banimento:null, data_banimento:null}).eq("id", id);
-    setMotoboys(p=>p.map(m=>m.id===id?{...m,banido:false,ativo:true,motivoBanimento:null,dataBanimento:null}:m));
+    try {
+      const resp = await fetch("/api/bloquear-motoboy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, acao: "desbanir" }),
+      });
+      const result = await resp.json();
+      if (!resp.ok || !result.success) {
+        alert("⚠️ Não consegui desbanir o motoboy: " + (result.error || "erro desconhecido"));
+        return;
+      }
+      setMotoboys(p=>p.map(m=>m.id===id?{...m,banido:false,ativo:true,motivoBanimento:null,dataBanimento:null}:m));
+    } catch (err) {
+      alert("⚠️ Erro de conexão ao tentar desbanir o motoboy. Tente de novo.");
+    }
   }
 
   const mesAtual = new Date().getMonth()+1;
