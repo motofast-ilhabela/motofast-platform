@@ -1425,33 +1425,40 @@ export default function Motoboy() {
 
   return (
     <div style={{minHeight:"100vh",background:"#0a0f1a",fontFamily:"'Inter','Segoe UI',sans-serif",color:"#f9fafb"}}>
-      <div style={{background:"#111827",borderBottom:"1px solid #1f2937",padding:"0 20px",position:"sticky",top:0,zIndex:100}}>
-        <div style={{maxWidth:600,margin:"0 auto",display:"flex",alignItems:"center",flexWrap:"wrap",gap:0}}>
-          <div style={{padding:"12px 16px 12px 0",borderRight:"1px solid #1f2937",marginRight:14,flexShrink:0}}>
+      <div style={{background:"#111827",borderBottom:"1px solid #1f2937",padding:"10px 16px",position:"sticky",top:0,zIndex:100}}>
+        <div style={{maxWidth:600,margin:"0 auto",display:"flex",flexDirection:"column",gap:10}}>
+          {/* Fileira 1: logo */}
+          <div>
             <div style={{color:"#34d399",fontWeight:900,fontSize:16,letterSpacing:-0.5}}>⚡ MotoFast</div>
             <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>{(motoboy?.nomeCompleto || "MotoFast").split(" ")[0]}</div>
           </div>
-          <nav style={{display:"flex",flexWrap:"wrap",flex:1}}>
+
+          {/* Fileira 2: abas Início / Corrida / Ganhos, lado a lado */}
+          <nav style={{display:"flex",gap:6}}>
             {ABAS.map(a=>(
-              <button key={a.id} onClick={()=>setAba(a.id)} style={{background:aba===a.id?"#0d3d2e":"transparent",color:aba===a.id?"#34d399":"#6b7280",border:"none",borderBottom:aba===a.id?"2px solid #34d399":"2px solid transparent",padding:"13px 12px",cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap",position:"relative"}}>
+              <button key={a.id} onClick={()=>setAba(a.id)} style={{flex:1,background:aba===a.id?"#0d3d2e":"transparent",color:aba===a.id?"#34d399":"#6b7280",border:"none",borderRadius:8,borderBottom:aba===a.id?"2px solid #34d399":"2px solid transparent",padding:"10px 8px",cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap",position:"relative"}}>
                 {a.label}
                 {a.badge>0 && <span style={{background:"#ef4444",color:"#fff",borderRadius:"50%",fontSize:10,fontWeight:800,padding:"1px 5px",marginLeft:4}}>{a.badge}</span>}
               </button>
             ))}
           </nav>
-          <button onClick={async()=>{
-            const novoStatus = !online;
-            setOnline(novoStatus);
-            if (motoboyId) {
-              await supabase.from("motoboys").update({online: novoStatus}).eq("id", motoboyId);
-            }
-          }} style={{flexShrink:0,margin:"0 0 0 8px",padding:"6px 14px",borderRadius:20,cursor:"pointer",fontWeight:700,fontSize:12,border:"none",background:online?"#0d3d2e":"#1f2937",color:online?"#34d399":"#6b7280",transition:"all 0.2s"}}>
-            {online?"🟢 Online":"⚫ Offline"}
-          </button>
-          <button onClick={async()=>{ await supabase.auth.signOut(); navigate("/"); }}
-            style={{flexShrink:0,margin:"0 0 0 8px",background:"transparent",border:"1px solid #374151",color:"#9ca3af",padding:"6px 10px",borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700}}>
-            🚪 Sair
-          </button>
+
+          {/* Fileira 3: Online / Sair, lado a lado */}
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={async()=>{
+              const novoStatus = !online;
+              setOnline(novoStatus);
+              if (motoboyId) {
+                await supabase.from("motoboys").update({online: novoStatus}).eq("id", motoboyId);
+              }
+            }} style={{flex:1,padding:"8px 14px",borderRadius:20,cursor:"pointer",fontWeight:700,fontSize:12,border:"none",background:online?"#0d3d2e":"#1f2937",color:online?"#34d399":"#6b7280",transition:"all 0.2s"}}>
+              {online?"🟢 Online":"⚫ Offline"}
+            </button>
+            <button onClick={async()=>{ await supabase.auth.signOut(); navigate("/"); }}
+              style={{background:"transparent",border:"1px solid #374151",color:"#9ca3af",padding:"8px 16px",borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>
+              🚪 Sair
+            </button>
+          </div>
         </div>
       </div>
 
