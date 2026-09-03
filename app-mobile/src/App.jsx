@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient.js'
 import Cadastro from './screens/Cadastro.jsx'
 import Motoboy from './screens/Motoboy.jsx'
+import Empresario from './screens/Empresario.jsx'
 
 // ─── TELAS AINDA NÃO PORTADAS (placeholder até migrarmos cada uma) ───────────
 function EmConstrucao({ nome }) {
@@ -67,7 +68,7 @@ function RotaEmpresario() {
   if (estado === "verificando") return <Verificando />
   if (estado === "pendente") return <CadastroPendente mensagem="Seu cadastro está sendo analisado pela equipe MotoFast. Você receberá um email quando for aprovado." />
   if (estado === "negado") return <Navigate to="/" replace />
-  return <EmConstrucao nome="Empresário" />
+  return <Empresario />
 }
 
 // ─── PROTEÇÃO DE ROTA DO MOTOBOY ─────────────────────────────────────────────

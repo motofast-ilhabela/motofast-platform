@@ -1,0 +1,2960 @@
+import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "../supabaseClient.js";
+
+// Cópia adaptada de Empresario.jsx da plataforma web (ver CLAUDE.md — mudanças
+// de regra de negócio precisam ser replicadas manualmente entre as duas
+// versões). Adaptações técnicas feitas aqui (nenhuma mudança de regra de
+// negócio): navegação via useNavigate em vez de window.location.href
+// (HashRouter), fetch("/api/...") virou URL absoluta pra web (o app nativo
+// não tem /api próprio), e o link de rastreio enviado ao cliente aponta pra
+// web (window.location.origin não faz sentido dentro do app empacotado).
+const WEB_APP_URL = "https://motofast-platform.vercel.app";
+
+// ─── DADOS DO ESTABELECIMENTO (viriam do login) ───────────────────────────────
+const EMPRESA = {
+  id: null,
+  nome: "Açaí da Hora",
+  bairro: "Perequê",
+  tel: "(12) 3894-3344",
+  planoPagamento: "diario",
+  planoGratis: true,
+  dataFimGratis: "2026-07-10",
+  taxas: {
+    "Perequê":     {e:7,  m:5  },
+    "Vila":        {e:11, m:8  },
+    "Barra Velha": {e:12, m:9  },
+    "Itaquanduba": {e:9,  m:7  },
+    "Água Branca": {e:8,  m:6  },
+    "Zabumba":     {e:9,  m:6  },
+    "Sul":         {e:16, m:12 },
+    "Centro":      {e:10, m:7  },
+    "Armação":     {e:14, m:10 },
+    "Curral":      {e:10, m:7  },
+  }
+};
+
+const BAIRROS = Object.keys(EMPRESA.taxas);
+
+const PG = {
+  pix:      { label:"Pix",      icon:"💠", cor:"#34d399" },
+  dinheiro: { label:"Dinheiro", icon:"💵", cor:"#fbbf24" },
+  cartao:   { label:"Cartão",   icon:"💳", cor:"#60a5fa" },
+};
+
+// Bairros com preço FIXO especial, independente da distância calculada por km —
+// usado quando um bairro específico precisa de valor diferente do que a fórmula
+// por km daria (ex: bairro muito longe, comparação sempre sem acento/maiúscula
+// via normalizarTexto, então funciona não importa como foi digitado o bairro).
+// Pedido em 14/08/2026: Pacuíba estava saindo R$23 pela fórmula, mas o mínimo
+// real pra esse bairro é R$30 (motoboy R$25, lucro R$5).
+// Pedido em 25/08/2026: Siriúba é muito longe (9km) — pela fórmula normal saía
+// R$23/R$18,40 e nenhum motoboy aceitava. Valor fixo: R$25 cliente / R$20
+// motoboy (margem R$5).
+const BAIRROS_TAXA_FIXA_KM = {
+  "pacuiba": {e: 30, m: 25},
+  "siriuba": {e: 25, m: 20},
+};
+
+
+const SUPORTE_TEL = "5512991213656";
+const SUPORTE_HORARIO = "Seg-Sex 9h-22h • Sáb 9h-19h • Dom/feriados: fechado";
+
+// Limite mensal de entregas grátis pra quem ainda não está em nenhum plano pago.
+// Zera sozinho todo mês, porque a contagem sempre filtra pelo mês calendário atual.
+const LIMITE_ENTREGAS_MES = 40;
+const PIX_MOTOFAST = {
+  chave: "bcdccace-30bb-43db-813a-881bc3977131",
+  nome: "Alessandro da Hora",
+  banco: "C6 Bank",
+};
+
+// Retorna a data no formato AAAA-MM-DD usando o horário LOCAL (Brasil), nunca UTC.
+// IMPORTANTE: nunca usar date.toISOString().split("T")[0] pra pegar "a data de hoje"
+// ou "a data de um pedido" — toISOString() converte pra UTC e desloca a data em
+// horários próximos da meia-noite (ex: pedido às 21h no Brasil vira dia seguinte em UTC).
+function dataLocalISO(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth()+1).padStart(2,"0");
+  const d = String(date.getDate()).padStart(2,"0");
+  return `${y}-${m}-${d}`;
+}
+
+// Adicionada em 30/08/2026, pro sistema de "Turno Fixo" com prioridade.
+// Retorna 'dia' (09h-16h59), 'noite' (17h-23h59), ou null (00h-08h59, sem
+// turno fixo cobrindo esse horário) — sempre no horário de Brasília, não do
+// fuso do navegador, pra funcionar igual não importa onde o empresário esteja.
+function turnoAtual() {
+  const horaBrasilia = Number(new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo', hour: '2-digit', hour12: false,
+  }).format(new Date()));
+  if (horaBrasilia >= 9 && horaBrasilia < 17) return 'dia';
+  if (horaBrasilia >= 17 && horaBrasilia <= 23) return 'noite';
+  return null;
+}
+
+// Retorna a data (AAAA-MM-DD) da segunda-feira que inicia a semana REAL (segunda a
+// domingo) que contém a data informada. Usado pra somar a taxa da semana inteira de
+// uma vez, pro empresário que paga toda segunda-feira não precisar somar dia por dia.
+function segundaFeiraDaSemana(date) {
+  const d = new Date(date);
+  const diaSemana = d.getDay(); // 0=domingo, 1=segunda, ..., 6=sábado
+  const diff = diaSemana === 0 ? -6 : 1 - diaSemana;
+  const segunda = new Date(d);
+  segunda.setDate(d.getDate() + diff);
+  return dataLocalISO(segunda);
+}
+
+// Normaliza texto pra comparação: remove acentos e deixa minúsculo. Usado na busca de
+// clientes salvos — sem isso, digitar "Fabio" (sem acento, o mais comum na pressa) não
+// encontrava um cliente salvo como "Fábio", fazendo o sistema tratar como cliente novo
+// e pedir todos os dados de novo, mesmo já estando tudo salvo.
+function normalizarTexto(str) {
+  return (str || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+// ─── ATOMS ────────────────────────────────────────────────────────────────────
+function Card({ children, style={} }) {
+  return <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"18px 22px",...style}}>{children}</div>;
+}
+function Btn({ children, onClick, cor="verde", small, full, disabled }) {
+  const cores = {verde:{bg:"#10b981",c:"#fff"},perigo:{bg:"#ef4444",c:"#fff"},cinza:{bg:"#1f2937",c:"#d1d5db"},amarelo:{bg:"#f59e0b",c:"#000"},azul:{bg:"#3b82f6",c:"#fff"}};
+  const c = cores[cor]||cores.verde;
+  return (
+    <button onClick={onClick} disabled={disabled}
+      style={{background:c.bg,color:c.c,border:"none",borderRadius:8,padding:small?"5px 12px":"10px 18px",fontSize:small?12:14,fontWeight:700,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.4:1,width:full?"100%":"auto"}}>
+      {children}
+    </button>
+  );
+}
+function Inp({ label, value, onChange, placeholder="", hint }) {
+  return (
+    <div style={{marginBottom:10}}>
+      {label && <div style={{color:"#9ca3af",fontSize:12,marginBottom:4,fontWeight:600}}>{label}</div>}
+      <input value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
+        style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"9px 12px",width:"100%",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+      {hint && <div style={{color:"#4b5563",fontSize:11,marginTop:3}}>{hint}</div>}
+    </div>
+  );
+}
+function SelInput({ label, value, onChange, children }) {
+  return (
+    <div style={{marginBottom:10}}>
+      {label && <div style={{color:"#9ca3af",fontSize:12,marginBottom:4,fontWeight:600}}>{label}</div>}
+      <select value={value} onChange={e=>onChange(e.target.value)}
+        style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"9px 12px",width:"100%",fontSize:14}}>{children}</select>
+    </div>
+  );
+}
+function Tag({ label, cor="#34d399" }) {
+  return <span style={{background:cor+"22",color:cor,padding:"2px 9px",borderRadius:12,fontSize:11,fontWeight:700,border:`1px solid ${cor}44`}}>{label}</span>;
+}
+function Overlay({ children, onClose, maxW=500, borderColor="#1f2937" }) {
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:14}}>
+      <div style={{background:"#111827",border:`1px solid ${borderColor}`,borderRadius:16,width:"100%",maxWidth:maxW,maxHeight:"94vh",overflow:"auto",padding:24}}>
+        {children}
+      </div>
+    </div>
+  );
+}
+function OvHeader({ titulo, sub, onClose }) {
+  return (
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:16}}>
+      <div>
+        <div style={{color:"#f9fafb",fontWeight:800,fontSize:18}}>{titulo}</div>
+        {sub && <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{sub}</div>}
+      </div>
+      <Btn small cor="cinza" onClick={onClose}>✕ Fechar</Btn>
+    </div>
+  );
+}
+function Divider() { return <div style={{height:1,background:"#1f2937",margin:"12px 0"}}/>; }
+function STitle({ children }) { return <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>{children}</div>; }
+
+// ─── SOLICITAR ENTREGA ────────────────────────────────────────────────────────
+function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
+  const [buscaCliente, setBuscaCliente] = useState("");
+  const [clienteSel, setClienteSel] = useState(null);
+  const [modoEndereco, setModoEndereco] = useState("salvo");
+  const [novoEndereco, setNovoEndereco] = useState({rua:"",num:"",bairro:"",ref:""});
+  const [clienteNome, setClienteNome] = useState("");
+  const [clienteTel, setClienteTel] = useState("");
+  const [pagamento, setPagamento] = useState("pix");
+  const [obs, setObs] = useState("");
+  const [erro, setErro] = useState("");
+  const [valorPedido, setValorPedido] = useState("");
+  const [valorReceber, setValorReceber] = useState("");
+
+  // Busca cliente
+  const resultados = buscaCliente.length>=2
+    ? clientes.filter(c=>normalizarTexto(c.nome).includes(normalizarTexto(buscaCliente))||c.tel.includes(buscaCliente))
+    : [];
+
+  // Endereço e bairro efetivos
+  const taxasEmpresa = (empresa && empresa.taxas && Object.keys(empresa.taxas).length>0) ? empresa.taxas : EMPRESA.taxas;
+  const bairrosDisponiveis = Object.keys(taxasEmpresa);
+  const endEfetivo = (clienteSel && modoEndereco==="salvo") ? {rua:clienteSel.rua,num:clienteSel.num,bairro:clienteSel.bairro,ref:clienteSel.ref} : novoEndereco;
+  const bairroFinal = endEfetivo.bairro || bairrosDisponiveis[0] || "";
+  const taxaKey = Object.keys(taxasEmpresa).find(k => normalizarTexto(k) === normalizarTexto(bairroFinal)) || bairroFinal;
+  const taxa = taxasEmpresa[taxaKey] || {e:0,m:0};
+
+  // ─── TAXA POR KM ──────────────────────────────────────────────────────────────
+  const [distanciaKm, setDistanciaKm] = useState(null);
+  const [calcKm, setCalcKm] = useState(false);
+  const [taxaKm, setTaxaKm] = useState({e:0, m:0});
+  const [erroCalculo, setErroCalculo] = useState(false);
+  // Guarda qual caminho o cálculo usou (endereço completo, bairro oficial, etc) —
+  // salvo junto com o pedido, pra dar pra investigar depois se algum valor parecer
+  // estranho, sem precisar pedir print de mapa pro empresário de novo.
+  const [metodoCalculoKm, setMetodoCalculoKm] = useState(null);
+
+  // Fórmula final aprovada — TESTE iniciado em 13/08/2026: mudou de "valor fixo por
+  // faixa de km" pra "porcentagem sobre o valor cobrado do cliente". Alessandro fica
+  // com 20% de cada entrega; o motoboy recebe os outros 80%, NUNCA menos que o piso
+  // de R$7,00 (esse piso é o que garante que entregas curtas continuem pagando pelo
+  // menos o mesmo mínimo que o iFood paga por rota).
+  //
+  // O valor que o CLIENTE paga (e) continua vindo da mesma tabela de faixas por
+  // distância de antes — só mudou como o motoboy (m) é calculado em cima desse "e".
+  //
+  // PARA REVERTER pro modelo de valor fixo por faixa (o que estava rodando até
+  // 12/08/2026), troca a linha "const m = ..." por estes valores fixos, por faixa,
+  // no lugar de calcular a porcentagem:
+  //   até 1,5km: m=6.50 · 1,51-2,5km: m=8.20 · 2,51-3,5km: m=11.00 · 3,51-4,5km: m=12.80
+  //   4,51-5,5km: m=14.60 · 5,51-6,5km: m=17.70 · 6,51-7,5km: m=17.00 · 7,51-8,5km: m=21.50
+  //   8,51-9,5km: m=20.00 · 9,51-10km: m=25.30 · acima de 10km: m = 6.30 + 1.90*kmArred
+  function calcularTaxaPorKm(km, bairro) {
+    // Bairro com preço fixo especial (ver BAIRROS_TAXA_FIXA_KM lá em cima) — se
+    // bater, ignora toda a fórmula por km e usa o valor fixo direto.
+    const overrideBairro = BAIRROS_TAXA_FIXA_KM[normalizarTexto(bairro || "")];
+    if (overrideBairro) return {e: overrideBairro.e, m: overrideBairro.m};
+
+    const PISO_MOTOBOY = 7.00; // motoboy nunca recebe menos que isso, não importa a % (atualizado 14/08/2026, era 6.50)
+    const MARGEM_ADMIN_PCT = 0.20; // atualizado 22/08/2026, era 0.21 (20% fica com a MotoFast)
+    let e;
+    if (km <= 1.5) e = 8;
+    else if (km <= 2.5) e = 11;
+    else if (km <= 3.5) e = 13;
+    else if (km <= 4.5) e = 15;
+    else if (km <= 5.5) e = 17;
+    else if (km <= 6.5) e = 20;
+    else if (km <= 7.5) e = 20;
+    else if (km <= 8.5) e = 24;
+    else if (km <= 9.5) e = 23;
+    else if (km <= 10) e = 28;
+    else {
+      // Acima de 10km: mesma fórmula de sempre pro valor do cliente, arredondando
+      // pro km cheio pra cima.
+      const kmArred = Math.ceil(km);
+      e = 8 + 2*kmArred;
+    }
+    // Ajuste específico pedido em 14/08/2026: na faixa 1,51-2,5km, R$7,70 pro
+    // motoboy (padrão) estava pouco pra rodar de um bairro pro outro — nessa
+    // faixa específica, ele recebe valor fixo em vez da margem padrão (20%).
+    // Atualizado em 22/08/2026: R$8,50 subiu pra R$9,00 (motoboy ainda não
+    // estava aceitando essa faixa) E o valor do cliente subiu de R$10 pra R$11
+    // (era e===10, agora e===11) — margem da MotoFast passa de R$1 pra R$2
+    // nessa faixa, teste pra ver se resolve o problema de aceite.
+    const m = (e === 11)
+      ? 9.00
+      : Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
+    return {e: +e.toFixed(2), m: +m.toFixed(2)};
+  }
+
+  useEffect(()=>{
+    const rua = endEfetivo.rua;
+    const num = endEfetivo.num;
+    const bairro = endEfetivo.bairro;
+    // Se esse estabelecimento estiver configurado pra cobrar por BAIRRO (tabela fixa,
+    // escolhido lá no Admin), nem tenta calcular distância nenhuma — usa direto a
+    // tabela de bairro dele (a variável "taxa" já calcula isso mais abaixo). Só quando
+    // o modelo é "km" (padrão) que entra nessa lógica de calcular a rota real.
+    if (empresa.modeloPrecificacao === "bairro") {
+      setDistanciaKm(null);
+      setTaxaKm({e:0, m:0});
+      setErroCalculo(false);
+      setCalcKm(false);
+      return;
+    }
+    // Só precisa do endereço do CLIENTE pra começar a calcular. O endereço do
+    // ESTABELECIMENTO é só um "extra" pra ter mais precisão — se não tiver cadastrado
+    // (empresa.endereco vazio), cai automaticamente pro bairro do estabelecimento.
+    // ANTES essa trava exigia `empresa.endereco` pra sequer começar o cálculo, e por
+    // isso a taxa nunca calculava pra estabelecimentos sem esse campo preenchido —
+    // mesmo já existindo o fallback por bairro no código, ele nunca era alcançado.
+    if (!rua || !bairro) {
+      setDistanciaKm(null);
+      setTaxaKm({e:0, m:0});
+      setErroCalculo(false);
+      return;
+    }
+    let cancelado = false;
+    setCalcKm(true);
+    setErroCalculo(false);
+    (async()=>{
+      try {
+        const enderecoDestino = `${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil`;
+        const enderecoOrigem = empresa.endereco
+          ? `${empresa.endereco}, Ilhabela, SP, Brasil`
+          : `${empresa.bairro||""}, Ilhabela, SP, Brasil`;
+
+        // Calcula pelo Google Maps (via nossa função no servidor, que protege a
+        // chave). O Google já lida muito bem com endereço incompleto ou digitado
+        // torto — não precisa mais daquela cadeia de tentativas manuais que o mapa
+        // gratuito exigia antes.
+        const resp = await fetch(`${WEB_APP_URL}/api/calcular-distancia`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ origem: enderecoOrigem, destino: enderecoDestino }),
+        });
+        const data = await resp.json();
+
+        if (!cancelado && data.ok) {
+          setDistanciaKm(data.km.toFixed(1));
+          setTaxaKm(calcularTaxaPorKm(data.km, bairro));
+          setMetodoCalculoKm("Google Maps — endereço completo");
+          return;
+        }
+
+        // Se o endereço específico não foi encontrado, tenta só com o bairro do
+        // cliente — último recurso antes de cair na reserva por bairro fixa.
+        if (!cancelado) {
+          const enderecoDestinoBairro = `${bairro}, Ilhabela, SP, Brasil`;
+          const resp2 = await fetch(`${WEB_APP_URL}/api/calcular-distancia`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ origem: enderecoOrigem, destino: enderecoDestinoBairro }),
+          });
+          const data2 = await resp2.json();
+          if (!cancelado && data2.ok) {
+            setDistanciaKm(data2.km.toFixed(1));
+            setTaxaKm(calcularTaxaPorKm(data2.km, bairro));
+            setMetodoCalculoKm("Google Maps — bairro (endereço específico não encontrado)");
+          } else if (!cancelado) {
+            setDistanciaKm(null);
+            setErroCalculo(true);
+            setMetodoCalculoKm(null);
+          }
+        }
+      } catch(e) {
+        console.log("Erro ao calcular distância via Google Maps:", e);
+        if (!cancelado) { setDistanciaKm(null); setErroCalculo(true); setMetodoCalculoKm(null); }
+      } finally {
+        if (!cancelado) setCalcKm(false);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [endEfetivo.rua, endEfetivo.num, endEfetivo.bairro, empresa.endereco, empresa.bairro, empresa.modeloPrecificacao]);
+
+  const nomeEfetivo = clienteSel ? clienteSel.nome : clienteNome;
+  const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
+  // Telefone é ESSENCIAL pro motoboy conseguir falar com o cliente na entrega —
+  // nunca deixa publicar sem um telefone válido preenchido, seja de cliente salvo ou novo.
+  const telValido = !!(telEfetivo && telEfetivo.trim() && telEfetivo.trim().toLowerCase()!=="não informado" && telEfetivo.replace(/\D/g,"").length>=8);
+  // Só bloqueia publicar quando NÃO há preço nenhum disponível — nem pela distância
+  // (km falhou) nem pela reserva por bairro (também não cadastrada). Nesse caso
+  // publicar deixaria o pedido com taxa R$0, o que nunca pode acontecer.
+  const semPrecoDisponivel = empresa.modeloPrecificacao === "bairro"
+    ? !(taxa && taxa.e>0)
+    : erroCalculo && (!taxa || !(taxa.e>0));
+
+  function detectarBairro(rua) {
+    const l = rua.toLowerCase();
+    for (const b of bairrosDisponiveis) if (l.includes(b.toLowerCase())) return b;
+    return null;
+  }
+
+  function handleRua(v) {
+    const b = detectarBairro(v);
+    setNovoEndereco(prev=>({...prev, rua:v, bairro:b||prev.bairro}));
+  }
+
+  async function publicar() {
+    if (!empresa?.id) {
+      setErro("Ainda carregando seus dados — aguarde alguns segundos e tente novamente.");
+      return;
+    }
+    if (!clienteSel) {
+      setErro("Selecione um cliente da lista de busca. Se ele ainda não está cadastrado, cadastre primeiro na aba \"Clientes\".");
+      return;
+    }
+    if (!nomeEfetivo || !endEfetivo.rua || !endEfetivo.num) {
+      setErro("Preencha o nome do cliente e o endereço completo."); return;
+    }
+    if (!telValido) {
+      setErro("Preencha o telefone/WhatsApp do cliente — é essencial pro motoboy conseguir falar com ele na entrega.");
+      return;
+    }
+    if (semPrecoDisponivel) {
+      setErro("Não foi possível calcular nenhuma taxa pra esse endereço (nem por distância, nem por bairro). Corrija o endereço ou fale com o suporte antes de publicar.");
+      return;
+    }
+    // Se o telefone foi corrigido/adicionado aqui (cliente salvo sem telefone), ou o
+    // endereço foi trocado pra "diferente do cadastrado", atualiza o cadastro salvo.
+    if (telEfetivo && telEfetivo!==clienteSel.tel) {
+      await supabase.from("clientes").update({ telefone: telEfetivo }).eq("id", clienteSel.id);
+      setClientes(p=>p.map(c=>c.id===clienteSel.id?{...c,tel:telEfetivo}:c));
+    }
+    if (modoEndereco==="novo") {
+      await supabase.from("clientes").update({
+        rua: novoEndereco.rua, numero: novoEndereco.num, bairro: novoEndereco.bairro, referencia: novoEndereco.ref,
+      }).eq("id", clienteSel.id);
+      setClientes(p=>p.map(c=>c.id===clienteSel.id?{...c,rua:novoEndereco.rua,num:novoEndereco.num,bairro:novoEndereco.bairro,ref:novoEndereco.ref}:c));
+    }
+    onPublicar({
+      id:Date.now(),
+      clienteNome:nomeEfetivo, clienteTel:telEfetivo,
+      rua:endEfetivo.rua, num:endEfetivo.num,
+      bairro:bairroFinal, ref:endEfetivo.ref,
+      pagamento, taxa:taxaKm?.e||taxa?.e||0, taxaMotoboy:taxaKm?.m||taxa?.m||0, obs,
+      distanciaKm: distanciaKm ? parseFloat(distanciaKm) : null,
+      metodoCalculoKm: metodoCalculoKm,
+      valorPedido: valorPedido ? parseFloat(valorPedido) : null,
+      valorReceber: valorReceber ? parseFloat(valorReceber) : null,
+      troco: (valorPedido && valorReceber && parseFloat(valorReceber)>parseFloat(valorPedido))
+        ? parseFloat(valorReceber)-parseFloat(valorPedido) : null,
+      status:"aguardando", criadoEm:Date.now(),
+      motoboyNome:null, motoboyTel:null, corridaId:null,
+    });
+    // Reset
+    setBuscaCliente(""); setClienteSel(null); setModoEndereco("salvo");
+    setNovoEndereco({rua:"",num:"",bairro:"",ref:""});
+    setClienteNome(""); setClienteTel(""); setPagamento("pix"); setObs("");
+    setValorPedido(""); setValorReceber(""); setErro("");
+  }
+
+  return (
+    <div>
+      <div style={{marginBottom:16}}>
+        <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>📦 Nova Entrega</div>
+        <div style={{color:"#6b7280",fontSize:13}}>Busque o cliente ou cadastre um novo</div>
+      </div>
+
+      {!empresa?.id && (
+        <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#fbbf24",fontSize:13}}>
+          ⏳ Carregando seus dados... aguarde alguns segundos antes de publicar um pedido.
+        </div>
+      )}
+
+      {erro && <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#f87171",fontSize:13}}>{erro}</div>}
+
+      {/* Busca de cliente */}
+      <Card style={{marginBottom:14}}>
+        <STitle>👤 Cliente</STitle>
+        <div style={{position:"relative"}}>
+          <input value={buscaCliente}
+            onChange={e=>{setBuscaCliente(e.target.value);setClienteSel(null);}}
+            placeholder="Buscar por nome ou telefone..."
+            style={{background:"#0f172a",border:`1px solid ${clienteSel?"#34d399":"#374151"}`,borderRadius:8,color:"#f9fafb",padding:"9px 12px",width:"100%",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+        </div>
+
+        {/* Resultados */}
+        {resultados.length>0 && !clienteSel && (
+          <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,marginTop:6,overflow:"hidden",maxHeight:200,overflowY:"auto"}}>
+            {resultados.map(c=>(
+              <div key={c.id} onClick={()=>{setClienteSel(c);setBuscaCliente(c.nome);setModoEndereco("salvo");}}
+                style={{padding:"10px 14px",cursor:"pointer",borderBottom:"1px solid #1f2937"}}
+                onMouseOver={e=>e.currentTarget.style.background="#1f2937"}
+                onMouseOut={e=>e.currentTarget.style.background="transparent"}>
+                <div style={{color:"#f9fafb",fontWeight:600,fontSize:13}}>{c.nome}</div>
+                <div style={{color:"#6b7280",fontSize:11}}>📞 {c.tel} · 📍 {c.rua}, {c.num} — {c.bairro}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {buscaCliente.length>=2 && resultados.length===0 && !clienteSel && (
+          <div style={{background:"#1a2035",borderRadius:8,padding:"9px 14px",marginTop:6}}>
+            <div style={{color:"#9ca3af",fontSize:12}}>Cliente não encontrado. Cadastre ele primeiro na aba "👤 Clientes", depois volte aqui pra buscar de novo.</div>
+          </div>
+        )}
+
+        {/* Cliente selecionado */}
+        {clienteSel && (
+          <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"12px 16px",marginTop:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+              <div>
+                <div style={{color:"#34d399",fontWeight:700,fontSize:14}}>✅ {clienteSel.nome}</div>
+                <div style={{color:"#6b7280",fontSize:12,marginTop:1}}>📞 {clienteSel.tel}</div>
+              </div>
+              <button onClick={()=>{setClienteSel(null);setBuscaCliente("");}}
+                style={{background:"none",border:"none",color:"#6b7280",cursor:"pointer",fontSize:20,lineHeight:1}}>×</button>
+            </div>
+            {/* Aviso se o cliente salvo não tem telefone válido cadastrado */}
+            {!telValido && (
+              <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"9px 12px",marginTop:10}}>
+                <div style={{color:"#f87171",fontSize:12,fontWeight:700,marginBottom:6}}>⚠️ Este cliente não tem telefone cadastrado — o motoboy precisa disso pra entregar</div>
+                <input value={clienteTel} onChange={e=>setClienteTel(e.target.value)} placeholder="(12) 99999-0000"
+                  style={{background:"#0f172a",border:"1px solid #ef4444",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+            )}
+            {/* Endereço salvo */}
+            <div style={{background:"#111827",borderRadius:8,padding:"9px 12px",marginTop:10}}>
+              <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:4}}>📍 Endereço cadastrado:</div>
+              <div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{clienteSel.rua}, {clienteSel.num} — {clienteSel.bairro}</div>
+              {clienteSel.ref && <div style={{color:"#fbbf24",fontSize:11,marginTop:2}}>📌 {clienteSel.ref}</div>}
+            </div>
+            {/* Mesmo ou novo endereço */}
+            <div style={{display:"flex",gap:8,marginTop:10}}>
+              <button onClick={()=>setModoEndereco("salvo")} style={{flex:1,padding:"9px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,background:modoEndereco==="salvo"?"#0d3d2e":"#0f172a",border:modoEndereco==="salvo"?"2px solid #34d399":"2px solid #1f2937",color:modoEndereco==="salvo"?"#34d399":"#6b7280"}}>
+                ✅ Mesmo endereço
+              </button>
+              <button onClick={()=>setModoEndereco("novo")} style={{flex:1,padding:"9px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,background:modoEndereco==="novo"?"#1a2f4a":"#0f172a",border:modoEndereco==="novo"?"2px solid #60a5fa":"2px solid #1f2937",color:modoEndereco==="novo"?"#60a5fa":"#6b7280"}}>
+                📍 Endereço diferente
+              </button>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Endereço de entrega — só aparece se o cliente JÁ selecionado escolher "endereço
+          diferente" do cadastrado. Não existe mais cadastro de cliente novo aqui dentro
+          — isso agora é feito só na aba "Clientes", pra manter essa tela sempre limpa,
+          só com busca e seleção, sem formulário nenhum pra preencher na correria. */}
+      {clienteSel && modoEndereco==="novo" && buscaCliente.length>=2 && (
+        <Card style={{marginBottom:14}}>
+          <STitle>📍 Endereço de Entrega</STitle>
+          <div style={{display:"flex",gap:10}}>
+            <div style={{flex:3}}>
+              <Inp label="Rua / Avenida *" value={novoEndereco.rua} onChange={handleRua} placeholder="Ex: Rua das Flores"/>
+            </div>
+            <div style={{flex:1}}>
+              <Inp label="Número *" value={novoEndereco.num} onChange={v=>setNovoEndereco(p=>({...p,num:v}))} placeholder="123"/>
+            </div>
+          </div>
+          <SelInput label="Bairro *" value={novoEndereco.bairro} onChange={v=>setNovoEndereco(p=>({...p,bairro:v}))}>
+            {bairrosDisponiveis.map(b=><option key={b}>{b}</option>)}
+          </SelInput>
+          {/* Preview + taxa */}
+          {novoEndereco.rua && novoEndereco.num && (
+            <div style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginTop:4}}>
+              <div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{novoEndereco.rua}, {novoEndereco.num} — {bairroFinal}</div>
+              {novoEndereco.ref && <div style={{color:"#fbbf24",fontSize:11,marginTop:2}}>📌 {novoEndereco.ref}</div>}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Taxa automática */}
+      {taxa && (clienteSel) && (
+        <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"14px 18px",marginBottom:14}}>
+          {empresa.modeloPrecificacao === "bairro" ? (
+            <div>
+              <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>
+                💰 Taxa de entrega — {bairroFinal}
+              </div>
+              {taxa.e>0 ? (
+                <div style={{color:"#34d399",fontWeight:900,fontSize:28}}>R${taxa.e}</div>
+              ) : (
+                <div style={{color:"#f87171",fontSize:13}}>⚠️ Esse bairro não tem taxa cadastrada. Fale com o suporte MotoFast antes de publicar.</div>
+              )}
+            </div>
+          ) : (
+          <div>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>
+            💰 Taxa de entrega{distanciaKm ? ` — ${distanciaKm}km` : ""}
+          </div>
+          {calcKm && (
+            <div style={{color:"#fbbf24",fontSize:13}}>⏳ Calculando distância...</div>
+          )}
+          {!calcKm && distanciaKm && taxaKm.e > 0 && (
+            <div style={{display:"flex",alignItems:"center",gap:20}}>
+              <div>
+                <div style={{color:"#6b7280",fontSize:11}}>Seu cliente paga</div>
+                <div style={{color:"#34d399",fontWeight:900,fontSize:28}}>R${taxaKm.e.toFixed(2)}</div>
+              </div>
+              <div style={{color:"#1f2937",fontSize:24}}>→</div>
+              <div style={{color:"#9ca3af",fontSize:12}}>
+                Calculado automaticamente pela distância real ({distanciaKm}km).
+              </div>
+            </div>
+          )}
+          {!calcKm && !distanciaKm && erroCalculo && (
+            <div>
+              <div style={{color:"#f87171",fontSize:13,marginBottom:10}}>
+                ⚠️ Não conseguimos calcular a distância automaticamente pra esse endereço. Confira se a rua e o bairro estão certos, ou fale com o suporte MotoFast.
+              </div>
+              {taxa && taxa.e>0 ? (
+                <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"10px 14px"}}>
+                  <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:4}}>💡 Se você publicar assim mesmo, vamos usar o valor antigo (por bairro) como reserva:</div>
+                  <div style={{color:"#fbbf24",fontWeight:900,fontSize:22}}>R${taxa.e}</div>
+                  <div style={{color:"#9ca3af",fontSize:11,marginTop:4}}>Esse valor pode não refletir a distância real — corrija o endereço se puder, ou publique assim mesmo se preferir.</div>
+                </div>
+              ) : (
+                <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px"}}>
+                  <div style={{color:"#f87171",fontSize:12,fontWeight:700}}>❌ Esse bairro também não tem taxa de reserva cadastrada. Corrija o endereço antes de publicar, ou fale com o suporte.</div>
+                </div>
+              )}
+            </div>
+          )}
+          {!calcKm && !distanciaKm && !erroCalculo && (
+            <div style={{color:"#9ca3af",fontSize:13}}>
+              Digite o endereço do cliente para calcular a taxa automaticamente.
+            </div>
+          )}
+          </div>
+          )}
+        </div>
+      )}
+
+      {/* Pagamento */}
+      {clienteSel && (
+        <Card style={{marginBottom:14}}>
+          <STitle>💳 Forma de Pagamento do Cliente</STitle>
+          <div style={{display:"flex",gap:8,marginBottom:10}}>
+            {Object.entries(PG).map(([k,p])=>(
+              <button key={k} onClick={()=>{setPagamento(k);setValorPedido("");setValorReceber("");}} style={{flex:1,padding:"12px 6px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,background:pagamento===k?"#1e293b":"#0f172a",border:pagamento===k?`2px solid ${p.cor}`:"2px solid #1f2937",color:pagamento===k?p.cor:"#6b7280"}}>
+                {p.icon}<br/>{p.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Campos de valor conforme forma de pagamento */}
+          {pagamento==="dinheiro" && (
+            <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"12px 14px",marginBottom:8}}>
+              <div style={{color:"#fbbf24",fontWeight:700,fontSize:13,marginBottom:10}}>💵 Motoboy cobrará na entrega e retornará com o dinheiro</div>
+              <div style={{display:"flex",gap:8}}>
+                <div style={{flex:1}}>
+                  <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>Valor do pedido (R$)</div>
+                  <input type="number" value={valorPedido} onChange={e=>setValorPedido(e.target.value)} placeholder="Ex: 15,00"
+                    style={{background:"#0f172a",border:"1px solid #fbbf24",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>Cliente vai pagar com (R$)</div>
+                  <input type="number" value={valorReceber} onChange={e=>setValorReceber(e.target.value)} placeholder="Ex: 20,00 (se tiver troco)"
+                    style={{background:"#0f172a",border:"1px solid #fbbf24",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+                </div>
+              </div>
+              {valorPedido && valorReceber && parseFloat(valorReceber)>parseFloat(valorPedido) && (
+                <div style={{marginTop:8,background:"#4a2800",borderRadius:6,padding:"6px 10px"}}>
+                  <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>
+                    🪙 Troco: R${(parseFloat(valorReceber)-parseFloat(valorPedido)).toFixed(2)} — motoboy deve ter esse troco
+                  </div>
+                </div>
+              )}
+              {valorPedido && (!valorReceber || parseFloat(valorReceber)===parseFloat(valorPedido)) && (
+                <div style={{marginTop:8,background:"#4a2800",borderRadius:6,padding:"6px 10px"}}>
+                  <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>💵 Sem troco — cliente paga exato R${parseFloat(valorPedido).toFixed(2)}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {pagamento==="cartao" && (
+            <div style={{background:"#1a2f4a",border:"1px solid #60a5fa",borderRadius:8,padding:"12px 14px",marginBottom:8}}>
+              <div style={{color:"#60a5fa",fontWeight:700,fontSize:13,marginBottom:10}}>💳 Disponibilize a maquininha para o motoboy levar</div>
+              <div>
+                <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,marginBottom:4}}>Valor do pedido (R$)</div>
+                <input type="number" value={valorPedido} onChange={e=>setValorPedido(e.target.value)} placeholder="Ex: 15,00"
+                  style={{background:"#0f172a",border:"1px solid #60a5fa",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+            </div>
+          )}
+
+          {pagamento==="pix" && (
+            <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px",marginBottom:8}}>
+              <div style={{color:"#34d399",fontWeight:700,fontSize:13}}>💠 Pix já foi pago — motoboy só entrega, sem cobrar nada</div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Obs */}
+      {clienteSel && (
+        <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
+      )}
+
+      {/* Botão publicar */}
+      {clienteSel && (
+        <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,padding:"12px 16px",marginBottom:14}}>
+          <div style={{color:"#9ca3af",fontSize:12}}>
+            🔔 O pedido será enviado para <strong style={{color:"#f9fafb"}}>todos os motoboys online</strong>. O primeiro que aceitar faz a entrega.
+          </div>
+        </div>
+      )}
+
+      <Btn onClick={publicar} full disabled={!clienteSel || !empresa?.id || !telValido || semPrecoDisponivel}>
+        🚀 Publicar Pedido
+      </Btn>
+    </div>
+  );
+}
+
+// ─── ADICIONAR PEDIDO À CORRIDA (mesmo motoboy, sem escolher) ────────────────
+function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, motoboyTel, vagaNum, onSalvar, onFechar, empresa }) {
+  const [buscaCliente, setBuscaCliente] = useState("");
+  const [clienteSel, setClienteSel] = useState(null);
+  const [modoEndereco, setModoEndereco] = useState("salvo");
+  const taxasEmpresa2 = (empresa && empresa.taxas && Object.keys(empresa.taxas).length>0) ? empresa.taxas : EMPRESA.taxas;
+  const bairrosDisponiveis2 = Object.keys(taxasEmpresa2);
+  const [novoEndereco, setNovoEndereco] = useState({rua:"",num:"",bairro:bairrosDisponiveis2[0]||"",ref:""});
+  const [clienteNome, setClienteNome] = useState("");
+  const [clienteTel, setClienteTel] = useState("");
+  const [pagamento, setPagamento] = useState("pix");
+  const [obs, setObs] = useState("");
+  const [erro, setErro] = useState("");
+  const [valorPedido, setValorPedido] = useState("");
+  const [valorReceber, setValorReceber] = useState("");
+
+  const resultados = buscaCliente.length>=2
+    ? clientes.filter(c=>normalizarTexto(c.nome).includes(normalizarTexto(buscaCliente))||c.tel.includes(buscaCliente))
+    : [];
+
+  const endEfetivo = (clienteSel && modoEndereco==="salvo") ? {rua:clienteSel.rua,num:clienteSel.num,bairro:clienteSel.bairro,ref:clienteSel.ref} : novoEndereco;
+  const bairroFinal = endEfetivo.bairro || bairrosDisponiveis2[0] || "";
+  const taxaKey2 = Object.keys(taxasEmpresa2).find(k => normalizarTexto(k) === normalizarTexto(bairroFinal)) || bairroFinal;
+  const taxa = taxasEmpresa2[taxaKey2] || {e:0,m:0};
+  const nomeEfetivo = clienteSel ? clienteSel.nome : clienteNome;
+  const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
+  // Telefone é ESSENCIAL pro motoboy conseguir falar com o cliente na entrega —
+  // nunca deixa adicionar pedido à corrida sem um telefone válido preenchido.
+  const telValido = !!(telEfetivo && telEfetivo.trim() && telEfetivo.trim().toLowerCase()!=="não informado" && telEfetivo.replace(/\D/g,"").length>=8);
+
+  // ─── TAXA POR KM ──────────────────────────────────────────────────────────────
+  // MESMA lógica do "Nova Entrega" — a taxa NUNCA é digitada manualmente, sempre
+  // calculada pela distância real.
+  const [distanciaKm, setDistanciaKm] = useState(null);
+  const [calcKm, setCalcKm] = useState(false);
+  const [taxaKm, setTaxaKm] = useState({e:0, m:0});
+  const [erroCalculo, setErroCalculo] = useState(false);
+  // Guarda qual caminho o cálculo usou (endereço completo, bairro oficial, etc) —
+  // salvo junto com o pedido, pra dar pra investigar depois se algum valor parecer
+  // estranho, sem precisar pedir print de mapa pro empresário de novo.
+  const [metodoCalculoKm, setMetodoCalculoKm] = useState(null);
+
+  // Mesma fórmula por porcentagem da tela de Nova Entrega (ver comentário completo
+  // lá) — 20% de margem, motoboy nunca abaixo do piso de R$7,00.
+  function calcularTaxaPorKm(km, bairro) {
+    const overrideBairro = BAIRROS_TAXA_FIXA_KM[normalizarTexto(bairro || "")];
+    if (overrideBairro) return {e: overrideBairro.e, m: overrideBairro.m};
+
+    const PISO_MOTOBOY = 7.00; // atualizado 14/08/2026, era 6.50
+    const MARGEM_ADMIN_PCT = 0.20; // atualizado 22/08/2026, era 0.21
+    let e;
+    if (km <= 1.5) e = 8;
+    else if (km <= 2.5) e = 11;
+    else if (km <= 3.5) e = 13;
+    else if (km <= 4.5) e = 15;
+    else if (km <= 5.5) e = 17;
+    else if (km <= 6.5) e = 20;
+    else if (km <= 7.5) e = 20;
+    else if (km <= 8.5) e = 24;
+    else if (km <= 9.5) e = 23;
+    else if (km <= 10) e = 28;
+    else {
+      const kmArred = Math.ceil(km);
+      e = 8 + 2*kmArred;
+    }
+    // Mesmo ajuste da tela de Nova Entrega: faixa 1,51-2,5km recebe R$9,00
+    // fixo pro motoboy, em vez dos 20% padrão (atualizado 22/08/2026 — valor
+    // do cliente subiu de R$10 pra R$11, motoboy segue com R$9,00 fixo,
+    // margem da MotoFast passa de R$1 pra R$2 nessa faixa).
+    const m = (e === 11)
+      ? 9.00
+      : Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
+    return {e: +e.toFixed(2), m: +m.toFixed(2)};
+  }
+
+  useEffect(()=>{
+    const rua = endEfetivo.rua;
+    const num = endEfetivo.num;
+    const bairro = endEfetivo.bairro;
+    // Mesmo desvio da tela de Nova Entrega: se o estabelecimento usa o modelo por
+    // BAIRRO, nem tenta calcular km — usa a tabela fixa (variável "taxa" abaixo).
+    if (empresa.modeloPrecificacao === "bairro") {
+      setDistanciaKm(null);
+      setTaxaKm({e:0, m:0});
+      setErroCalculo(false);
+      setCalcKm(false);
+      return;
+    }
+    if (!rua || !bairro) {
+      setDistanciaKm(null);
+      setTaxaKm({e:0, m:0});
+      setErroCalculo(false);
+      return;
+    }
+    let cancelado = false;
+    setCalcKm(true);
+    setErroCalculo(false);
+    (async()=>{
+      try {
+        const enderecoDestino = `${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil`;
+        const enderecoOrigem = empresa.endereco
+          ? `${empresa.endereco}, Ilhabela, SP, Brasil`
+          : `${empresa.bairro||""}, Ilhabela, SP, Brasil`;
+
+        const resp = await fetch(`${WEB_APP_URL}/api/calcular-distancia`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ origem: enderecoOrigem, destino: enderecoDestino }),
+        });
+        const data = await resp.json();
+
+        if (!cancelado && data.ok) {
+          setDistanciaKm(data.km.toFixed(1));
+          setTaxaKm(calcularTaxaPorKm(data.km, bairro));
+          setMetodoCalculoKm("Google Maps — endereço completo");
+          return;
+        }
+
+        if (!cancelado) {
+          const enderecoDestinoBairro = `${bairro}, Ilhabela, SP, Brasil`;
+          const resp2 = await fetch(`${WEB_APP_URL}/api/calcular-distancia`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ origem: enderecoOrigem, destino: enderecoDestinoBairro }),
+          });
+          const data2 = await resp2.json();
+          if (!cancelado && data2.ok) {
+            setDistanciaKm(data2.km.toFixed(1));
+            setTaxaKm(calcularTaxaPorKm(data2.km, bairro));
+            setMetodoCalculoKm("Google Maps — bairro (endereço específico não encontrado)");
+          } else if (!cancelado) {
+            setDistanciaKm(null);
+            setErroCalculo(true);
+            setMetodoCalculoKm(null);
+          }
+        }
+      } catch(e) {
+        console.log("Erro ao calcular distância via Google Maps:", e);
+        if (!cancelado) { setDistanciaKm(null); setErroCalculo(true); setMetodoCalculoKm(null); }
+      } finally {
+        if (!cancelado) setCalcKm(false);
+      }
+    })();
+    return () => { cancelado = true; };
+  }, [endEfetivo.rua, endEfetivo.num, endEfetivo.bairro, empresa.endereco, empresa.bairro, empresa.modeloPrecificacao]);
+
+  // Só bloqueia adicionar quando NÃO há preço nenhum disponível (nem por km, nem
+  // pela reserva por bairro) — nunca adiciona um pedido com taxa R$0.
+  const semPrecoDisponivel = empresa.modeloPrecificacao === "bairro"
+    ? !(taxa && taxa.e>0)
+    : erroCalculo && (!taxa || !(taxa.e>0));
+
+  function detectarBairro(rua) {
+    const l = rua.toLowerCase();
+    for (const b of bairrosDisponiveis2) if (l.includes(b.toLowerCase())) return b;
+    return null;
+  }
+  function handleRua(v) {
+    const b = detectarBairro(v);
+    setNovoEndereco(prev=>({...prev, rua:v, bairro:b||prev.bairro}));
+  }
+
+  async function salvar() {
+    if (!empresa?.id) {
+      setErro("Ainda carregando seus dados — aguarde alguns segundos e tente novamente.");
+      return;
+    }
+    if (!clienteSel) {
+      setErro("Selecione um cliente da lista de busca. Se ele ainda não está cadastrado, cadastre primeiro na aba \"Clientes\".");
+      return;
+    }
+    if (!nomeEfetivo || !endEfetivo.rua || !endEfetivo.num) {
+      setErro("Preencha o nome do cliente e o endereço completo."); return;
+    }
+    if (!telValido) {
+      setErro("Preencha o telefone/WhatsApp do cliente — é essencial pro motoboy conseguir falar com ele na entrega.");
+      return;
+    }
+    if (semPrecoDisponivel) {
+      setErro("Não foi possível calcular nenhuma taxa pra esse endereço (nem por distância, nem por bairro). Corrija o endereço ou fale com o suporte antes de adicionar.");
+      return;
+    }
+    if (telEfetivo && telEfetivo!==clienteSel.tel) {
+      await supabase.from("clientes").update({ telefone: telEfetivo }).eq("id", clienteSel.id);
+      setClientes(p=>p.map(c=>c.id===clienteSel.id?{...c,tel:telEfetivo}:c));
+    }
+    if (modoEndereco==="novo") {
+      await supabase.from("clientes").update({
+        rua: novoEndereco.rua, numero: novoEndereco.num, bairro: novoEndereco.bairro, referencia: novoEndereco.ref,
+      }).eq("id", clienteSel.id);
+      setClientes(p=>p.map(c=>c.id===clienteSel.id?{...c,rua:novoEndereco.rua,num:novoEndereco.num,bairro:novoEndereco.bairro,ref:novoEndereco.ref}:c));
+    }
+    onSalvar({
+      id:Date.now(),
+      clienteNome:nomeEfetivo, clienteTel:telEfetivo,
+      rua:endEfetivo.rua, num:endEfetivo.num,
+      bairro:bairroFinal, ref:endEfetivo.ref,
+      // A taxa é SEMPRE calculada pela distância real — nunca digitada na mão.
+      // Se o cálculo por km falhar (endereço não localizado), cai pra reserva
+      // por bairro como plano B, igual acontece na tela de Nova Entrega.
+      pagamento, taxa:taxaKm?.e||taxa?.e||0, taxaMotoboy:taxaKm?.m||taxa?.m||0, obs,
+      distanciaKm: distanciaKm ? parseFloat(distanciaKm) : null,
+      metodoCalculoKm: metodoCalculoKm,
+      valorPedido: valorPedido ? parseFloat(valorPedido) : null,
+      valorReceber: valorReceber ? parseFloat(valorReceber) : null,
+      troco: (valorPedido && valorReceber && parseFloat(valorReceber)>parseFloat(valorPedido))
+        ? parseFloat(valorReceber)-parseFloat(valorPedido) : null,
+      status:"em_rota", criadoEm:Date.now(),
+      motoboyId, motoboyNome, motoboyTel,
+    });
+  }
+
+  return (
+    <Overlay onClose={onFechar} maxW={520} borderColor="#3b82f6">
+      <OvHeader titulo="➕ Adicionar Pedido à Corrida" sub={`${vagaNum}º pedido · Mesmo motoboy: ${motoboyNome}`} onClose={onFechar}/>
+
+      {erro && <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#f87171",fontSize:13}}>{erro}</div>}
+
+      <div style={{background:"#1a2f4a",border:"1px solid #3b82f6",borderRadius:8,padding:"10px 14px",marginBottom:14}}>
+        <div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>🏍️ Esse pedido vai com {motoboyNome} — sem precisar chamar outro motoboy.</div>
+      </div>
+
+      {/* Cliente */}
+      <Card style={{marginBottom:14}}>
+        <STitle>👤 Cliente</STitle>
+        <input value={buscaCliente}
+          onChange={e=>{setBuscaCliente(e.target.value);setClienteSel(null);}}
+          placeholder="Buscar por nome ou telefone..."
+          style={{background:"#0f172a",border:`1px solid ${clienteSel?"#34d399":"#374151"}`,borderRadius:8,color:"#f9fafb",padding:"9px 12px",width:"100%",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
+
+        {resultados.length>0 && !clienteSel && (
+          <div style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,marginTop:6,overflow:"hidden",maxHeight:180,overflowY:"auto"}}>
+            {resultados.map(c=>(
+              <div key={c.id} onClick={()=>{setClienteSel(c);setBuscaCliente(c.nome);setModoEndereco("salvo");}}
+                style={{padding:"10px 14px",cursor:"pointer",borderBottom:"1px solid #1f2937"}}
+                onMouseOver={e=>e.currentTarget.style.background="#1f2937"}
+                onMouseOut={e=>e.currentTarget.style.background="transparent"}>
+                <div style={{color:"#f9fafb",fontWeight:600,fontSize:13}}>{c.nome}</div>
+                <div style={{color:"#6b7280",fontSize:11}}>📞 {c.tel} · 📍 {c.rua}, {c.num} — {c.bairro}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {buscaCliente.length>=2 && resultados.length===0 && !clienteSel && (
+          <div style={{background:"#1a2035",borderRadius:8,padding:"9px 14px",marginTop:6}}>
+            <div style={{color:"#9ca3af",fontSize:12}}>Cliente não encontrado. Cadastre ele primeiro na aba "👤 Clientes", depois volte aqui pra buscar de novo.</div>
+          </div>
+        )}
+
+        {clienteSel && (
+          <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"12px 16px",marginTop:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+              <div>
+                <div style={{color:"#34d399",fontWeight:700,fontSize:14}}>✅ {clienteSel.nome}</div>
+                <div style={{color:"#6b7280",fontSize:12,marginTop:1}}>📞 {clienteSel.tel}</div>
+              </div>
+              <button onClick={()=>{setClienteSel(null);setBuscaCliente("");}}
+                style={{background:"none",border:"none",color:"#6b7280",cursor:"pointer",fontSize:20,lineHeight:1}}>×</button>
+            </div>
+            {/* Aviso se o cliente salvo não tem telefone válido cadastrado */}
+            {!telValido && (
+              <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"9px 12px",marginTop:10}}>
+                <div style={{color:"#f87171",fontSize:12,fontWeight:700,marginBottom:6}}>⚠️ Este cliente não tem telefone cadastrado — o motoboy precisa disso pra entregar</div>
+                <input value={clienteTel} onChange={e=>setClienteTel(e.target.value)} placeholder="(12) 99999-0000"
+                  style={{background:"#0f172a",border:"1px solid #ef4444",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+            )}
+            <div style={{background:"#111827",borderRadius:8,padding:"9px 12px",marginTop:10}}>
+              <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:4}}>📍 Endereço cadastrado:</div>
+              <div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{clienteSel.rua}, {clienteSel.num} — {clienteSel.bairro}</div>
+              {clienteSel.ref && <div style={{color:"#fbbf24",fontSize:11,marginTop:2}}>📌 {clienteSel.ref}</div>}
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:10}}>
+              <button onClick={()=>setModoEndereco("salvo")} style={{flex:1,padding:"9px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,background:modoEndereco==="salvo"?"#0d3d2e":"#0f172a",border:modoEndereco==="salvo"?"2px solid #34d399":"2px solid #1f2937",color:modoEndereco==="salvo"?"#34d399":"#6b7280"}}>
+                ✅ Mesmo endereço
+              </button>
+              <button onClick={()=>setModoEndereco("novo")} style={{flex:1,padding:"9px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,background:modoEndereco==="novo"?"#1a2f4a":"#0f172a",border:modoEndereco==="novo"?"2px solid #60a5fa":"2px solid #1f2937",color:modoEndereco==="novo"?"#60a5fa":"#6b7280"}}>
+                📍 Endereço diferente
+              </button>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      {/* Endereço — só aparece se o cliente selecionado escolher "endereço diferente".
+          Sem cadastro de cliente novo aqui — isso agora é só na aba Clientes. */}
+      {clienteSel && modoEndereco==="novo" && buscaCliente.length>=2 && (
+        <Card style={{marginBottom:14}}>
+          <STitle>📍 Endereço de Entrega</STitle>
+          <div style={{display:"flex",gap:10}}>
+            <div style={{flex:3}}><Inp label="Rua / Avenida *" value={novoEndereco.rua} onChange={handleRua} placeholder="Ex: Rua das Flores"/></div>
+            <div style={{flex:1}}><Inp label="Número *" value={novoEndereco.num} onChange={v=>setNovoEndereco(p=>({...p,num:v}))} placeholder="123"/></div>
+          </div>
+          <SelInput label="Bairro *" value={novoEndereco.bairro} onChange={v=>setNovoEndereco(p=>({...p,bairro:v}))}>
+            {bairrosDisponiveis2.map(b=><option key={b}>{b}</option>)}
+          </SelInput>
+          {novoEndereco.rua && novoEndereco.num && (
+            <div style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginTop:4}}>
+              <div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{novoEndereco.rua}, {novoEndereco.num} — {bairroFinal}</div>
+              {novoEndereco.ref && <div style={{color:"#fbbf24",fontSize:11,marginTop:2}}>📌 {novoEndereco.ref}</div>}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Taxa — por km (padrão) ou por bairro, dependendo da configuração do estabelecimento */}
+      {taxa && clienteSel && (
+        <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"14px 18px",marginBottom:14}}>
+          {empresa.modeloPrecificacao === "bairro" ? (
+            <div>
+              <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>💰 Taxa de entrega — {bairroFinal}</div>
+              {taxa.e>0 ? (
+                <div style={{color:"#34d399",fontWeight:900,fontSize:28}}>R${taxa.e}</div>
+              ) : (
+                <div style={{color:"#f87171",fontSize:13}}>⚠️ Esse bairro não tem taxa cadastrada. Fale com o suporte antes de adicionar.</div>
+              )}
+            </div>
+          ) : (
+          <div>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>
+            💰 Taxa de entrega{distanciaKm ? ` — ${distanciaKm}km` : ""}
+          </div>
+          {calcKm && (
+            <div style={{color:"#fbbf24",fontSize:13}}>⏳ Calculando distância...</div>
+          )}
+          {!calcKm && distanciaKm && taxaKm.e > 0 && (
+            <div style={{color:"#34d399",fontWeight:900,fontSize:28}}>R${taxaKm.e.toFixed(2)}</div>
+          )}
+          {!calcKm && !distanciaKm && erroCalculo && (
+            <div>
+              <div style={{color:"#f87171",fontSize:13,marginBottom:10}}>
+                ⚠️ Não conseguimos calcular a distância automaticamente pra esse endereço. Confira se a rua e o bairro estão certos.
+              </div>
+              {taxa && taxa.e>0 ? (
+                <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"10px 14px"}}>
+                  <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginBottom:4}}>💡 Se adicionar assim mesmo, vamos usar o valor de reserva (por bairro):</div>
+                  <div style={{color:"#fbbf24",fontWeight:900,fontSize:22}}>R${taxa.e}</div>
+                </div>
+              ) : (
+                <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px"}}>
+                  <div style={{color:"#f87171",fontSize:12,fontWeight:700}}>❌ Esse bairro também não tem taxa de reserva. Corrija o endereço antes de adicionar.</div>
+                </div>
+              )}
+            </div>
+          )}
+          {!calcKm && !distanciaKm && !erroCalculo && (
+            <div style={{color:"#9ca3af",fontSize:13}}>Preencha o endereço do cliente para calcular a taxa automaticamente.</div>
+          )}
+          </div>
+          )}
+        </div>
+      )}
+
+      {/* Pagamento */}
+      {clienteSel && (
+        <Card style={{marginBottom:14}}>
+          <STitle>💳 Forma de Pagamento</STitle>
+          <div style={{display:"flex",gap:8,marginBottom:10}}>
+            {Object.entries(PG).map(([k,p])=>(
+              <button key={k} onClick={()=>{setPagamento(k);setValorPedido("");setValorReceber("");}} style={{flex:1,padding:"12px 6px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,background:pagamento===k?"#1e293b":"#0f172a",border:pagamento===k?`2px solid ${p.cor}`:"2px solid #1f2937",color:pagamento===k?p.cor:"#6b7280"}}>
+                {p.icon}<br/>{p.label}
+              </button>
+            ))}
+          </div>
+
+          {pagamento==="dinheiro" && (
+            <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"12px 14px",marginBottom:8}}>
+              <div style={{color:"#fbbf24",fontWeight:700,fontSize:13,marginBottom:10}}>💵 Motoboy cobrará na entrega e retornará com o dinheiro</div>
+              <div style={{display:"flex",gap:8}}>
+                <div style={{flex:1}}>
+                  <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>Valor do pedido (R$)</div>
+                  <input type="number" value={valorPedido} onChange={e=>setValorPedido(e.target.value)} placeholder="Ex: 15,00"
+                    style={{background:"#0f172a",border:"1px solid #fbbf24",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>Cliente vai pagar com (R$)</div>
+                  <input type="number" value={valorReceber} onChange={e=>setValorReceber(e.target.value)} placeholder="Ex: 20,00 (se tiver troco)"
+                    style={{background:"#0f172a",border:"1px solid #fbbf24",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+                </div>
+              </div>
+              {valorPedido && valorReceber && parseFloat(valorReceber)>parseFloat(valorPedido) && (
+                <div style={{marginTop:8,background:"#4a2800",borderRadius:6,padding:"6px 10px"}}>
+                  <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>
+                    🪙 Troco: R${(parseFloat(valorReceber)-parseFloat(valorPedido)).toFixed(2)} — motoboy deve ter esse troco
+                  </div>
+                </div>
+              )}
+              {valorPedido && (!valorReceber || parseFloat(valorReceber)===parseFloat(valorPedido)) && (
+                <div style={{marginTop:8,background:"#4a2800",borderRadius:6,padding:"6px 10px"}}>
+                  <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>💵 Sem troco — cliente paga exato R${parseFloat(valorPedido).toFixed(2)}</div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {pagamento==="cartao" && (
+            <div style={{background:"#1a2f4a",border:"1px solid #60a5fa",borderRadius:8,padding:"12px 14px",marginBottom:8}}>
+              <div style={{color:"#60a5fa",fontWeight:700,fontSize:13,marginBottom:10}}>💳 Disponibilize a maquininha para o motoboy</div>
+              <div>
+                <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,marginBottom:4}}>Valor do pedido (R$)</div>
+                <input type="number" value={valorPedido} onChange={e=>setValorPedido(e.target.value)} placeholder="Ex: 15,00"
+                  style={{background:"#0f172a",border:"1px solid #60a5fa",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+              </div>
+            </div>
+          )}
+
+          {pagamento==="pix" && (
+            <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px",marginBottom:8}}>
+              <div style={{color:"#34d399",fontWeight:700,fontSize:13}}>💠 Pix já foi pago — motoboy só entrega, sem cobrar nada</div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {clienteSel && (
+        <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
+      )}
+
+      <Btn onClick={salvar} full disabled={!clienteSel || !empresa?.id || !telValido || semPrecoDisponivel}>
+        ➕ Adicionar à Corrida
+      </Btn>
+    </Overlay>
+  );
+}
+
+// ─── PEDIDOS EM ANDAMENTO ─────────────────────────────────────────────────────
+function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, onRecarregar, limiteAtingido }) {
+  const [tick, setTick] = useState(0);
+  const [modalMapa, setModalMapa] = useState(null);
+  const [modalAddCorrida, setModalAddCorrida] = useState(null); // {corridaId, motoboyNome, motoboyTel, vagaNum}
+  const [modalEditar, setModalEditar] = useState(null); // pedido sendo editado
+
+  // Link de rastreio público + mensagem pronta pro empresário enviar ao cliente
+  function linkRastreio(p) {
+    const params = new URLSearchParams({
+      pedido: p.id || "",
+      cliente: p.clienteNome || "",
+      empresa: (empresa && empresa.nome) || EMPRESA.nome || "",
+      empresaTel: (empresa && empresa.tel) || EMPRESA.tel || "",
+      motoboy: p.motoboyNome || "",
+      bairro: p.bairro || "",
+      rua: p.rua || "",
+      num: p.num || "",
+      ref: p.ref || "",
+    });
+    return `${WEB_APP_URL}/rastreio?${params.toString()}`;
+  }
+  function abrirWhatsCliente(p) {
+    const link = linkRastreio(p);
+    const nomeEmp = (empresa && empresa.nome) || EMPRESA.nome;
+    const msg = `${p.clienteNome}, seu pedido está a caminho! 🛵\n\nSeu pedido — *${nomeEmp}* — já saiu para entrega!\n\n📍 Acompanhe em tempo real:\n${link}`;
+    const tel = (p.clienteTel || "").replace(/\D/g,"");
+    window.open(`https://wa.me/55${tel}?text=${encodeURIComponent(msg)}`, "_blank");
+  }
+
+  useEffect(()=>{
+    const t = setInterval(()=>setTick(x=>x+1), 1000);
+    return ()=>clearInterval(t);
+  },[]);
+
+  async function cancelar(id) {
+    await supabase.from("pedidos").update({
+      status: "cancelado",
+      motivo_cancelamento: "Cancelado pelo empresário",
+    }).eq("id", id);
+    await onRecarregar();
+  }
+
+  // Salva edições feitas num pedido já publicado (mesmo depois do motoboy aceitar).
+  // Permite corrigir dados errados sem precisar cancelar e recriar o pedido do zero.
+  async function salvarEdicaoPedido(pedidoId, dados) {
+    // A taxa (cliente e motoboy) NUNCA é tocada aqui de propósito — o empresário não
+    // pode editar nem ver o valor do motoboy depois que o pedido já foi publicado.
+    const { error } = await supabase.from("pedidos").update({
+      cliente_telefone: dados.clienteTel,
+      rua: dados.rua,
+      numero: dados.num,
+      bairro: dados.bairro,
+      referencia: dados.ref,
+      observacao: dados.obs,
+      forma_pagamento: dados.pagamento,
+      valor_pedido: dados.valorPedido,
+      valor_receber: dados.valorReceber,
+      valor_troco: dados.troco,
+    }).eq("id", pedidoId);
+    if (error) {
+      alert("❌ Erro ao salvar edição: " + error.message);
+      return false;
+    }
+    await onRecarregar();
+    setModalEditar(null);
+    return true;
+  }
+
+  async function adicionarPedidoCorrida(novoPedido) {
+    // Trava de segurança extra — igual a do publicarPedido — pra nunca deixar
+    // passar um pedido a mais depois que o limite mensal já bateu, mesmo que o
+    // modal tenha ficado aberto de antes do bloqueio aparecer.
+    if (limiteAtingido) {
+      alert(`🔒 Limite de ${LIMITE_ENTREGAS_MES} entregas do mês atingido. Vá na aba "Nova Entrega" pra ver como regularizar antes de adicionar mais pedidos.`);
+      setModalAddCorrida(null);
+      return;
+    }
+    const { data: pedidoDB } = await supabase.from("pedidos").insert({
+      empresario_id: empresa.id,
+      motoboy_id: novoPedido.motoboyId,
+      corrida_id: novoPedido.corridaId,
+      cliente_nome: novoPedido.clienteNome,
+      cliente_telefone: novoPedido.clienteTel,
+      rua: novoPedido.rua,
+      numero: novoPedido.num,
+      bairro: novoPedido.bairro,
+      referencia: novoPedido.ref,
+      observacao: novoPedido.obs,
+      forma_pagamento: novoPedido.pagamento,
+      taxa: novoPedido.taxa,
+      taxa_motoboy: novoPedido.taxaMotoboy || 0,
+      valor_pedido: novoPedido.valorPedido,
+      valor_receber: novoPedido.valorReceber,
+      valor_troco: novoPedido.troco,
+      distancia_km: novoPedido.distanciaKm,
+      metodo_calculo_km: novoPedido.metodoCalculoKm,
+      status: "aceito", // já entra direto na corrida do motoboy, sem precisar aceitar de novo
+    }).select().single();
+
+    await onRecarregar();
+    setModalAddCorrida(null);
+  }
+
+  const ativos = pedidos.filter(p=>p.status==="aguardando"||p.status==="em_rota");
+  const recentes = pedidos.filter(p=>p.status==="entregue"||p.status==="cancelado").slice(0,3);
+
+  const aguardando = ativos.filter(p=>p.status==="aguardando");
+  const emRotaPedidos = ativos.filter(p=>p.status==="em_rota");
+
+  // Agrupa pedidos em rota pela corrida (mesmo motoboy/mesma saída)
+  const corridasMap = {};
+  emRotaPedidos.forEach(p=>{
+    const cid = p.corridaId || p.id;
+    if (!corridasMap[cid]) corridasMap[cid] = [];
+    corridasMap[cid].push(p);
+  });
+  const corridas = Object.entries(corridasMap).map(([corridaId, lista])=>({
+    corridaId,
+    pedidos: lista.slice().sort((a,b)=>a.criadoEm-b.criadoEm),
+  }));
+
+  function formatTempo(ms) {
+    const s = Math.floor(ms/1000);
+    const m = Math.floor(s/60), r = s%60;
+    return m>0?`${m}m ${r}s`:`${r}s`;
+  }
+
+  if (ativos.length===0) {
+    return (
+      <Card style={{textAlign:"center",padding:40}}>
+        <div style={{fontSize:48,marginBottom:12}}>🏍️</div>
+        <div style={{color:"#6b7280",fontSize:15}}>Nenhum pedido ativo no momento</div>
+        <div style={{color:"#4b5563",fontSize:13,marginTop:6}}>Vá em "Nova Entrega" para solicitar um motoboy</div>
+      </Card>
+    );
+  }
+
+  return (
+    <div>
+      <div style={{color:"#34d399",fontWeight:800,fontSize:20,marginBottom:14}}>🚦 Pedidos em Andamento</div>
+
+      {/* Pedidos aguardando motoboy aceitar */}
+      {aguardando.map(p=>{
+        const decorrido = Date.now()-p.criadoEm;
+        const pg = PG[p.pagamento]||{icon:"•",cor:"#9ca3af",label:p.pagamento};
+
+        return (
+          <Card key={p.id} style={{marginBottom:14,border:"1px solid #fbbf24"}}>
+            {/* Status */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12,flexWrap:"wrap",gap:8}}>
+              <div>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                  <span style={{background:"#3d2a00",color:"#fbbf24",padding:"3px 12px",borderRadius:20,fontSize:13,fontWeight:700}}>⏳ Aguardando motoboy...</span>
+                </div>
+                <div style={{color:"#f9fafb",fontWeight:700,fontSize:16}}>{p.clienteNome}</div>
+                <div style={{color:"#6b7280",fontSize:12}}>📞 {p.clienteTel||"—"} · {formatTempo(decorrido)} atrás</div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{color:"#6b7280",fontSize:11}}>Taxa de entrega</div>
+                <div style={{color:"#34d399",fontWeight:900,fontSize:24}}>R${p.taxa}</div>
+                <div style={{marginTop:4}}><Tag label={`${pg.icon} ${pg.label}`} cor={pg.cor}/></div>
+              </div>
+            </div>
+
+            {/* Endereço */}
+            <div style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginBottom:12}}>
+              <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:4}}>📍 ENDEREÇO DE ENTREGA</div>
+              <div style={{color:"#f9fafb",fontSize:14,fontWeight:600}}>{p.rua}, {p.num} — {p.bairro}</div>
+              {p.ref && <div style={{color:"#fbbf24",fontSize:12,marginTop:3}}>📌 Ref: {p.ref}</div>}
+              {p.obs && <div style={{color:"#9ca3af",fontSize:12,marginTop:3}}>💬 Obs: {p.obs}</div>}
+            </div>
+
+            {/* Instrução pagamento */}
+            {p.pagamento==="dinheiro" && <div style={{background:"#3d2a00",borderRadius:8,padding:"8px 14px",marginBottom:12}}>
+              <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>💵 Disponibilize o troco. Motoboy retorna com o dinheiro.</div>
+            </div>}
+            {p.pagamento==="cartao" && <div style={{background:"#1a2f4a",borderRadius:8,padding:"8px 14px",marginBottom:12}}>
+              <div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>💳 Entregue a maquininha ao motoboy antes de ele sair.</div>
+            </div>}
+
+            <div style={{display:"flex",gap:8}}>
+              <Btn small cor="cinza" onClick={()=>setModalEditar(p)}>✏️ Editar</Btn>
+              <Btn small cor="perigo" onClick={()=>cancelar(p.id)}>❌ Cancelar pedido</Btn>
+            </div>
+          </Card>
+        );
+      })}
+
+      {/* Corridas em rota — agrupa até 3 pedidos no mesmo motoboy */}
+      {corridas.map(corrida=>{
+        const primeiro = corrida.pedidos[0];
+        const totalCorrida = corrida.pedidos.reduce((s,p)=>s+(p.taxa||0),0);
+
+        return (
+          <Card key={corrida.corridaId} style={{marginBottom:14,border:"1px solid #34d399"}}>
+            {/* Status */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12,flexWrap:"wrap",gap:8}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <span style={{background:"#0d3d2e",color:"#34d399",padding:"3px 12px",borderRadius:20,fontSize:13,fontWeight:700}}>🏍️ Motoboy a caminho!</span>
+                <Tag label={`${corrida.pedidos.length}/3 pedido${corrida.pedidos.length!==1?"s":""} nesta corrida`} cor="#60a5fa"/>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{color:"#6b7280",fontSize:11}}>Total da corrida</div>
+                <div style={{color:"#34d399",fontWeight:900,fontSize:24}}>R${totalCorrida}</div>
+              </div>
+            </div>
+
+            {/* Motoboy (uma vez só por corrida) */}
+            {primeiro.motoboyNome && (
+              <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px",marginBottom:12}}>
+                <div style={{color:"#34d399",fontWeight:700,fontSize:13,marginBottom:4}}>🏍️ Motoboy: {primeiro.motoboyNome}</div>
+                <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                  <a href={`https://wa.me/55${primeiro.motoboyTel?.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                    style={{background:"#111827",color:"#34d399",padding:"5px 12px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>
+                    💬 WhatsApp
+                  </a>
+                  <a href={`tel:${primeiro.motoboyTel?.replace(/\D/g,"")}`}
+                    style={{background:"#111827",color:"#60a5fa",padding:"5px 12px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>
+                    📱 Ligar
+                  </a>
+                  <button onClick={()=>setModalMapa(primeiro)}
+                    style={{background:"#1a3a5c",color:"#60a5fa",border:"1px solid #3b82f6",padding:"5px 12px",borderRadius:6,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                    🗺️ Ver no Mapa
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Pedidos desta corrida */}
+            {corrida.pedidos.map((p,i)=>{
+              const pg = PG[p.pagamento]||{icon:"•",cor:"#9ca3af",label:p.pagamento};
+              return (
+                <div key={p.id} style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                    <div>
+                      <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,marginBottom:3}}>PEDIDO #{i+1} — {p.clienteNome}</div>
+                      <div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{p.rua}, {p.num} — {p.bairro}</div>
+                      {p.ref && <div style={{color:"#fbbf24",fontSize:11,marginTop:2}}>📌 Ref: {p.ref}</div>}
+                      {p.obs && <div style={{color:"#9ca3af",fontSize:11,marginTop:2}}>💬 Obs: {p.obs}</div>}
+                      {p.pagamento==="dinheiro" && <div style={{color:"#fbbf24",fontSize:11,marginTop:3,fontWeight:700}}>💵 Troco — motoboy retorna com o dinheiro</div>}
+                      {p.pagamento==="cartao" && <div style={{color:"#60a5fa",fontSize:11,marginTop:3,fontWeight:700}}>💳 Maquininha já entregue ao motoboy</div>}
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{color:"#34d399",fontWeight:800,fontSize:18}}>R${p.taxa}</div>
+                      <Tag label={`${pg.icon} ${pg.label}`} cor={pg.cor}/>
+                    </div>
+                  </div>
+                  {p.clienteTel && (
+                    <button onClick={()=>abrirWhatsCliente(p)} style={{marginTop:10,width:"100%",padding:"9px",borderRadius:8,background:"#0d3d2e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                      📲 Avisar cliente que o pedido saiu
+                    </button>
+                  )}
+                  <button onClick={()=>setModalEditar(p)} style={{marginTop:8,width:"100%",padding:"9px",borderRadius:8,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                    ✏️ Editar este pedido
+                  </button>
+                  <button onClick={async()=>{
+                    if (!window.confirm(`Cancelar só a entrega de ${p.clienteNome}? Os outros pedidos dessa corrida continuam normais. O motoboy será avisado.`)) return;
+                    await supabase.from("pedidos").update({
+                      status: "cancelado",
+                      motivo_cancelamento: "Cancelado pelo estabelecimento",
+                    }).eq("id", p.id);
+                    await onRecarregar();
+                  }} style={{marginTop:8,width:"100%",padding:"9px",borderRadius:8,background:"#3d1010",border:"1px solid #ef444466",color:"#f87171",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                    ❌ Cancelar este pedido
+                  </button>
+                </div>
+              );
+            })}
+
+            {/* Botão cancelar TODOS os pedidos da corrida de uma vez — diferente do
+                cancelar individual acima, que cancela só um cliente por vez. */}
+            <div style={{marginTop:8,marginBottom:8}}>
+              <button onClick={async()=>{
+                if (!window.confirm("Tem certeza que quer cancelar TODOS os pedidos desta corrida (todos os clientes)? O motoboy será notificado.")) return;
+                for (const p of corrida.pedidos) {
+                  await supabase.from("pedidos").update({
+                    status: "cancelado",
+                    motivo_cancelamento: "Cancelado pelo estabelecimento",
+                  }).eq("id", p.id);
+                }
+                await onRecarregar();
+              }} style={{width:"100%",padding:"10px",borderRadius:8,background:"#3d1010",border:"1px solid #ef4444",color:"#f87171",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+                ❌ Cancelar TODOS os pedidos desta corrida
+              </button>
+            </div>
+
+            {/* Adicionar pedido extra à mesma corrida (máx 3) ou aviso de limite —
+                também travado quando o estabelecimento já bateu o limite mensal de
+                entregas, exatamente como a aba "Nova Entrega". Sem essa checagem
+                aqui, dava pra "furar" o bloqueio adicionando pedidos numa corrida
+                já em andamento, sem precisar publicar um pedido novo do zero. */}
+            {limiteAtingido ? (
+              <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px"}}>
+                <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>🔒 Limite de {LIMITE_ENTREGAS_MES} entregas do mês atingido. Vá na aba "Nova Entrega" pra ver como regularizar.</div>
+              </div>
+            ) : corrida.pedidos.length<3 ? (
+              <Btn small cor="azul" full onClick={()=>setModalAddCorrida({
+                corridaId: corrida.corridaId,
+                motoboyId: primeiro.motoboyId,
+                motoboyNome: primeiro.motoboyNome,
+                motoboyTel: primeiro.motoboyTel,
+                vagaNum: corrida.pedidos.length+1,
+              })}>
+                ➕ Adicionar pedido a esta corrida (vaga {corrida.pedidos.length+1}/3)
+              </Btn>
+            ) : (
+              <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px"}}>
+                <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⚠️ Máximo de 3 pedidos atingido para esta corrida. Para um 4º pedido, use "Nova Entrega" (vai chamar outro motoboy).</div>
+              </div>
+            )}
+          </Card>
+        );
+      })}
+
+      {/* Modal mapa */}
+      {modalMapa && (
+        <Overlay onClose={()=>setModalMapa(null)} maxW={620}>
+          <OvHeader titulo="🗺️ Localização do Motoboy" sub={`Entregando para ${modalMapa.clienteNome}`} onClose={()=>setModalMapa(null)}/>
+          <div style={{background:"#0f172a",borderRadius:10,overflow:"hidden",marginBottom:12}}>
+            <div style={{padding:"10px 14px",borderBottom:"1px solid #1f2937",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{color:"#9ca3af",fontSize:12}}>📍 Destino: {modalMapa.rua}, {modalMapa.num} — {modalMapa.bairro}</span>
+              <a href={`https://www.google.com/maps/search/${encodeURIComponent(`${modalMapa.rua}, ${modalMapa.num}, ${modalMapa.bairro}, Ilhabela, SP`)}`}
+                target="_blank" rel="noreferrer"
+                style={{color:"#60a5fa",fontSize:12,fontWeight:700,textDecoration:"none"}}>Abrir no Maps ↗</a>
+            </div>
+            <iframe
+              src={`https://maps.google.com/maps?q=${encodeURIComponent(`${modalMapa.rua}, ${modalMapa.num}, ${modalMapa.bairro}, Ilhabela, SP`)}&output=embed&hl=pt-BR`}
+              width="100%" height="300" style={{border:"none",display:"block"}} title="mapa" loading="lazy"/>
+          </div>
+          <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px"}}>
+            <div style={{color:"#34d399",fontWeight:700,fontSize:13}}>🏍️ {modalMapa.motoboyNome} está a caminho</div>
+            <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>📞 {modalMapa.motoboyTel}</div>
+          </div>
+        </Overlay>
+      )}
+
+      {/* Modal adicionar pedido à corrida (mesmo motoboy, sem escolher outro) */}
+      {modalAddCorrida && (
+        <ModalAddPedidoCorrida
+          clientes={clientes}
+          setClientes={setClientes}
+          motoboyId={modalAddCorrida.motoboyId}
+          motoboyNome={modalAddCorrida.motoboyNome}
+          motoboyTel={modalAddCorrida.motoboyTel}
+          vagaNum={modalAddCorrida.vagaNum}
+          onSalvar={(novoPedido)=>adicionarPedidoCorrida({...novoPedido, corridaId:modalAddCorrida.corridaId})}
+          onFechar={()=>setModalAddCorrida(null)}
+          empresa={empresa}
+        />
+      )}
+
+      {/* Modal editar pedido já publicado (mesmo depois do motoboy aceitar) */}
+      {modalEditar && (
+        <ModalEditarPedido
+          pedido={modalEditar}
+          onSalvar={(dados)=>salvarEdicaoPedido(modalEditar.id, dados)}
+          onFechar={()=>setModalEditar(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── EDITAR PEDIDO JÁ PUBLICADO ───────────────────────────────────────────────
+function ModalEditarPedido({ pedido, onSalvar, onFechar }) {
+  const [clienteTel, setClienteTel] = useState(pedido.clienteTel || "");
+  const [rua, setRua] = useState(pedido.rua || "");
+  const [num, setNum] = useState(pedido.num || "");
+  const [bairro, setBairro] = useState(pedido.bairro || "");
+  const [ref, setRef] = useState(pedido.ref || "");
+  const [obs, setObs] = useState(pedido.obs || "");
+  const [pagamento, setPagamento] = useState(pedido.pagamento || "pix");
+  const [valorPedido, setValorPedido] = useState(pedido.valorPedido!=null ? String(pedido.valorPedido) : "");
+  const [valorReceber, setValorReceber] = useState(pedido.valorReceber!=null ? String(pedido.valorReceber) : "");
+  const [salvando, setSalvando] = useState(false);
+
+  // Já tem motoboy vinculado nesse pedido (aceito ou a caminho) — se mudar o endereço
+  // ou a forma de pagamento, avise ele direto, porque ele já saiu com base nas
+  // informações originais.
+  const jaTemMotoboy = !!pedido.motoboyId;
+
+  async function salvar() {
+    setSalvando(true);
+    const troco = (valorPedido && valorReceber && parseFloat(valorReceber)>parseFloat(valorPedido))
+      ? parseFloat(valorReceber)-parseFloat(valorPedido) : null;
+    // A TAXA (nem a do cliente, nem a do motoboy) nunca é enviada aqui — o empresário
+    // não tem como editar nem ver o valor do motoboy nessa tela. A taxa já foi
+    // calculada e mostrada uma única vez, no momento de publicar o pedido — depois
+    // disso é fixa, ponto final.
+    const ok = await onSalvar({
+      clienteTel, rua, num, bairro, ref, obs, pagamento,
+      valorPedido: valorPedido ? parseFloat(valorPedido) : null,
+      valorReceber: valorReceber ? parseFloat(valorReceber) : null,
+      troco,
+    });
+    setSalvando(false);
+    if (!ok) return;
+  }
+
+  return (
+    <Overlay onClose={onFechar} maxW={520} borderColor="#60a5fa">
+      <OvHeader titulo="✏️ Editar Pedido" sub={pedido.clienteNome} onClose={onFechar}/>
+
+      {jaTemMotoboy && (
+        <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px",marginBottom:14}}>
+          <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⚠️ Esse pedido já foi aceito por um motoboy. Se você alterar o endereço ou a forma de pagamento, avise ele direto pelo WhatsApp — ele já saiu com base nas informações originais.</div>
+        </div>
+      )}
+
+      <STitle>📍 Endereço</STitle>
+      <div style={{display:"flex",gap:10}}>
+        <div style={{flex:3}}><Inp label="Rua / Avenida" value={rua} onChange={setRua}/></div>
+        <div style={{flex:1}}><Inp label="Número" value={num} onChange={setNum}/></div>
+      </div>
+      <Inp label="Bairro" value={bairro} onChange={setBairro}/>
+      <Inp label="Referência" value={ref} onChange={setRef} placeholder="Casa de cor, portão..."/>
+      <Inp label="Telefone / WhatsApp do cliente" value={clienteTel} onChange={setClienteTel} placeholder="(12) 99999-0000"/>
+
+      <Divider/>
+      <STitle>💳 Forma de Pagamento</STitle>
+      <div style={{display:"flex",gap:8,marginBottom:10}}>
+        {Object.entries(PG).map(([k,p])=>(
+          <button key={k} onClick={()=>setPagamento(k)} style={{flex:1,padding:"10px 6px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:13,background:pagamento===k?"#1e293b":"#0f172a",border:pagamento===k?`2px solid ${p.cor}`:"2px solid #1f2937",color:pagamento===k?p.cor:"#6b7280"}}>
+            {p.icon}<br/>{p.label}
+          </button>
+        ))}
+      </div>
+      {pagamento==="dinheiro" && (
+        <div style={{marginBottom:10}}>
+          <div style={{display:"flex",gap:8}}>
+            <div style={{flex:1}}>
+              <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>Valor do pedido (R$)</div>
+              <input type="number" value={valorPedido} onChange={e=>setValorPedido(e.target.value)} placeholder="Ex: 15,00"
+                style={{background:"#0f172a",border:"1px solid #fbbf24",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{flex:1}}>
+              <div style={{color:"#fbbf24",fontSize:11,fontWeight:700,marginBottom:4}}>Cliente paga com (R$)</div>
+              <input type="number" value={valorReceber} onChange={e=>setValorReceber(e.target.value)} placeholder="Ex: 20,00"
+                style={{background:"#0f172a",border:"1px solid #fbbf24",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+            </div>
+          </div>
+          {/* Troco calculado automaticamente — some tinha ficado de fora quando a
+              seção de taxa foi removida, mas esse cálculo não tem nada a ver com
+              taxa, é só o troco que o motoboy precisa levar pro cliente. */}
+          {valorPedido && valorReceber && parseFloat(valorReceber)>parseFloat(valorPedido) && (
+            <div style={{marginTop:8,background:"#4a2800",borderRadius:6,padding:"6px 10px"}}>
+              <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>
+                🪙 Troco: R${(parseFloat(valorReceber)-parseFloat(valorPedido)).toFixed(2)} — motoboy deve ter esse troco
+              </div>
+            </div>
+          )}
+          {valorPedido && (!valorReceber || parseFloat(valorReceber)===parseFloat(valorPedido)) && (
+            <div style={{marginTop:8,background:"#4a2800",borderRadius:6,padding:"6px 10px"}}>
+              <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>💵 Sem troco — cliente paga exato R${parseFloat(valorPedido).toFixed(2)}</div>
+            </div>
+          )}
+        </div>
+      )}
+      {pagamento==="cartao" && (
+        <div style={{marginBottom:10}}>
+          <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,marginBottom:4}}>Valor do pedido (R$)</div>
+          <input type="number" value={valorPedido} onChange={e=>setValorPedido(e.target.value)} placeholder="Ex: 15,00"
+            style={{background:"#0f172a",border:"1px solid #60a5fa",borderRadius:6,color:"#f9fafb",padding:"8px 10px",width:"100%",fontSize:13,outline:"none",boxSizing:"border-box"}}/>
+        </div>
+      )}
+
+      <Inp label="Observações" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
+
+      <div style={{display:"flex",gap:8,marginTop:8}}>
+        <Btn onClick={salvar} full disabled={salvando}>{salvando?"Salvando...":"💾 Salvar Alterações"}</Btn>
+        <Btn cor="cinza" onClick={onFechar}>Cancelar</Btn>
+      </div>
+    </Overlay>
+  );
+}
+function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado, mesesDisponiveis, empresa }) {
+  const [filtro, setFiltro] = useState("Todos");
+  const [dataSelecionada, setDataSelecionada] = useState(dataLocalISO());
+  const [semanaEntregasRaw, setSemanaEntregasRaw] = useState([]);
+  const [carregandoSemana, setCarregandoSemana] = useState(false);
+
+  // Status de pagamento por dia — pro plano "diário", espelha o campo que o Admin
+  // marca como pago na aba Pagamentos dele. Pro plano "semanal", agrupa pela
+  // semana (segunda a domingo) usando os últimos ~120 dias já carregados
+  // (semanaEntregasRaw) e compara o total dessa semana com o que já foi
+  // registrado como pago em pagamentosSemanais — mesma lógica que o Admin já usa
+  // na aba "Por Dia" de cada estabelecimento. Antes disso, essa função sempre
+  // retornava null pra quem paga semanal, e a lista de "Dias anteriores" ficava
+  // sem nenhuma tag de Pago/Pendente, deixando difícil saber o que já foi pago.
+  const planoDiario = empresa?.planoPagamentoMotoboy === "diario";
+  function statusDoDia(dataISO) {
+    if (planoDiario) {
+      return empresa?.pagamentosDiarios?.[dataISO] ? "pago" : "pendente";
+    }
+    const semanaDoDia = segundaFeiraDaSemana(new Date(dataISO+"T12:00:00"));
+    const totalSemanaDoDia = semanaEntregasRaw
+      .filter(e=>segundaFeiraDaSemana(new Date(e.dataISO+"T12:00:00"))===semanaDoDia)
+      .reduce((s,e)=>s+e.taxa,0);
+    if (totalSemanaDoDia === 0) return null; // ainda não carregou dados dessa semana
+    const pagoSemanaDoDia = empresa?.pagamentosSemanais?.[semanaDoDia] || 0;
+    return (totalSemanaDoDia - pagoSemanaDoDia <= 0.001) ? "pago" : "pendente";
+  }
+
+  // historico ja vem com status normalizado (Entregue / Cancelada) do App principal
+  const todos = historico;
+  const lista = filtro==="Todos" ? todos : todos.filter(e=>e.status===filtro);
+  const totalTaxas = todos.filter(e=>e.status==="Entregue").reduce((s,e)=>s+e.taxa,0);
+
+  // Entregas do dia selecionado — o mesmo valor "taxa" que o cliente pagou é o
+  // valor que você repassa pra plataforma (a MotoFast fica com a margem dela e
+  // paga o motoboy a partir desse valor) — não são dois números diferentes.
+  const entregasDia = todos.filter(e=>e.status==="Entregue" && e.dataISO===dataSelecionada);
+  const totalDia = entregasDia.reduce((s,e)=>s+e.taxa,0);
+  const dataFmt = new Date(dataSelecionada+"T12:00:00").toLocaleDateString("pt-BR");
+  const hojeISO = dataLocalISO();
+  const ontemISO = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return dataLocalISO(d); })();
+  const statusDataSelecionada = statusDoDia(dataSelecionada);
+
+  // Total da SEMANA (segunda a domingo) que contém a data selecionada. IMPORTANTE:
+  // esse total busca direto do banco, independente do filtro de mês escolhido lá em
+  // cima — assim ele NUNCA vem incompleto, mesmo quando a semana atravessa a virada
+  // de um mês pro outro (ex: 27/07 a 02/08). O empresário não precisa lembrar de
+  // trocar filtro nenhum — o valor já chega certo, pronto pra pagar.
+  const semanaChaveSelecionada = segundaFeiraDaSemana(new Date(dataSelecionada+"T12:00:00"));
+  function fmtDiaMesCurto(iso) {
+    const d = new Date(iso+"T12:00:00");
+    return `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
+  }
+  const fimSemanaSelecionada = (()=>{ const d=new Date(semanaChaveSelecionada+"T12:00:00"); d.setDate(d.getDate()+6); return dataLocalISO(d); })();
+
+  useEffect(()=>{
+    if (!empresa?.id) return;
+    let cancelado = false;
+    setCarregandoSemana(true);
+    (async()=>{
+      // Busca os últimos ~120 dias (não só a semana selecionada) — assim, se ficou
+      // alguma semana antiga sem pagar, ela continua contando na soma de pendências,
+      // em vez de "sumir" quando a semana virar. 120 dias é de sobra pra pegar
+      // qualquer esquecimento realista, sem pesar a busca.
+      const inicioObj = new Date();
+      inicioObj.setDate(inicioObj.getDate()-120);
+      const inicio = inicioObj.toISOString();
+      const { data, error } = await supabase
+        .from("pedidos")
+        .select("taxa, criado_em")
+        .eq("empresario_id", empresa.id)
+        .eq("status", "entregue")
+        .gte("criado_em", inicio);
+      if (cancelado) return;
+      if (error) { console.error("Erro ao carregar total pendente:", error); setCarregandoSemana(false); return; }
+      setSemanaEntregasRaw((data||[]).map(p=>({
+        taxa: p.taxa,
+        dataISO: dataLocalISO(new Date(p.criado_em)),
+      })));
+      setCarregandoSemana(false);
+    })();
+    return ()=>{ cancelado = true; };
+  }, [empresa?.id]);
+
+  const todasEntregasCarregadas = semanaEntregasRaw;
+  const planoSemanalEmp = empresa?.planoPagamentoMotoboy === "semanal";
+  let entregasSemana, todasEntregasSemana, totalSemana;
+  // Semana REAL de hoje (segunda a domingo) — usada pra separar o que já é uma
+  // semana FECHADA (cobrável agora) do que ainda está em andamento (acumulando,
+  // só fecha e vira cobrança na próxima segunda-feira).
+  const segundaAtualEmpFixa = segundaFeiraDaSemana(new Date());
+  let porSemanaMapEmp = {};
+  let totalSemanasAnteriores = 0, semanasAnterioresPendentes = [];
+  let totalSemanaAtualBruto = 0, totalSemanaAtualPendente = 0;
+  if (planoSemanalEmp) {
+    // Plano SEMANAL: cada semana guarda o VALOR JÁ PAGO (não só sim/não) — soma só o
+    // que ainda falta de cada semana, cobrindo TODAS as semanas já registradas, não
+    // só a selecionada. Isso também cobre adiantamento parcial (ex: empresário pagou
+    // só parte do valor no meio da semana).
+    todasEntregasSemana = todasEntregasCarregadas;
+    todasEntregasCarregadas.forEach(e=>{
+      const semanaDaEntrega = segundaFeiraDaSemana(new Date(e.dataISO+"T12:00:00"));
+      if (!porSemanaMapEmp[semanaDaEntrega]) porSemanaMapEmp[semanaDaEntrega] = 0;
+      porSemanaMapEmp[semanaDaEntrega] += e.taxa;
+    });
+    entregasSemana = Object.entries(porSemanaMapEmp).filter(([semana,total])=>{
+      const pago = empresa?.pagamentosSemanais?.[semana] || 0;
+      return total-pago > 0;
+    });
+    totalSemana = Object.entries(porSemanaMapEmp).reduce((s,[semana,total])=>{
+      const pago = empresa?.pagamentosSemanais?.[semana] || 0;
+      return s + Math.max(0, total-pago);
+    }, 0);
+    // Separa: semanas ANTERIORES já fechadas (cobrável agora de verdade) vs a
+    // semana ATUAL em andamento (só acumulando, não vence ainda — vence só na
+    // próxima segunda, quando ela mesma virar "anterior").
+    semanasAnterioresPendentes = entregasSemana.filter(([semana])=>semana < segundaAtualEmpFixa);
+    totalSemanasAnteriores = semanasAnterioresPendentes.reduce((s,[semana,total])=>{
+      const pago = empresa?.pagamentosSemanais?.[semana] || 0;
+      return s + Math.max(0, total-pago);
+    }, 0);
+    totalSemanaAtualBruto = porSemanaMapEmp[segundaAtualEmpFixa] || 0;
+    const pagoSemanaAtualEmp = empresa?.pagamentosSemanais?.[segundaAtualEmpFixa] || 0;
+    totalSemanaAtualPendente = Math.max(0, totalSemanaAtualBruto - pagoSemanaAtualEmp);
+  } else {
+    // Plano DIÁRIO: cada dia é marcado como pago individualmente — soma TUDO que
+    // ainda está pendente, de qualquer semana dentro dos últimos 120 dias, não só a
+    // que está selecionada no momento.
+    todasEntregasSemana = todasEntregasCarregadas;
+    entregasSemana = todasEntregasCarregadas.filter(e=>!statusDoDia(e.dataISO) || statusDoDia(e.dataISO)==="pendente");
+    totalSemana = entregasSemana.reduce((s,e)=>s+e.taxa,0);
+  }
+
+  // Resumo agrupado por dia — todos os dias que tiveram entrega, mais recente primeiro
+  const porDia = {};
+  todos.filter(e=>e.status==="Entregue").forEach(e=>{
+    if (!e.dataISO) return;
+    if (!porDia[e.dataISO]) porDia[e.dataISO] = {qtd:0, total:0};
+    porDia[e.dataISO].qtd++;
+    porDia[e.dataISO].total += e.taxa;
+  });
+  const diasOrdenados = Object.entries(porDia).sort((a,b)=>b[0].localeCompare(a[0]));
+
+  return (
+    <div>
+      <div style={{marginBottom:14}}>
+        <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>📋 Histórico de Entregas</div>
+        <div style={{color:"#6b7280",fontSize:13}}>{lista.length} registros no período selecionado</div>
+      </div>
+
+      {/* Seletor de mês — busca só o período escolhido, pra tela nunca ficar pesada */}
+      <Card style={{marginBottom:14}}>
+        <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📅 Período</div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+          <select value={mesSelecionado} onChange={e=>setMesSelecionado(e.target.value)}
+            style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"9px 12px",fontSize:14,outline:"none"}}>
+            {mesesDisponiveis.map(m=><option key={m.chave} value={m.chave}>{m.label}</option>)}
+          </select>
+          <button onClick={()=>setMesSelecionado("todos")} style={{padding:"9px 16px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:13,background:mesSelecionado==="todos"?"#0d3d2e":"#1f2937",border:mesSelecionado==="todos"?"1px solid #34d399":"1px solid #374151",color:mesSelecionado==="todos"?"#34d399":"#9ca3af"}}>
+            🔍 Buscar tudo
+          </button>
+          {carregando && <span style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⏳ Carregando...</span>}
+        </div>
+        {mesSelecionado==="todos" && (
+          <div style={{color:"#6b7280",fontSize:11,marginTop:8}}>Mostrando as 500 entregas mais recentes de todos os períodos. Pra ver um mês específico bem antigo, escolha ele na lista acima.</div>
+        )}
+      </Card>
+
+      {/* Seletor de data — mostra quanto tem que repassar pra plataforma em qualquer dia, hoje ou anterior */}
+      <Card style={{marginBottom:14,background:"#0d3d2e",border:"1px solid #34d399"}}>
+        <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>💰 Taxas por dia — quanto repassar pra plataforma</div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:14}}>
+          <input type="date" value={dataSelecionada} onChange={e=>setDataSelecionada(e.target.value)}
+            style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"9px 12px",fontSize:14,outline:"none"}}/>
+          <button onClick={()=>setDataSelecionada(hojeISO)} style={{padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:12,background:dataSelecionada===hojeISO?"#0d3d2e":"#1f2937",border:dataSelecionada===hojeISO?"1px solid #34d399":"1px solid #374151",color:dataSelecionada===hojeISO?"#34d399":"#9ca3af"}}>Hoje</button>
+          <button onClick={()=>setDataSelecionada(ontemISO)} style={{padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:12,background:dataSelecionada===ontemISO?"#0d3d2e":"#1f2937",border:dataSelecionada===ontemISO?"1px solid #34d399":"1px solid #374151",color:dataSelecionada===ontemISO?"#34d399":"#9ca3af"}}>Ontem</button>
+        </div>
+        <div style={{color:"#6b7280",fontSize:12,marginBottom:4}}>{dataFmt}</div>
+        <div style={{color:"#34d399",fontSize:32,fontWeight:900}}>R${totalDia}</div>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginTop:2,flexWrap:"wrap"}}>
+          <span style={{color:"#6b7280",fontSize:12}}>{entregasDia.length} entrega{entregasDia.length!==1?"s":""} nesta data</span>
+          {entregasDia.length>0 && statusDataSelecionada==="pago" && <Tag label="✅ Pago" cor="#34d399"/>}
+          {entregasDia.length>0 && statusDataSelecionada==="pendente" && <Tag label="⏳ Pendente" cor="#fbbf24"/>}
+        </div>
+        {!entregasDia.length && dataSelecionada!==hojeISO && dataSelecionada!==ontemISO && mesSelecionado!=="todos" && !dataSelecionada.startsWith(mesSelecionado) && (
+          <div style={{color:"#fbbf24",fontSize:11,marginTop:6}}>⚠️ Essa data é de outro mês — escolha o mês certo no período acima, ou "Buscar tudo", pra ver o valor dela.</div>
+        )}
+      </Card>
+
+      {/* Total PENDENTE — pro plano DIÁRIO continua igual (um valor só, soma tudo
+          não pago). Pro plano SEMANAL, agora aparece SEPARADO: o que já é uma
+          semana fechada (cobrável agora de verdade) fica num card, e o que ainda
+          está acumulando na semana atual (só vence quando ela virar semana
+          anterior, na próxima segunda) fica em outro — pra nunca mais confundir
+          o empresário achando que precisa pagar algo que ainda nem venceu. */}
+      {planoSemanalEmp ? (
+        <>
+          {/* Este card resumo só aparece se realmente tiver alguma semana fechada
+              pendente — se estiver tudo pago, ele simplesmente some da tela, pra
+              não poluir com um "R$0,00 tudo pago" que não ajuda em nada. */}
+          {totalSemanasAnteriores>0 && (
+            <Card style={{marginBottom:14,background:"#0d2a4a",border:"1px solid #60a5fa"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>📆 Falta pagar (semana(s) já fechada(s))</div>
+                {carregandoSemana && <span style={{color:"#6b7280",fontSize:11}}>⏳</span>}
+              </div>
+              <div style={{color:"#60a5fa",fontSize:32,fontWeight:900}}>R${totalSemanasAnteriores.toFixed(2)}</div>
+              <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{semanasAnterioresPendentes.length} semana(s) já encerrada(s) com saldo pendente — pode pagar agora</div>
+              <CartaoPix/>
+            </Card>
+          )}
+
+          {/* Lista de cada semana anterior pendente, com as datas exatas, igual
+              o Admin já vê do lado dele — evita qualquer dúvida de "qual semana é essa". */}
+          {semanasAnterioresPendentes.length>0 && (
+            <Card style={{marginBottom:14}}>
+              <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📅 Semanas anteriores pendentes</div>
+              {semanasAnterioresPendentes.map(([semana,total])=>{
+                const pago = empresa?.pagamentosSemanais?.[semana] || 0;
+                const pendente = Math.max(0, total-pago);
+                const fimDaSemana = (()=>{ const d=new Date(semana+"T12:00:00"); d.setDate(d.getDate()+6); return dataLocalISO(d); })();
+                return (
+                  <div key={semana} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:"#0f172a",border:"1px solid #1f2937",borderRadius:8,padding:"9px 14px",marginBottom:6,flexWrap:"wrap",gap:6}}>
+                    <span style={{color:"#d1d5db",fontSize:13,fontWeight:600}}>{fmtDiaMesCurto(semana)} a {fmtDiaMesCurto(fimDaSemana)}</span>
+                    <span style={{color:"#60a5fa",fontWeight:700,fontSize:14}}>R${pendente.toFixed(2)}</span>
+                    <Tag label="⏳ Pendente" cor="#fbbf24"/>
+                  </div>
+                );
+              })}
+            </Card>
+          )}
+
+          {/* Semana atual — só acumulando, nunca é cobrada ainda. Some sozinha
+              dessa "categoria" e vira uma semana anterior automaticamente assim
+              que a segunda-feira seguinte chegar. */}
+          <Card style={{marginBottom:14,background:"#1a1000",border:"1px solid #f59e0b"}}>
+            <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>🕐 Semana atual — em andamento (ainda não vence)</div>
+            <div style={{color:"#fbbf24",fontSize:32,fontWeight:900}}>R${totalSemanaAtualPendente.toFixed(2)}</div>
+            <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>Acumulando desde {fmtDiaMesCurto(segundaAtualEmpFixa)} — só vira cobrança na próxima segunda-feira</div>
+          </Card>
+        </>
+      ) : (
+        <Card style={{marginBottom:14,background:"#0d2a4a",border:"1px solid #60a5fa"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>📆 Falta repassar (tudo pendente)</div>
+            {carregandoSemana && <span style={{color:"#6b7280",fontSize:11}}>⏳</span>}
+          </div>
+          <div style={{color:totalSemana>0?"#60a5fa":"#34d399",fontSize:32,fontWeight:900}}>R${totalSemana.toFixed(2)}</div>
+          {totalSemana>0 ? (
+            <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasSemana.length} entrega{entregasSemana.length!==1?"s":""} ainda pendente{entregasSemana.length!==1?"s":""} no total</div>
+          ) : (
+            <div style={{color:"#34d399",fontSize:12,marginTop:2}}>✅ {todasEntregasSemana.length>0 ? "Tudo pago" : "Nenhuma entrega registrada"}</div>
+          )}
+          {totalSemana>0 && <CartaoPix/>}
+        </Card>
+      )}
+
+      {/* Lista das entregas do dia selecionado — cliente, bairro e valor */}
+      {entregasDia.length>0 && (
+        <Card style={{marginBottom:14}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Entregas de {dataFmt}</div>
+          {entregasDia.map(e=>(
+            <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1f2937"}}>
+              <div>
+                <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
+                <span style={{color:"#34d399",fontSize:12,marginLeft:8}}>{e.bairro}</span>
+              </div>
+              <span style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>R${e.taxa}</span>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      {/* Lista de todos os dias com entrega — clique pra ver o total daquele dia */}
+      {diasOrdenados.length>0 && (
+        <Card style={{marginBottom:14}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📅 Dias anteriores</div>
+          {diasOrdenados.slice(0,30).map(([data,info])=>{
+            const dFmt = new Date(data+"T12:00:00").toLocaleDateString("pt-BR");
+            const sel = data===dataSelecionada;
+            const status = statusDoDia(data);
+            return (
+              <div key={data} onClick={()=>setDataSelecionada(data)}
+                style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:sel?"#0d3d2e":"#0f172a",border:sel?"1px solid #34d399":"1px solid #1f2937",borderRadius:8,padding:"9px 14px",marginBottom:6,cursor:"pointer",flexWrap:"wrap",gap:6}}>
+                <span style={{color:sel?"#34d399":"#d1d5db",fontSize:13,fontWeight:600}}>{dFmt}</span>
+                <span style={{color:"#6b7280",fontSize:12}}>{info.qtd} entrega{info.qtd!==1?"s":""}</span>
+                <span style={{color:"#60a5fa",fontWeight:700,fontSize:14}}>R${info.total.toFixed(2)}</span>
+                {status==="pago" && <Tag label="✅ Pago" cor="#34d399"/>}
+                {status==="pendente" && <Tag label="⏳ Pendente" cor="#fbbf24"/>}
+              </div>
+            );
+          })}
+        </Card>
+      )}
+
+      {/* Resumo financeiro — sempre do período selecionado no seletor de mês acima */}
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
+        <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"14px 18px",flex:1,minWidth:130}}>
+          <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Total do período</div>
+          <div style={{color:"#60a5fa",fontSize:22,fontWeight:800}}>R${totalTaxas}</div>
+          <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>em taxas de entrega</div>
+        </div>
+        <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"14px 18px",flex:1,minWidth:130}}>
+          <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Entregas no período</div>
+          <div style={{color:"#34d399",fontSize:22,fontWeight:800}}>{todos.filter(e=>e.status==="Entregue").length}</div>
+        </div>
+      </div>
+
+      <div style={{color:"#4b5563",fontSize:11,marginBottom:10}}>💡 O valor de cada entrega abaixo é o que o cliente pagou de taxa — e é esse mesmo valor que você repassa pra plataforma.</div>
+
+      <div style={{display:"flex",gap:6,marginBottom:12}}>
+        {["Todos","Entregue","Cancelada"].map(f=>(
+          <button key={f} onClick={()=>setFiltro(f)} style={{padding:"6px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:12,background:filtro===f?"#0d3d2e":"#1f2937",border:filtro===f?"1px solid #34d399":"1px solid #374151",color:filtro===f?"#34d399":"#6b7280"}}>{f}</button>
+        ))}
+      </div>
+
+      <div>
+        {lista.map(e=>{
+          const pg = PG[e.pagamento]||{icon:"•",cor:"#9ca3af",label:e.pagamento};
+          const entregue = e.status==="Entregue";
+          return (
+            <div key={e.id} style={{background:"#111827",border:`1px solid ${entregue?"#1f2937":"#3d1010"}`,borderRadius:10,padding:"14px 16px",marginBottom:10}}>
+              {/* Linha 1: Status + Taxa */}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <span style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700}}>
+                  {entregue?"✅ Entregue":"❌ Cancelada"}
+                </span>
+                <div style={{textAlign:"right"}}>
+                  <div style={{color:"#fbbf24",fontWeight:900,fontSize:18}}>R${e.taxa}</div>
+                  <div style={{color:pg.cor,fontSize:11,fontWeight:700}}>{pg.icon} {pg.label}</div>
+                </div>
+              </div>
+              {/* Linha 2: Cliente + Bairro */}
+              <div style={{marginBottom:6}}>
+                <div style={{color:"#f9fafb",fontWeight:700,fontSize:14}}>{e.clienteNome}</div>
+                <div style={{color:"#34d399",fontSize:12,marginTop:2}}>📍 {e.bairro}</div>
+              </div>
+              {/* Linha 3: Motoboy */}
+              {e.motoboyNome && <div style={{color:"#9ca3af",fontSize:12,marginBottom:6}}>🏍️ {e.motoboyNome}</div>}
+              {/* Linha 4: Datas e horários */}
+              <div style={{display:"flex",gap:12,flexWrap:"wrap",borderTop:"1px solid #1f2937",paddingTop:8,marginTop:4}}>
+                <div style={{fontSize:11,color:"#6b7280"}}>📅 {e.data}</div>
+                {e.horaSaida && <div style={{fontSize:11,color:"#fbbf24"}}>🚀 Saiu: {e.horaSaida}</div>}
+                {e.horaEntrega && <div style={{fontSize:11,color:"#34d399"}}>✅ Entregue: {e.horaEntrega}</div>}
+              </div>
+            </div>
+          );
+        })}
+        {lista.length===0 && <div style={{textAlign:"center",padding:30,color:"#4b5563",background:"#111827",borderRadius:10}}>Nenhum registro.</div>}
+      </div>
+    </div>
+  );
+}
+
+// ─── CLIENTES SALVOS ──────────────────────────────────────────────────────────
+function ClientesSalvos({ clientes, setClientes, empresaId }) {
+  const [busca, setBusca] = useState("");
+  const [editId, setEditId] = useState(null);
+  const [modalCad, setModalCad] = useState(false);
+  const [form, setForm] = useState({nome:"",tel:"",endereco:{rua:"",num:"",bairro:"",ref:""}});
+  const [erro, setErro] = useState("");
+
+  const filtrados = clientes.filter(c=>!busca||normalizarTexto(c.nome).includes(normalizarTexto(busca))||c.tel.includes(busca));
+  const editCli = editId ? clientes.find(c=>c.id===editId) : null;
+  // Telefone obrigatório aqui no cadastro — é o lugar certo pra essa exigência,
+  // diferente da tela de Nova Entrega (onde só atrapalhava a busca do cliente).
+  const telFormValido = !!(form.tel && form.tel.trim() && form.tel.replace(/\D/g,"").length>=8);
+
+  function abrirEdicao(c) { setEditId(c.id); setForm({nome:c.nome,tel:c.tel,endereco:{rua:c.rua||"",num:c.num||"",bairro:c.bairro||"",ref:c.ref||""}}); }
+
+  async function salvar() {
+    const { error } = await supabase.from("clientes").update({
+      nome: form.nome,
+      telefone: form.tel,
+      rua: form.endereco.rua,
+      numero: form.endereco.num,
+      bairro: form.endereco.bairro,
+      referencia: form.endereco.ref,
+    }).eq("id", editId);
+    if (error) { setErro("Erro ao salvar: " + error.message); return; }
+    setClientes(p=>p.map(c=>c.id===editId?{...c,nome:form.nome,tel:form.tel,rua:form.endereco.rua,num:form.endereco.num,bairro:form.endereco.bairro,ref:form.endereco.ref}:c));
+    setEditId(null);
+    setErro("");
+  }
+
+  async function excluir(id) {
+    await supabase.from("clientes").delete().eq("id", id);
+    setClientes(p=>p.filter(c=>c.id!==id));
+  }
+
+  const FORM_VAZIO = {nome:"",tel:"",endereco:{rua:"",num:"",bairro:"",ref:""}};
+
+  function abrirCadastro() { setForm(FORM_VAZIO); setErro(""); setModalCad(true); }
+
+  async function cadastrar() {
+    if (!empresaId) {
+      setErro("Ainda carregando seus dados — aguarde alguns segundos e tente novamente.");
+      return;
+    }
+    if (!form.nome.trim() || !form.endereco.rua.trim() || !form.endereco.num.trim()) return;
+    if (!telFormValido) {
+      setErro("Preencha o telefone/WhatsApp do cliente — é obrigatório, o motoboy precisa desse número pra fazer a entrega.");
+      return;
+    }
+    const { data, error } = await supabase.from("clientes").insert({
+      empresario_id: empresaId,
+      nome: form.nome,
+      telefone: form.tel,
+      rua: form.endereco.rua,
+      numero: form.endereco.num,
+      bairro: form.endereco.bairro,
+      referencia: form.endereco.ref,
+    }).select().single();
+    if (error) {
+      setErro("Erro ao salvar cliente: " + error.message);
+      return;
+    }
+    if (data) {
+      setClientes(p=>[...p, {id:data.id, nome:data.nome, tel:data.telefone, rua:data.rua, num:data.numero, bairro:data.bairro, ref:data.referencia}]);
+    }
+    setModalCad(false); setForm(FORM_VAZIO); setErro("");
+  }
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:10}}>
+        <div>
+          <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>👤 Clientes Salvos</div>
+          <div style={{color:"#6b7280",fontSize:13}}>{clientes.length} clientes · endereços salvos automaticamente</div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <input value={busca} onChange={e=>setBusca(e.target.value)} placeholder="🔍 Buscar..."
+            style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"8px 14px",fontSize:13,outline:"none",width:180}}/>
+          <Btn onClick={abrirCadastro} disabled={!empresaId}>+ Novo Cliente</Btn>
+        </div>
+      </div>
+
+      {!empresaId && (
+        <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#fbbf24",fontSize:13}}>
+          ⏳ Carregando seus dados... aguarde alguns segundos.
+        </div>
+      )}
+
+      {filtrados.map(c=>(
+        <Card key={c.id} style={{marginBottom:10,padding:"14px 18px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:150}}>
+              <div style={{color:"#f9fafb",fontWeight:700,fontSize:14}}>{c.nome}</div>
+              <a href={`https://wa.me/55${c.tel?.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                style={{color:"#34d399",textDecoration:"none",fontSize:12}}>💬 {c.tel}</a>
+            </div>
+            <div style={{flex:2,minWidth:180}}>
+              <div style={{color:"#d1d5db",fontSize:13}}>{c.rua}, {c.num} — <span style={{color:"#34d399"}}>{c.bairro}</span></div>
+              {c.ref && <div style={{color:"#fbbf24",fontSize:11,marginTop:2}}>📌 {c.ref}</div>}
+            </div>
+            <div style={{display:"flex",gap:6}}>
+              <Btn small cor="cinza" onClick={()=>abrirEdicao(c)}>✏️ Editar</Btn>
+              <Btn small cor="perigo" onClick={()=>excluir(c.id)}>🗑️</Btn>
+            </div>
+          </div>
+        </Card>
+      ))}
+
+      {filtrados.length===0 && <Card><div style={{color:"#4b5563",textAlign:"center",padding:20}}>Nenhum cliente encontrado.</div></Card>}
+
+      {/* Modal cadastrar novo cliente */}
+      {modalCad && (
+        <Overlay onClose={()=>setModalCad(false)} maxW={440}>
+          <OvHeader titulo="+ Cadastrar Novo Cliente" onClose={()=>setModalCad(false)}/>
+          {erro && <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#f87171",fontSize:13}}>{erro}</div>}
+          <Inp label="Nome completo *" value={form.nome} onChange={v=>setForm(f=>({...f,nome:v}))} placeholder="Ex: João da Silva"/>
+          <Inp label="Telefone / WhatsApp *" value={form.tel} onChange={v=>setForm(f=>({...f,tel:v}))} placeholder="(12) 99999-0000"/>
+          {!telFormValido && form.tel && <div style={{color:"#f87171",fontSize:11,marginTop:-4,marginBottom:6}}>⚠️ Número incompleto</div>}
+          <Divider/>
+          <STitle>Endereço</STitle>
+          <div style={{display:"flex",gap:10}}>
+            <div style={{flex:3}}><Inp label="Rua / Avenida *" value={form.endereco.rua} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,rua:v}}))}/></div>
+            <div style={{flex:1}}><Inp label="Nº *" value={form.endereco.num} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,num:v}}))}/></div>
+          </div>
+          <Inp label="Bairro *" value={form.endereco.bairro} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,bairro:v}}))} placeholder="Ex: Perequê, Vila, Feiticeira, Siriúba..." hint="Digite o bairro do cliente"/>
+          <Inp label="Ponto de referência" value={form.endereco.ref} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,ref:v}}))}
+            placeholder="Ex: Casa azul, portão de ferro, próximo ao mercado..."
+            hint="Ajuda o motoboy a encontrar mais rápido"/>
+          {/* Preview */}
+          {form.nome && form.endereco.rua && form.endereco.num && (
+            <div style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+              <div style={{color:"#9ca3af",fontSize:11,marginBottom:4}}>Como ficará salvo:</div>
+              <div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{form.nome}</div>
+              <div style={{color:"#d1d5db",fontSize:12,marginTop:2}}>{form.endereco.rua}, {form.endereco.num} — <span style={{color:"#34d399"}}>{form.endereco.bairro}</span></div>
+              {form.endereco.ref && <div style={{color:"#fbbf24",fontSize:11,marginTop:2}}>📌 {form.endereco.ref}</div>}
+            </div>
+          )}
+          <div style={{display:"flex",gap:8,marginTop:8}}>
+            <Btn onClick={cadastrar} full disabled={!form.nome.trim()||!form.endereco.rua.trim()||!form.endereco.num.trim()||!telFormValido||!empresaId}>
+              💾 Salvar Cliente
+            </Btn>
+            <Btn cor="cinza" onClick={()=>setModalCad(false)}>Cancelar</Btn>
+          </div>
+        </Overlay>
+      )}
+
+      {editId && editCli && (
+        <Overlay onClose={()=>setEditId(null)} maxW={440}>
+          <OvHeader titulo="✏️ Editar Cliente" onClose={()=>setEditId(null)}/>
+          {erro && <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#f87171",fontSize:13}}>{erro}</div>}
+          <Inp label="Nome" value={form.nome} onChange={v=>setForm(f=>({...f,nome:v}))}/>
+          <Inp label="Telefone" value={form.tel} onChange={v=>setForm(f=>({...f,tel:v}))}/>
+          <Divider/>
+          <STitle>Endereço</STitle>
+          <div style={{display:"flex",gap:10}}>
+            <div style={{flex:3}}><Inp label="Rua" value={form.endereco.rua} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,rua:v}}))}/></div>
+            <div style={{flex:1}}><Inp label="Nº" value={form.endereco.num} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,num:v}}))}/></div>
+          </div>
+          <Inp label="Bairro" value={form.endereco.bairro} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,bairro:v}}))} placeholder="Ex: Perequê, Vila, Feiticeira..."/>
+          <Inp label="Referência" value={form.endereco.ref} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,ref:v}}))} placeholder="Casa de cor, portão..."/>
+          <div style={{display:"flex",gap:8,marginTop:8}}>
+            <Btn onClick={salvar} full>Salvar</Btn>
+            <Btn cor="cinza" onClick={()=>setEditId(null)}>Cancelar</Btn>
+          </div>
+        </Overlay>
+      )}
+    </div>
+  );
+}
+
+// ─── BLOQUEIO POR LIMITE DE 40 ENTREGAS/MÊS ──────────────────────────────────
+// Tela mostrada no lugar de "Nova Entrega" quando o estabelecimento não está em
+// nenhum plano pago (nem grátis, nem mensalidade em dia) e já bateu o limite
+// mensal. Pede pra escolher um dos dois planos e mandar o comprovante pro suporte.
+// ─── CARTÃO DE PAGAMENTO PIX (copiar/colar rápido) ────────────────────────────
+// Mostra a chave PIX da MotoFast com um botão "Copiar", pra o empresário nunca
+// mais precisar pedir a chave por WhatsApp — ela já fica ali do lado do valor
+// que ele deve, tanto no card semanal quanto no diário.
+function CartaoPix() {
+  const [copiado, setCopiado] = useState(false);
+  function copiar() {
+    navigator.clipboard.writeText(PIX_MOTOFAST.chave)
+      .then(()=>{ setCopiado(true); setTimeout(()=>setCopiado(false), 2500); })
+      .catch(()=>{});
+  }
+  return (
+    <div style={{background:"#0f172a",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px",marginTop:10}}>
+      <div style={{color:"#9ca3af",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>💠 Pagar com Pix</div>
+      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+        <div style={{flex:1,minWidth:160}}>
+          <div style={{color:"#f9fafb",fontWeight:700,fontSize:12,wordBreak:"break-all"}}>{PIX_MOTOFAST.chave}</div>
+          <div style={{color:"#6b7280",fontSize:11,marginTop:2}}>{PIX_MOTOFAST.nome} — {PIX_MOTOFAST.banco}</div>
+        </div>
+        <button onClick={copiar} style={{background:copiado?"#0d3d2e":"#10b981",border:"none",borderRadius:6,color:"#fff",padding:"7px 14px",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
+          {copiado ? "✅ Copiado!" : "📋 Copiar chave"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BloqueioLimiteEntregas({ empresa }) {
+  return (
+    <Card style={{textAlign:"center",padding:"32px 24px",border:"1px solid #f59e0b"}}>
+      <div style={{fontSize:56,marginBottom:12}}>🔒</div>
+      <div style={{color:"#f59e0b",fontWeight:900,fontSize:22,marginBottom:10}}>
+        Limite de {LIMITE_ENTREGAS_MES} entregas atingido
+      </div>
+      <div style={{color:"#9ca3af",fontSize:14,lineHeight:1.7,marginBottom:20,textAlign:"left",maxWidth:480,margin:"0 auto 20px"}}>
+        Você já usou suas <strong style={{color:"#f9fafb"}}>{LIMITE_ENTREGAS_MES} entregas grátis</strong> este mês. Pra continuar solicitando motoboy, escolha um dos planos abaixo:
+      </div>
+      <div style={{display:"flex",gap:12,flexWrap:"wrap",justifyContent:"center",marginBottom:20}}>
+        <div style={{background:"#0f172a",border:"1px solid #34d399",borderRadius:12,padding:"16px 20px",flex:1,minWidth:180,maxWidth:220}}>
+          <div style={{color:"#34d399",fontWeight:900,fontSize:20}}>R$95</div>
+          <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>toda segunda-feira</div>
+        </div>
+        <div style={{background:"#0f172a",border:"1px solid #60a5fa",borderRadius:12,padding:"16px 20px",flex:1,minWidth:180,maxWidth:220}}>
+          <div style={{color:"#60a5fa",fontWeight:900,fontSize:20}}>R$380</div>
+          <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>uma vez por mês</div>
+        </div>
+      </div>
+      <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:10,padding:"16px 20px",marginBottom:20,textAlign:"left",maxWidth:420,margin:"0 auto 20px"}}>
+        <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>💠 Chave Pix pra pagamento</div>
+        <div style={{color:"#f9fafb",fontWeight:700,fontSize:14,wordBreak:"break-all"}}>{PIX_MOTOFAST.chave}</div>
+        <div style={{color:"#6b7280",fontSize:12,marginTop:6}}>{PIX_MOTOFAST.nome} — {PIX_MOTOFAST.banco}</div>
+      </div>
+      <div style={{color:"#9ca3af",fontSize:13,lineHeight:1.6,marginBottom:20}}>
+        Depois de escolher o plano e fazer o Pix, manda o comprovante pro suporte MotoFast — assim que recebermos, liberamos seu acesso com o plano certo.
+      </div>
+      <a href={`https://wa.me/${SUPORTE_TEL}?text=${encodeURIComponent(`Olá! Sou do estabelecimento ${empresa?.nome || ""} e atingi o limite de ${LIMITE_ENTREGAS_MES} entregas. Quero escolher um plano e mandar o comprovante do Pix.`)}`}
+        target="_blank" rel="noreferrer"
+        style={{display:"inline-flex",alignItems:"center",gap:8,background:"#10b981",borderRadius:10,padding:"14px 24px",textDecoration:"none",fontWeight:700,fontSize:15,color:"#fff"}}>
+        💬 Mandar comprovante pro suporte
+      </a>
+    </Card>
+  );
+}
+
+// ─── APP EMPRESÁRIO ───────────────────────────────────────────────────────────
+export default function Empresario() {
+  const navigate = useNavigate();
+  const [aba, setAba] = useState("nova");
+  const [entregasMesAtual, setEntregasMesAtual] = useState(0);
+  const [clientes, setClientes] = useState([]);
+  const [pedidos, setPedidos] = useState([]);
+  const pedidosRef = useRef([]);
+  useEffect(()=>{ pedidosRef.current = pedidos; },[pedidos]);
+  // Histórico agora é buscado separado, sob demanda, mês a mês — não fica mais
+  // pendurado na busca de pedidos ativos (que roda a cada 8s). Isso é o que evita
+  // a tela travar lá na frente, quando o estabelecimento acumular muitas entregas.
+  const [historicoData, setHistoricoData] = useState([]);
+  const [carregandoHistorico, setCarregandoHistorico] = useState(false);
+  const [mesHistorico, setMesHistorico] = useState(()=>{
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+  });
+  const [avisoSemMotoboy, setAvisoSemMotoboy] = useState(null);
+  const [avisoCancelamentoMotoboy, setAvisoCancelamentoMotoboy] = useState(null);
+  const notificadosCancelamento = useRef(new Set());
+  const [empresa, setEmpresa] = useState({...EMPRESA, id:null}); // começa SEM id até carregar o real do Supabase
+  const [carregando, setCarregando] = useState(true);
+  // Valor exato pendente quando a conta está bloqueada — pra mostrar na tela de
+  // bloqueio, junto com o PIX, e o empresário já pagar sem precisar chamar o
+  // suporte só pra saber quanto deve. Só calcula quando realmente bloqueado,
+  // buscando os últimos 120 dias de entregas (mesmo período usado no Histórico)
+  // e aplicando a mesma lógica de pendência: diário soma os dias não marcados
+  // como pagos, semanal soma o saldo (total - já pago) de cada semana.
+  const [valorPendenteBloqueio, setValorPendenteBloqueio] = useState(null);
+  useEffect(()=>{
+    if (!empresa?.bloqueado || !empresa?.id) { setValorPendenteBloqueio(null); return; }
+    let cancelado = false;
+    (async()=>{
+      const inicioObj = new Date();
+      inicioObj.setDate(inicioObj.getDate()-120);
+      const { data, error } = await supabase
+        .from("pedidos")
+        .select("taxa, criado_em")
+        .eq("empresario_id", empresa.id)
+        .eq("status", "entregue")
+        .gte("criado_em", inicioObj.toISOString());
+      if (cancelado || error || !data) return;
+      let total = 0;
+      if (empresa.planoPagamentoMotoboy === "diario") {
+        data.forEach(p=>{
+          const diaISO = dataLocalISO(new Date(p.criado_em));
+          if (!empresa.pagamentosDiarios?.[diaISO]) total += p.taxa;
+        });
+      } else {
+        const porSemana = {};
+        data.forEach(p=>{
+          const semana = segundaFeiraDaSemana(new Date(p.criado_em));
+          porSemana[semana] = (porSemana[semana]||0) + p.taxa;
+        });
+        Object.entries(porSemana).forEach(([semana,tot])=>{
+          const pago = empresa.pagamentosSemanais?.[semana] || 0;
+          total += Math.max(0, tot-pago);
+        });
+      }
+      if (!cancelado) setValorPendenteBloqueio(+total.toFixed(2));
+    })();
+    return () => { cancelado = true; };
+  }, [empresa?.bloqueado, empresa?.id, empresa?.planoPagamentoMotoboy, empresa?.pagamentosDiarios, empresa?.pagamentosSemanais]);
+
+  // Carrega dados reais do Supabase ao entrar
+  useEffect(()=>{
+    let canal = null;
+    async function carregar() {
+      try {
+        // Pega o usuário logado
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { setCarregando(false); return; }
+
+        // Busca o empresário pelo usuário logado (não só por aprovado, para evitar pegar dados de outra pessoa)
+        const { data: emp, error: empError } = await supabase
+          .from("empresarios")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (empError) console.error("Erro ao buscar empresário:", empError);
+
+        if (emp) {
+          setEmpresa({
+            id: emp.id,
+            nome: emp.nome,
+            bairro: emp.bairro,
+            tel: emp.telefone,
+            endereco: emp.endereco_estabelecimento || "",
+            planoPagamento: emp.plano_pagamento,
+            planoPagamentoMotoboy: emp.plano_pagamento_motoboy,
+            planoGratis: emp.plano_gratis,
+            dataFimGratis: emp.data_fim_gratis,
+            taxas: emp.taxas || {},
+            mensalidadePaga: emp.mensalidade_paga,
+            pagamentosDiarios: emp.pagamentos_diarios || {},
+            bloqueado: emp.bloqueado,
+            motivoBloqueio: emp.motivo_bloqueio || null,
+            modeloPrecificacao: emp.modelo_precificacao || "km",
+            taxaSemanalPaga: emp.taxa_semanal_paga || false,
+            taxaSemanalPagaEm: emp.taxa_semanal_paga_em || null,
+            pagamentosSemanais: emp.pagamentos_semanais || {},
+          });
+
+          // Carrega clientes desse empresário
+          const { data: clientesDB, error: clientesError } = await supabase
+            .from("clientes")
+            .select("*")
+            .eq("empresario_id", emp.id)
+            .order("nome");
+
+          if (clientesError) console.error("Erro ao buscar clientes:", clientesError);
+
+          if (clientesDB) {
+            setClientes(clientesDB.map(c=>({
+              id: c.id,
+              nome: c.nome,
+              tel: c.telefone,
+              rua: c.rua,
+              num: c.numero,
+              bairro: c.bairro,
+              ref: c.referencia,
+            })));
+          }
+
+          // Carrega pedidos ativos e recentes desse empresário, já com dados do motoboy
+          await carregarPedidos(emp.id);
+          await carregarContagemMensal(emp.id);
+
+          // Escuta mudanças em tempo real (quando o motoboy aceita, sai, entrega, cancela)
+          canal = supabase
+            .channel("pedidos-empresario")
+            .on("postgres_changes", { event: "*", schema: "public", table: "pedidos", filter: `empresario_id=eq.${emp.id}` }, (payload) => {
+              // Detecta cancelamento feito pelo motoboy direto no dado que já veio no
+              // evento — não precisa buscar nada extra no banco pra isso.
+              const p = payload.new;
+              if (p && p.status==="cancelado" && p.cancelado_por_motoboy && !notificadosCancelamento.current.has(p.id)) {
+                notificadosCancelamento.current.add(p.id);
+                const pedidoConhecido = pedidosRef.current.find(x=>x.id===p.id);
+                setAvisoCancelamentoMotoboy({
+                  clienteNome: p.cliente_nome,
+                  bairro: p.bairro,
+                  motivo: p.motivo_cancelamento || "Não informado",
+                  motoboyNome: pedidoConhecido?.motoboyNome || "Motoboy",
+                  motoboyTel: pedidoConhecido?.motoboyTel || "",
+                });
+              }
+              carregarPedidos(emp.id);
+            })
+            .subscribe();
+
+          // Rede de segurança — atualiza a cada 8s, caso o Realtime não esteja ativo no banco
+          const intervalo = setInterval(()=>carregarPedidos(emp.id), 8000);
+          window.__motofastIntervalo = intervalo;
+
+          // Atualiza as CONFIGURAÇÕES do estabelecimento (modelo de taxa, plano,
+          // bloqueio, etc) a cada 30s — assim, se você mudar algo no Admin enquanto
+          // o empresário já está com a tela aberta (o que é bem comum na correria do
+          // dia a dia), a mudança chega sozinha, sem precisar ele dar F5 ou lembrar
+          // de atualizar nada.
+          const intervaloConfig = setInterval(()=>atualizarConfiguracoesEmpresa(emp.id), 30000);
+          window.__motofastIntervaloConfig = intervaloConfig;
+
+          // Atualiza a contagem mensal de entregas também a cada 30s — assim, assim
+          // que a entrega de número 40 for concluída, a tela de bloqueio aparece
+          // sozinha na próxima tentativa de publicar, sem precisar recarregar a página.
+          const intervaloContagem = setInterval(()=>carregarContagemMensal(emp.id), 30000);
+          window.__motofastIntervaloContagem = intervaloContagem;
+        }
+      } catch (e) {
+        console.error("Erro ao carregar dados do empresário:", e);
+      } finally {
+        setCarregando(false);
+      }
+    }
+    carregar();
+    return () => {
+      if (canal) supabase.removeChannel(canal);
+      if (window.__motofastIntervalo) clearInterval(window.__motofastIntervalo);
+      if (window.__motofastIntervaloConfig) clearInterval(window.__motofastIntervaloConfig);
+      if (window.__motofastIntervaloContagem) clearInterval(window.__motofastIntervaloContagem);
+    };
+  },[]);
+
+  // Busca de novo as configurações do estabelecimento (não os pedidos) — usada pelo
+  // intervalo automático acima, pra qualquer mudança feita no Admin (modelo de taxa,
+  // plano de pagamento, bloqueio, etc) chegar sozinha na tela do empresário.
+  async function atualizarConfiguracoesEmpresa(empresaId) {
+    if (!empresaId) return;
+    const { data: emp, error } = await supabase
+      .from("empresarios")
+      .select("*")
+      .eq("id", empresaId)
+      .maybeSingle();
+    if (error || !emp) return;
+    setEmpresa(prev=>({
+      ...prev,
+      nome: emp.nome,
+      bairro: emp.bairro,
+      tel: emp.telefone,
+      endereco: emp.endereco_estabelecimento || "",
+      planoPagamento: emp.plano_pagamento,
+      planoPagamentoMotoboy: emp.plano_pagamento_motoboy,
+      planoGratis: emp.plano_gratis,
+      dataFimGratis: emp.data_fim_gratis,
+      taxas: emp.taxas || {},
+      mensalidadePaga: emp.mensalidade_paga,
+      pagamentosDiarios: emp.pagamentos_diarios || {},
+      bloqueado: emp.bloqueado,
+      motivoBloqueio: emp.motivo_bloqueio || null,
+      modeloPrecificacao: emp.modelo_precificacao || "km",
+      taxaSemanalPaga: emp.taxa_semanal_paga || false,
+      taxaSemanalPagaEm: emp.taxa_semanal_paga_em || null,
+      pagamentosSemanais: emp.pagamentos_semanais || {},
+    }));
+  }
+
+  // Conta quantas entregas (só "entregue", cancelamento não conta) esse
+  // estabelecimento já fez NESTE mês calendário — reseta sozinho todo mês porque
+  // o filtro é sempre "desde o dia 1 do mês atual". Usada pra travar quem ainda
+  // não está em nenhum plano pago (nem grátis, nem mensalidade em dia) assim que
+  // bate o limite de LIMITE_ENTREGAS_MES.
+  async function carregarContagemMensal(empresaId) {
+    if (!empresaId) return;
+    const agora = new Date();
+    const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1).toISOString();
+    const { count, error } = await supabase
+      .from("pedidos")
+      .select("id", { count: "exact", head: true })
+      .eq("empresario_id", empresaId)
+      .eq("status", "entregue")
+      .gte("criado_em", inicioMes);
+    if (error) { console.error("Erro ao contar entregas do mês:", error); return; }
+    setEntregasMesAtual(count || 0);
+  }
+
+  async function carregarPedidos(empresaId) {
+    if (!empresaId) return;
+    // Só busca pedidos ATIVOS agora (aguardando aceite, aceito, a caminho) — o
+    // histórico (entregue/cancelado) é buscado separado, sob demanda, por mês.
+    // Isso mantém essa busca sempre leve e rápida, não importa quantas entregas
+    // já foram feitas no total — ela nunca cresce com o tempo.
+    const { data: pedidosDB, error } = await supabase
+      .from("pedidos")
+      .select("*, motoboys(nome_completo, telefone)")
+      .eq("empresario_id", empresaId)
+      .in("status", ["aguardando","aceito","saiu_estabelecimento"])
+      .order("criado_em", { ascending: true });
+
+    if (error) { console.error("Erro ao carregar pedidos:", error); return; }
+
+    if (pedidosDB) {
+      setPedidos(pedidosDB.map(p=>({
+        id: p.id,
+        clienteNome: p.cliente_nome,
+        clienteTel: p.cliente_telefone,
+        rua: p.rua, num: p.numero,
+        bairro: p.bairro, ref: p.referencia, obs: p.observacao,
+        pagamento: p.forma_pagamento, taxa: p.taxa,
+        taxaMotoboy: p.taxa_motoboy || 0,
+        valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
+        status: p.status==="aceito"||p.status==="saiu_estabelecimento" ? "em_rota" : p.status,
+        criadoEm: new Date(p.criado_em).getTime(),
+        motoboyId: p.motoboy_id,
+        motoboyNome: p.motoboys?.nome_completo || null,
+        motoboyTel: p.motoboys?.telefone || null,
+        corridaId: p.corrida_id,
+        saiuEstabelecimentoEm: p.saiu_estabelecimento_em || null,
+        entregueEm: p.entregue_em || null,
+        distanciaKm: p.distancia_km || null,
+        metodoCalculoKm: p.metodo_calculo_km || null,
+      })));
+    }
+  }
+
+  // Gera a chave (AAAA-MM) do mês atual e dos últimos meses, pro seletor de mês do histórico
+  function chaveDoMes(date) {
+    return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,"0")}`;
+  }
+  function gerarMesesDisponiveis(qtd=18) {
+    const nomesMes = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+    const lista = [];
+    const agora = new Date();
+    for (let i=0; i<qtd; i++) {
+      const d = new Date(agora.getFullYear(), agora.getMonth()-i, 1);
+      lista.push({ chave: chaveDoMes(d), label: `${nomesMes[d.getMonth()]}/${d.getFullYear()}` });
+    }
+    return lista;
+  }
+
+  // Busca o HISTÓRICO (entregue/cancelado) separado dos ativos, filtrado por mês —
+  // assim a tela nunca precisa carregar todas as entregas desde o início pra
+  // funcionar. "todos" busca tudo, com um limite de segurança de 500 registros
+  // mais recentes, pra nunca travar a tela mesmo depois de anos de uso.
+  async function carregarHistorico(mesChave) {
+    if (!empresa?.id) return;
+    setCarregandoHistorico(true);
+    let query = supabase
+      .from("pedidos")
+      .select("*, motoboys(nome_completo, telefone)")
+      .eq("empresario_id", empresa.id)
+      .in("status", ["entregue","cancelado"])
+      .order("criado_em", { ascending: false });
+
+    if (mesChave === "todos") {
+      query = query.limit(500);
+    } else {
+      const [ano, mes] = mesChave.split("-").map(Number);
+      const inicio = new Date(ano, mes-1, 1).toISOString();
+      const fim = new Date(ano, mes, 1).toISOString();
+      query = query.gte("criado_em", inicio).lt("criado_em", fim);
+    }
+
+    const { data, error } = await query;
+    if (error) { console.error("Erro ao carregar histórico:", error); setCarregandoHistorico(false); return; }
+
+    setHistoricoData((data||[]).map(p=>({
+      id: p.id, clienteNome: p.cliente_nome, bairro: p.bairro,
+      pagamento: p.forma_pagamento, taxa: p.taxa,
+      status: p.status==="entregue" ? "Entregue" : "Cancelada",
+      motoboyNome: p.motoboys?.nome_completo || "—",
+      data: new Date(p.criado_em).toLocaleDateString("pt-BR"),
+      dataISO: dataLocalISO(new Date(p.criado_em)),
+      hora: new Date(p.criado_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
+      horaSaida: p.saiu_estabelecimento_em ? new Date(p.saiu_estabelecimento_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
+      horaEntrega: p.entregue_em ? new Date(p.entregue_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
+    })));
+    setCarregandoHistorico(false);
+  }
+
+  // Busca o histórico só quando a aba é aberta, ou quando o mês selecionado muda —
+  // nunca fica recarregando isso sozinho de fundo, diferente dos pedidos ativos.
+  // Também atualiza os pagamentos diários E semanais nesse momento, pra sempre
+  // refletir o que o Admin marcou como pago mais recentemente, mesmo sem dar
+  // refresh na página.
+  useEffect(()=>{
+    if (aba==="historico" && empresa?.id) {
+      carregarHistorico(mesHistorico);
+      supabase.from("empresarios").select("pagamentos_diarios, pagamentos_semanais").eq("id", empresa.id).maybeSingle()
+        .then(({data})=>{
+          if (data) setEmpresa(prev=>({...prev, pagamentosDiarios: data.pagamentos_diarios || {}, pagamentosSemanais: data.pagamentos_semanais || {}}));
+        });
+    }
+  },[aba, mesHistorico, empresa?.id]);
+
+  // ATUALIZADO em 28/08/2026: de 5 pra 10 minutos, pra bater exatamente com a
+  // janela total do sistema de rodízio (JANELA_TOTAL_MS no
+  // avancar-fila-pedido.js). Antes, esse timer cancelava o pedido aos 5
+  // minutos enquanto o rodízio ainda estava tentando até os 10 — um conflito
+  // real que podia interromper o rodízio no meio do caminho.
+  useEffect(()=>{
+    const aguardando = pedidos.filter(p=>p.status==="aguardando");
+    if (aguardando.length===0) return;
+
+    // Cria um timer separado para CADA pedido aguardando, baseado no criadoEm de cada um
+    const timers = aguardando.map(pedidoAlvo => {
+      const decorrido = Date.now() - pedidoAlvo.criadoEm;
+      const restante = Math.max(1000, 10*60*1000 - decorrido); // mínimo 1s para não cancelar na hora
+      return setTimeout(async ()=>{
+        await supabase.from("pedidos")
+          .update({ status: "cancelado", motivo_cancelamento: "Nenhum motoboy aceitou em 10 minutos" })
+          .eq("id", pedidoAlvo.id)
+          .eq("status","aguardando");
+        setAvisoSemMotoboy(pedidoAlvo);
+        await carregarPedidos(empresa.id);
+      }, restante);
+    });
+
+    return ()=>timers.forEach(t=>clearTimeout(t));
+  },[pedidos]);
+
+  // Dispara notificação push de verdade (via servidor), que chega mesmo com o app do motoboy fechado.
+  // Não trava o fluxo se falhar — a publicação do pedido já aconteceu de qualquer forma.
+  async function notificarMotoboysPush(titulo, corpo) {
+    try {
+      await fetch(`${WEB_APP_URL}/api/notificar-motoboys`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ titulo, corpo }),
+      });
+    } catch (e) {
+      console.log("Erro ao notificar motoboys via push:", e);
+    }
+  }
+
+  async function publicarPedido(pedido) {
+    if (!empresa?.id) return;
+
+    // Verifica se está bloqueado no banco antes de publicar
+    const { data: empAtual } = await supabase
+      .from("empresarios")
+      .select("bloqueado, mensalidade_paga")
+      .eq("id", empresa.id)
+      .single();
+
+    if (empAtual?.bloqueado) {
+      alert("⛔ Sua conta está bloqueada por mensalidade pendente.\n\nEntre em contato com o MotoFast para regularizar seu pagamento e reativar sua conta.\n\n📞 Suporte: " + SUPORTE_TEL);
+      return;
+    }
+
+    // Trava de segurança extra (a tela já esconde o formulário de Nova Entrega
+    // nesse caso, mas confere de novo aqui pra nunca deixar passar um pedido 41
+    // por engano, tipo se a aba ficou aberta desde antes do limite bater).
+    if (!empresa.planoGratis && !empresa.mensalidadePaga && entregasMesAtual >= LIMITE_ENTREGAS_MES) {
+      alert(`⛔ Você atingiu o limite de ${LIMITE_ENTREGAS_MES} entregas deste mês. Escolha um plano e envie o comprovante pro suporte MotoFast pra continuar solicitando motoboy.`);
+      return;
+    }
+
+    // ─── SISTEMA DE PRIORIDADE DO TURNO FIXO — criado em 30/08/2026 ───
+    // Confere se é horário de algum turno fixo, e se tem alguém desse turno
+    // online AGORA. Se sim, o pedido nasce com uma "janela de prioridade" de
+    // 20 segundos — só eles conseguem ver/aceitar nesse tempo (o Motoboy.jsx
+    // já respeita isso). Depois de 20s, libera pra todo mundo sozinho, sem
+    // precisar de nenhum serviço externo. Se ninguém do turno fixo estiver
+    // online, publica normal, sem prioridade nenhuma — igual sempre foi.
+    const turno = turnoAtual();
+    let idsOnlineTurnoFixo = [];
+    if (turno) {
+      const { data: turnoFixoDB } = await supabase
+        .from("motoboys_turno_fixo")
+        .select("motoboy_id")
+        .eq("turno", turno)
+        .eq("ativo", true);
+      const idsTurnoFixo = (turnoFixoDB || []).map(t => t.motoboy_id);
+      if (idsTurnoFixo.length > 0) {
+        const { data: onlineDB } = await supabase
+          .from("motoboys")
+          .select("id")
+          .in("id", idsTurnoFixo)
+          .eq("online", true)
+          .eq("ativo", true)
+          .eq("banido", false);
+        const idsOnlineBrutos = (onlineDB || []).map(m => m.id);
+        // Confere quem está OCUPADO agora (entrega em andamento) — online
+        // sozinho não basta, precisa estar LIVRE pra valer como prioridade.
+        // Sem essa checagem, se os dois do turno fixo estiverem online mas
+        // ocupados, o sistema esperaria 20s à toa, achando que tinha
+        // prioridade disponível quando não tinha ninguém que pudesse responder.
+        let idsOcupados = [];
+        if (idsOnlineBrutos.length > 0) {
+          const { data: ocupadosDB } = await supabase
+            .from("pedidos")
+            .select("motoboy_id")
+            .in("motoboy_id", idsOnlineBrutos)
+            .in("status", ["aceito", "saiu_estabelecimento"]);
+          idsOcupados = (ocupadosDB || []).map(p => p.motoboy_id);
+        }
+        idsOnlineTurnoFixo = idsOnlineBrutos.filter(id => !idsOcupados.includes(id));
+      }
+    }
+    const temPrioridadeAtiva = idsOnlineTurnoFixo.length > 0;
+    const agoraISO = new Date().toISOString();
+    const prioridadeAte = temPrioridadeAtiva ? new Date(Date.now() + 20000).toISOString() : null;
+
+    // Salva o pedido no Supabase
+    const { data: pedidoDB } = await supabase.from("pedidos").insert({
+      empresario_id: empresa.id,
+      cliente_nome: pedido.clienteNome,
+      cliente_telefone: pedido.clienteTel,
+      rua: pedido.rua,
+      numero: pedido.num,
+      bairro: pedido.bairro,
+      referencia: pedido.ref,
+      observacao: pedido.obs,
+      forma_pagamento: pedido.pagamento,
+      taxa: pedido.taxa,
+      taxa_motoboy: pedido.taxaMotoboy || 0,
+      taxa_empresario: pedido.taxa || 0,
+      valor_pedido: pedido.valorPedido,
+      valor_receber: pedido.valorReceber,
+      valor_troco: pedido.troco,
+      distancia_km: pedido.distanciaKm,
+      metodo_calculo_km: pedido.metodoCalculoKm,
+      status: "aguardando",
+      prioridade_ate: prioridadeAte,
+      turno_prioridade: temPrioridadeAtiva ? turno : null,
+    }).select().single();
+
+    // Notifica os motoboys via push real — chega mesmo com o app fechado.
+    if (temPrioridadeAtiva) {
+      // Só os do turno fixo recebem notificação direcionada agora — o
+      // restante só vai ver o pedido depois que a janela de 20s passar
+      // (o Motoboy.jsx deles já esconde automaticamente até lá).
+      idsOnlineTurnoFixo.forEach(motoboyId => {
+        fetch(`${WEB_APP_URL}/api/notificar-motoboy-especifico`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            motoboyId,
+            titulo: "🏍️ Novo Pedido MotoFast!",
+            corpo: `Entrega em ${pedido.bairro} — R$${pedido.taxaMotoboy || pedido.taxa}`,
+          }),
+        }).catch(e => console.log("Erro ao notificar motoboy do turno fixo:", e));
+      });
+    } else {
+      // Ninguém do turno fixo online agora — publica normal, pra todo mundo
+      notificarMotoboysPush(
+        "🏍️ Novo Pedido MotoFast!",
+        `Entrega em ${pedido.bairro} — R$${pedido.taxaMotoboy || pedido.taxa}`
+      );
+    }
+
+    // Recarrega a lista do banco, garantindo consistência total
+    await carregarPedidos(empresa.id);
+    setAba("ativos");
+  }
+
+  // Calcula se esse estabelecimento está travado pelo limite mensal — só vale pra
+  // quem NÃO está em nenhum plano pago (nem grátis, nem mensalidade em dia).
+  const limiteAtingido = !empresa.planoGratis && !empresa.mensalidadePaga && entregasMesAtual >= LIMITE_ENTREGAS_MES;
+
+  if (carregando) {
+    return (
+      <div style={{minHeight:"100vh",background:"#0a0f1a",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter','Segoe UI',sans-serif"}}>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:48,marginBottom:16}}>⚡</div>
+          <div style={{color:"#34d399",fontWeight:700,fontSize:18}}>Carregando...</div>
+        </div>
+      </div>
+    );
+  }
+
+  // Tela de bloqueio — empresário não pode usar a plataforma
+  if (empresa?.bloqueado) {
+    return (
+      <div style={{minHeight:"100vh",background:"#0a0f1a",display:"flex",alignItems:"center",justifyContent:"center",padding:24,fontFamily:"'Inter','Segoe UI',sans-serif"}}>
+        <div style={{textAlign:"center",maxWidth:440}}>
+          <div style={{fontSize:64,marginBottom:16}}>⛔</div>
+          <div style={{color:"#ef4444",fontWeight:900,fontSize:24,marginBottom:12}}>Conta Bloqueada</div>
+          <div style={{background:"#1a0a0a",border:"1px solid #ef4444",borderRadius:12,padding:"20px 24px",marginBottom:20}}>
+            <div style={{color:"#f87171",fontSize:15,lineHeight:1.7,marginBottom:12,textAlign:"left"}}>
+              {empresa.motivoBloqueio
+                ? empresa.motivoBloqueio
+                : <>Sua conta foi bloqueada por <strong>mensalidade pendente</strong>.</>}
+            </div>
+            <div style={{color:"#9ca3af",fontSize:13,lineHeight:1.6}}>
+              Para reativar sua conta, entre em contato com o MotoFast e regularize seu pagamento.
+            </div>
+          </div>
+          {/* Valor exato pendente + PIX pra pagar na hora, sem precisar chamar
+              o suporte só pra saber quanto deve. Só aparece depois de calculado
+              (evita mostrar R$0 piscando enquanto ainda está buscando). */}
+          {valorPendenteBloqueio !== null && (
+            <div style={{background:"#111827",border:"1px solid #ef4444",borderRadius:12,padding:"18px 22px",marginBottom:16,textAlign:"left"}}>
+              <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Valor pendente</div>
+              <div style={{color:"#ef4444",fontSize:34,fontWeight:900}}>R${valorPendenteBloqueio.toFixed(2)}</div>
+              <CartaoPix/>
+            </div>
+          )}
+          <a href={`https://wa.me/${SUPORTE_TEL}?text=${encodeURIComponent(`Olá, minha conta no MotoFast está bloqueada${valorPendenteBloqueio!==null?` (valor pendente: R$${valorPendenteBloqueio.toFixed(2)})`:""}. Já fiz o pix, segue o comprovante.`)}`}
+            target="_blank" rel="noreferrer"
+            style={{display:"inline-flex",alignItems:"center",gap:8,background:"#10b981",borderRadius:10,padding:"14px 24px",textDecoration:"none",fontWeight:700,fontSize:15,color:"#fff"}}>
+            💬 Enviar comprovante pro MotoFast
+          </a>
+          <div style={{marginTop:16}}>
+            <button onClick={async()=>{ await supabase.auth.signOut(); navigate("/"); }}
+              style={{background:"transparent",border:"1px solid #374151",color:"#6b7280",padding:"8px 16px",borderRadius:8,cursor:"pointer",fontSize:13}}>
+              🚪 Sair
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const pedidosAtivos = pedidos.filter(p=>p.status==="aguardando"||p.status==="em_rota").length;
+
+  const ABAS = [
+    {id:"nova",     label:"📦 Nova Entrega"},
+    {id:"ativos",   label:"🚦 Pedidos Ativos", badge:pedidosAtivos},
+    {id:"historico",label:"📋 Histórico"},
+    {id:"clientes", label:"👤 Clientes"},
+  ];
+
+  return (
+    <div style={{minHeight:"100vh",background:"#0a0f1a",fontFamily:"'Inter','Segoe UI',sans-serif",color:"#f9fafb"}}>
+      {/* Header */}
+      <div style={{background:"#111827",borderBottom:"1px solid #1f2937",padding:"0 20px",position:"sticky",top:0,zIndex:100}}>
+        <div style={{maxWidth:900,margin:"0 auto",display:"flex",alignItems:"center",flexWrap:"wrap"}}>
+          <div style={{padding:"12px 20px 12px 0",borderRight:"1px solid #1f2937",marginRight:16,flexShrink:0}}>
+            <div style={{color:"#34d399",fontWeight:900,fontSize:16,letterSpacing:-0.5}}>⚡ MotoFast</div>
+            <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>{empresa?.nome || EMPRESA.nome}</div>
+          </div>
+          <nav style={{display:"flex",flexWrap:"wrap",flex:1}}>
+            {ABAS.map(a=>(
+              <button key={a.id} onClick={()=>setAba(a.id)} style={{background:aba===a.id?"#0d3d2e":"transparent",color:aba===a.id?"#34d399":"#6b7280",border:"none",borderBottom:aba===a.id?"2px solid #34d399":"2px solid transparent",padding:"13px 12px",cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap",position:"relative"}}>
+                {a.label}
+                {a.badge>0 && <span style={{background:"#ef4444",color:"#fff",borderRadius:"50%",fontSize:10,fontWeight:800,padding:"1px 5px",marginLeft:6}}>{a.badge}</span>}
+              </button>
+            ))}
+          </nav>
+          {/* Info plano */}
+          <div style={{padding:"8px 0",flexShrink:0,display:"flex",alignItems:"center",gap:10}}>
+            {(empresa?.planoGratis ?? EMPRESA.planoGratis)
+              ? <Tag label={`🎁 Grátis até ${empresa?.dataFimGratis || EMPRESA.dataFimGratis}`} cor="#a78bfa"/>
+              : <Tag label="✅ Plano ativo" cor="#34d399"/>}
+            <button onClick={async()=>{ await supabase.auth.signOut(); navigate("/"); }}
+              style={{background:"transparent",border:"1px solid #374151",color:"#9ca3af",padding:"6px 12px",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700}}>
+              🚪 Sair
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Conteúdo */}
+      <div style={{maxWidth:900,margin:"0 auto",padding:"24px 20px"}}>
+        {aba==="nova"      && (limiteAtingido
+          ? <BloqueioLimiteEntregas empresa={empresa}/>
+          : <SolicitarEntrega clientes={clientes} setClientes={setClientes} onPublicar={publicarPedido} empresa={empresa}/>)}
+        {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes} empresa={empresa} onRecarregar={()=>carregarPedidos(empresa.id)} limiteAtingido={limiteAtingido}/>}
+        {aba==="historico" && <HistoricoEmp historico={historicoData} carregando={carregandoHistorico} mesSelecionado={mesHistorico} setMesSelecionado={setMesHistorico} mesesDisponiveis={gerarMesesDisponiveis()} empresa={empresa}/>}
+        {aba==="clientes"  && <ClientesSalvos clientes={clientes} setClientes={setClientes} empresaId={empresa.id}/>}
+      </div>
+
+
+
+      {avisoSemMotoboy && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"#111827",border:"2px solid #ef4444",borderRadius:16,width:"100%",maxWidth:440,padding:28,textAlign:"center"}}>
+            <div style={{fontSize:56,marginBottom:12}}>😔</div>
+            <div style={{color:"#f87171",fontWeight:900,fontSize:22,marginBottom:10}}>
+              Nenhum motoboy disponível
+            </div>
+            <div style={{color:"#9ca3af",fontSize:14,lineHeight:1.7,marginBottom:24}}>
+              Infelizmente, nenhum motoboy aceitou a entrega para{" "}
+              <strong style={{color:"#f9fafb"}}>{avisoSemMotoboy.clienteNome}</strong>{" "}
+              em <strong style={{color:"#f9fafb"}}>{avisoSemMotoboy.bairro}</strong>{" "}
+              nos últimos 10 minutos.
+              <br/><br/>
+              <strong style={{color:"#fbbf24"}}>Aguarde 1 minutinho e tente solicitar novamente.</strong>
+              {" "}Os motoboys serão notificados assim que você reenviar o pedido. Continue tentando — alguém vai aceitar!
+            </div>
+            <button
+              onClick={async()=>{
+                // Reenvia o pedido salvando no Supabase de verdade
+                if (!empresa?.id) return;
+
+                // Mesma lógica de prioridade do turno fixo usada em publicarPedido
+                const turnoReenvio = turnoAtual();
+                let idsOnlineTurnoFixoReenvio = [];
+                if (turnoReenvio) {
+                  const { data: turnoFixoDB } = await supabase
+                    .from("motoboys_turno_fixo")
+                    .select("motoboy_id")
+                    .eq("turno", turnoReenvio)
+                    .eq("ativo", true);
+                  const idsTurnoFixo = (turnoFixoDB || []).map(t => t.motoboy_id);
+                  if (idsTurnoFixo.length > 0) {
+                    const { data: onlineDB } = await supabase
+                      .from("motoboys")
+                      .select("id")
+                      .in("id", idsTurnoFixo)
+                      .eq("online", true)
+                      .eq("ativo", true)
+                      .eq("banido", false);
+                    const idsOnlineBrutosReenvio = (onlineDB || []).map(m => m.id);
+                    let idsOcupadosReenvio = [];
+                    if (idsOnlineBrutosReenvio.length > 0) {
+                      const { data: ocupadosDB } = await supabase
+                        .from("pedidos")
+                        .select("motoboy_id")
+                        .in("motoboy_id", idsOnlineBrutosReenvio)
+                        .in("status", ["aceito", "saiu_estabelecimento"]);
+                      idsOcupadosReenvio = (ocupadosDB || []).map(p => p.motoboy_id);
+                    }
+                    idsOnlineTurnoFixoReenvio = idsOnlineBrutosReenvio.filter(id => !idsOcupadosReenvio.includes(id));
+                  }
+                }
+                const temPrioridadeReenvio = idsOnlineTurnoFixoReenvio.length > 0;
+                const prioridadeAteReenvio = temPrioridadeReenvio ? new Date(Date.now() + 20000).toISOString() : null;
+
+                const { data: pedidoReenviado, error } = await supabase.from("pedidos").insert({
+                  empresario_id: empresa.id,
+                  cliente_nome: avisoSemMotoboy.clienteNome,
+                  cliente_telefone: avisoSemMotoboy.clienteTel,
+                  rua: avisoSemMotoboy.rua,
+                  numero: avisoSemMotoboy.num,
+                  bairro: avisoSemMotoboy.bairro,
+                  referencia: avisoSemMotoboy.ref,
+                  observacao: avisoSemMotoboy.obs,
+                  forma_pagamento: avisoSemMotoboy.pagamento,
+                  taxa: avisoSemMotoboy.taxa,
+                  taxa_motoboy: avisoSemMotoboy.taxaMotoboy || 0,
+                  taxa_empresario: avisoSemMotoboy.taxa || 0,
+                  valor_pedido: avisoSemMotoboy.valorPedido,
+                  valor_receber: avisoSemMotoboy.valorReceber,
+                  valor_troco: avisoSemMotoboy.troco,
+                  distancia_km: avisoSemMotoboy.distanciaKm,
+                  metodo_calculo_km: avisoSemMotoboy.metodoCalculoKm,
+                  status: "aguardando",
+                  prioridade_ate: prioridadeAteReenvio,
+                  turno_prioridade: temPrioridadeReenvio ? turnoReenvio : null,
+                }).select().single();
+                if (error) { console.error("Erro ao reenviar pedido:", error); return; }
+                if (temPrioridadeReenvio) {
+                  idsOnlineTurnoFixoReenvio.forEach(motoboyId => {
+                    fetch(`${WEB_APP_URL}/api/notificar-motoboy-especifico`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        motoboyId,
+                        titulo: "🏍️ Novo Pedido MotoFast!",
+                        corpo: `Entrega em ${avisoSemMotoboy.bairro} — R$${avisoSemMotoboy.taxaMotoboy || avisoSemMotoboy.taxa}`,
+                      }),
+                    }).catch(e => console.log("Erro ao notificar motoboy do turno fixo:", e));
+                  });
+                } else {
+                  notificarMotoboysPush(
+                    "🏍️ Novo Pedido MotoFast!",
+                    `Entrega em ${avisoSemMotoboy.bairro} — R$${avisoSemMotoboy.taxaMotoboy || avisoSemMotoboy.taxa}`
+                  );
+                }
+                await carregarPedidos(empresa.id);
+                setAvisoSemMotoboy(null);
+                setAba("ativos");
+              }}
+              style={{width:"100%",padding:"16px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:800,fontSize:16,cursor:"pointer",marginBottom:10}}>
+              🔄 Reenviar pedido agora
+            </button>
+            <button
+              onClick={()=>setAvisoSemMotoboy(null)}
+              style={{width:"100%",padding:"12px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
+      {avisoCancelamentoMotoboy && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"#111827",border:"2px solid #ef4444",borderRadius:16,width:"100%",maxWidth:440,padding:28,textAlign:"center"}}>
+            <div style={{fontSize:56,marginBottom:12}}>⚠️</div>
+            <div style={{color:"#f87171",fontWeight:900,fontSize:22,marginBottom:14}}>Motoboy cancelou a entrega</div>
+            <div style={{background:"#0f172a",borderRadius:10,padding:"14px 18px",marginBottom:16,textAlign:"left"}}>
+              <div style={{color:"#9ca3af",fontSize:12}}>Cliente</div>
+              <div style={{color:"#f9fafb",fontWeight:700,fontSize:15,marginBottom:8}}>{avisoCancelamentoMotoboy.clienteNome} — {avisoCancelamentoMotoboy.bairro}</div>
+              <div style={{color:"#9ca3af",fontSize:12}}>Motivo informado pelo motoboy</div>
+              <div style={{color:"#fbbf24",fontWeight:700,fontSize:15}}>{avisoCancelamentoMotoboy.motivo}</div>
+            </div>
+            <div style={{color:"#9ca3af",fontSize:13,marginBottom:18,lineHeight:1.6}}>
+              Entre em contato com <strong style={{color:"#f9fafb"}}>{avisoCancelamentoMotoboy.motoboyNome}</strong> para mais informações, se precisar.
+            </div>
+            {avisoCancelamentoMotoboy.motoboyTel && (
+              <div style={{display:"flex",gap:8,marginBottom:10}}>
+                <a href={`https://wa.me/55${avisoCancelamentoMotoboy.motoboyTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                  style={{flex:1,padding:"12px",borderRadius:10,background:"#10b981",color:"#fff",fontWeight:800,fontSize:14,textDecoration:"none"}}>
+                  💬 WhatsApp
+                </a>
+                <a href={`tel:${avisoCancelamentoMotoboy.motoboyTel.replace(/\D/g,"")}`}
+                  style={{flex:1,padding:"12px",borderRadius:10,background:"#3b82f6",color:"#fff",fontWeight:800,fontSize:14,textDecoration:"none"}}>
+                  📱 Ligar
+                </a>
+              </div>
+            )}
+            <button onClick={()=>setAvisoCancelamentoMotoboy(null)}
+              style={{width:"100%",padding:"12px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+              Fechar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Suporte no rodapé */}
+      <div style={{maxWidth:900,margin:"0 auto",padding:"0 20px 30px"}}>
+        <a href={`https://wa.me/${SUPORTE_TEL}?text=Olá, sou empresário no MotoFast e preciso de suporte`}
+          target="_blank" rel="noreferrer"
+          style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"12px 20px",textDecoration:"none"}}>
+          <span style={{fontSize:18}}>💬</span>
+          <div>
+            <div style={{color:"#34d399",fontWeight:700,fontSize:13}}>Suporte MotoFast</div>
+            <div style={{color:"#6b7280",fontSize:11}}>{SUPORTE_HORARIO}</div>
+          </div>
+        </a>
+      </div>
+    </div>
+  );
+}
