@@ -2284,9 +2284,14 @@ function Historico({ historico, motoboys, empresarios }) {
                     <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700}}>R${e.taxaMotoboy}</td>
                     <td style={{padding:"8px 12px",color:"#a78bfa",fontWeight:700}}>R${e.lucro}</td>
                     <td style={{padding:"8px 12px"}}>
-                      <span style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>
+                      <span style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}} title={e.motivoCancelamento||""}>
                         {entregue?"✅":"❌"} {e.status}
                       </span>
+                      {!entregue && (
+                        <div style={{marginTop:3,fontSize:10,fontWeight:700,color:e.canceladoPorMotoboy?"#f59e0b":"#6b7280"}}>
+                          {e.canceladoPorMotoboy ? "🏍️ pelo motoboy" : "🏪 pelo estabelecimento"}
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );
@@ -3236,6 +3241,8 @@ export default function App() {
             taxaMotoboy: taxaMb,
             lucro: lucroEntrega,
             status: p.status === "entregue" ? "Entregue" : "Cancelada",
+            canceladoPorMotoboy: p.cancelado_por_motoboy || false,
+            motivoCancelamento: p.motivo_cancelamento || null,
             data: dataStr,
             horaSaida,
             horaEntrega,
