@@ -2,6 +2,7 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient.js'
 import Cadastro from './screens/Cadastro.jsx'
+import Motoboy from './screens/Motoboy.jsx'
 
 // ─── TELAS AINDA NÃO PORTADAS (placeholder até migrarmos cada uma) ───────────
 function EmConstrucao({ nome }) {
@@ -94,7 +95,7 @@ function RotaMotoboy() {
   if (estado === "verificando") return <Verificando />
   if (estado === "pendente") return <CadastroPendente mensagem="Seu cadastro está sendo analisado pela equipe MotoFast. Aguarde a aprovação para começar a receber pedidos." />
   if (estado === "negado") return <Navigate to="/" replace />
-  return <EmConstrucao nome="Motoboy" />
+  return <Motoboy />
 }
 
 function Verificando() {

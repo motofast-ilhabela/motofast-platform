@@ -1,0 +1,1659 @@
+import { useState, useEffect, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+import { supabase } from "../supabaseClient.js";
+
+// Cópia adaptada de Motoboy.jsx da plataforma web (ver CLAUDE.md — mudanças de
+// regra de negócio precisam ser replicadas manualmente entre as duas versões).
+// Adaptações técnicas feitas aqui (nenhuma mudança de regra de negócio):
+// - navegação via useNavigate em vez de window.location.href (HashRouter)
+// - fetch("/api/...") vira URL absoluta pra web (o app nativo não tem /api
+//   próprio — usa a mesma função serverless que já roda na Vercel)
+// - dispararNotificacaoPush ainda não dispara push de verdade em background
+//   (depende do OneSignal nativo + Firebase/APNs, que precisa de configuração
+//   do Alessandro — ver CLAUDE.md/conversa). Por enquanto, com o app aberto,
+//   o alerta sonoro (Web Audio API) continua funcionando normalmente.
+
+const WEB_APP_URL = "https://motofast-platform.vercel.app";
+
+function dataLocalISO(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth()+1).padStart(2,"0");
+  const d = String(date.getDate()).padStart(2,"0");
+  return `${y}-${m}-${d}`;
+}
+
+function segundaFeiraDaSemana(date) {
+  const d = new Date(date);
+  const diaSemana = d.getDay();
+  const diff = diaSemana === 0 ? -6 : 1 - diaSemana;
+  const segunda = new Date(d);
+  segunda.setDate(d.getDate() + diff);
+  return dataLocalISO(segunda);
+}
+
+const MOTOBOY_VAZIO = {
+  id: null,
+  nomeCompleto: "Carregando...",
+  tel: "",
+  pix: "",
+  bairroBase: "",
+};
+
+const PG = {
+  pix:      { label:"Pix",      icon:"💠", cor:"#34d399" },
+  dinheiro: { label:"Dinheiro", icon:"💵", cor:"#fbbf24" },
+  cartao:   { label:"Cartão",   icon:"💳", cor:"#60a5fa" },
+};
+
+const CONTAS_MONITORAMENTO_IDS = [
+  "c98107a7-1fd1-4429-9502-d8496501347d",
+  "a8cc6740-ca4d-4bb1-9292-0b81ce8f18be",
+];
+
+function Card({ children, style={} }) {
+  return <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"18px 22px",...style}}>{children}</div>;
+}
+function Btn({ children, onClick, cor="verde", small, full, disabled }) {
+  const cores = {verde:{bg:"#10b981",c:"#fff"},perigo:{bg:"#ef4444",c:"#fff"},cinza:{bg:"#1f2937",c:"#d1d5db"},amarelo:{bg:"#f59e0b",c:"#000"},azul:{bg:"#3b82f6",c:"#fff"}};
+  const c = cores[cor]||cores.verde;
+  return (
+    <button onClick={onClick} disabled={disabled}
+      style={{background:c.bg,color:c.c,border:"none",borderRadius:8,padding:small?"6px 14px":"10px 18px",fontSize:small?12:14,fontWeight:700,cursor:disabled?"not-allowed":"pointer",opacity:disabled?0.4:1,width:full?"100%":"auto"}}>
+      {children}
+    </button>
+  );
+}
+function Tag({ label, cor="#34d399" }) {
+  return <span style={{background:cor+"22",color:cor,padding:"3px 10px",borderRadius:12,fontSize:12,fontWeight:700,border:`1px solid ${cor}44`}}>{label}</span>;
+}
+function Overlay({ children, maxW=480, borderColor="#1f2937" }) {
+  return (
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:14}}>
+      <div style={{background:"#111827",border:`2px solid ${borderColor}`,borderRadius:16,width:"100%",maxWidth:maxW,maxHeight:"94vh",overflow:"auto",padding:24}}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+const SONS = {
+  bipe_triplo: {
+    label:"Bipe Triplo", emoji:"📳", descricao:"3 bipes rápidos e agudos",
+    tocarCtx:(ctx)=>{
+      [0,0.2,0.4].forEach(d=>{
+        const o=ctx.createOscillator(),g=ctx.createGain();
+        o.connect(g);g.connect(ctx.destination);
+        o.frequency.value=1000;o.type="square";
+        g.gain.setValueAtTime(1.0,ctx.currentTime+d);
+        g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+d+0.18);
+        o.start(ctx.currentTime+d);o.stop(ctx.currentTime+d+0.18);
+      });
+    }
+  },
+  sirene: {
+    label:"Sirene", emoji:"🚨", descricao:"Sirene crescente e forte",
+    tocarCtx:(ctx)=>{
+      const o=ctx.createOscillator(),g=ctx.createGain();
+      o.connect(g);g.connect(ctx.destination);o.type="sawtooth";
+      o.frequency.setValueAtTime(400,ctx.currentTime);
+      o.frequency.linearRampToValueAtTime(1200,ctx.currentTime+0.4);
+      o.frequency.linearRampToValueAtTime(400,ctx.currentTime+0.8);
+      g.gain.setValueAtTime(1.0,ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.9);
+      o.start(ctx.currentTime);o.stop(ctx.currentTime+0.9);
+    }
+  },
+  campainha: {
+    label:"Campainha", emoji:"🔔", descricao:"Campainha longa e clara",
+    tocarCtx:(ctx)=>{
+      [660,880,660].forEach((f,i)=>{
+        const o=ctx.createOscillator(),g=ctx.createGain();
+        o.connect(g);g.connect(ctx.destination);
+        o.frequency.value=f;o.type="sine";
+        g.gain.setValueAtTime(1.0,ctx.currentTime+i*0.25);
+        g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+i*0.25+0.22);
+        o.start(ctx.currentTime+i*0.25);o.stop(ctx.currentTime+i*0.25+0.22);
+      });
+    }
+  },
+  alerta_forte: {
+    label:"Alerta Forte", emoji:"⚡", descricao:"Tom alto e contínuo — mais chamativo",
+    tocarCtx:(ctx)=>{
+      [0,0.15,0.30,0.45].forEach(d=>{
+        const o=ctx.createOscillator(),g=ctx.createGain();
+        o.connect(g);g.connect(ctx.destination);
+        o.frequency.value=1400;o.type="square";
+        g.gain.setValueAtTime(1.0,ctx.currentTime+d);
+        g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+d+0.12);
+        o.start(ctx.currentTime+d);o.stop(ctx.currentTime+d+0.12);
+      });
+    }
+  },
+  two_tone: {
+    label:"Dois Tons", emoji:"🎵", descricao:"Alternância entre dois tons — estilo ambulância",
+    tocarCtx:(ctx)=>{
+      [700,900,700,900].forEach((f,i)=>{
+        const o=ctx.createOscillator(),g=ctx.createGain();
+        o.connect(g);g.connect(ctx.destination);
+        o.frequency.value=f;o.type="square";
+        g.gain.setValueAtTime(0.9,ctx.currentTime+i*0.2);
+        g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+i*0.2+0.18);
+        o.start(ctx.currentTime+i*0.2);o.stop(ctx.currentTime+i*0.2+0.18);
+      });
+    }
+  },
+};
+
+const TEMPO_PEDIDO = 30;
+const INTERVALO_SOM = 5;
+const MAX_TENTATIVAS = 10;
+const TEMPO_COOLDOWN_RECUSA_MS = 60 * 1000;
+const SUPORTE_TEL = "5512991213656";
+const SUPORTE_HORARIO = "Seg-Sex 9h-22h • Sáb 9h-19h • Dom/feriados: fechado";
+
+let _audioCtx = null;
+
+function getAudioCtx() {
+  if (!_audioCtx) {
+    _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (_audioCtx.state === "suspended") {
+    _audioCtx.resume();
+  }
+  return _audioCtx;
+}
+
+function tocarSomEscolhido(tipoSom) {
+  try {
+    const ctx = getAudioCtx();
+    SONS[tipoSom]?.tocarCtx(ctx);
+  } catch(e) { console.log("Som bloqueado:", e); }
+}
+
+// PENDENTE: hoje isso só entrega notificação enquanto o app está aberto no
+// navegador (via Notification API do Web/PWA). No app nativo, a entrega de
+// verdade com o app fechado/minimizado depende de trocar isso pelo OneSignal
+// nativo (Capacitor) — precisa de projeto Firebase (Android) e certificado
+// APNs (iOS) configurados pelo Alessandro antes de dar pra ligar.
+async function dispararNotificacaoPush(titulo, corpo) {
+  try {
+    if (window.OneSignal) {
+      console.log("Push OneSignal:", titulo);
+    }
+    if (!("Notification" in window)) return;
+    if (Notification.permission !== "granted") return;
+    if (!("serviceWorker" in navigator)) return;
+    const reg = await navigator.serviceWorker.ready;
+    reg.showNotification(titulo, {
+      body: corpo,
+      icon: "/favicon.svg",
+      badge: "/favicon.svg",
+      vibrate: [200, 100, 200, 100, 200],
+      requireInteraction: true,
+      data: { url: "/motoboy" },
+    });
+  } catch(e) { console.log("Push bloqueado:", e); }
+}
+
+function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
+  const [tick, setTick] = useState(0);
+  const [pulsando, setPulsando] = useState(true);
+
+  useEffect(()=>{
+    const t = setInterval(()=>setTick(x=>x+1), 1000);
+    return ()=>clearInterval(t);
+  },[]);
+
+  const ultimoToqueRef = useRef(-1);
+  useEffect(()=>{
+    const intervalo = setInterval(()=>{
+      const decorrido = Math.floor((Date.now()-pedido.criadoEm)/1000);
+      const toqueAtual = Math.floor(decorrido / INTERVALO_SOM);
+      if (toqueAtual !== ultimoToqueRef.current && decorrido < TEMPO_PEDIDO) {
+        ultimoToqueRef.current = toqueAtual;
+        tocarSomEscolhido(tipoSom);
+      }
+    }, 500);
+    return ()=>clearInterval(intervalo);
+  },[pedido.criadoEm, tipoSom]);
+
+  useEffect(()=>{
+    const t = setInterval(()=>setPulsando(x=>!x), 500);
+    return ()=>clearInterval(t);
+  },[]);
+
+  const decorrido = Math.floor((Date.now()-pedido.criadoEm)/1000);
+  const restantes = Math.max(0, TEMPO_PEDIDO - decorrido);
+  const pct = (restantes/TEMPO_PEDIDO)*100;
+  const corTimer = pct>50?"#34d399":pct>25?"#fbbf24":"#ef4444";
+
+  return (
+    <Overlay maxW={460} borderColor={pulsando?"#34d399":"#1a5c3a"}>
+      <div style={{textAlign:"center",marginBottom:16}}>
+        <div style={{fontSize:52,marginBottom:8}}>🏍️</div>
+        <div style={{color:"#34d399",fontWeight:900,fontSize:24}}>Novo Pedido!</div>
+        <div style={{color:"#6b7280",fontSize:13,marginTop:4}}>Aceite rápido — primeiro a aceitar fica com a entrega</div>
+      </div>
+
+      <div style={{marginBottom:16}}>
+        <div style={{background:"#1f2937",borderRadius:6,height:10,overflow:"hidden",marginBottom:6}}>
+          <div style={{background:corTimer,height:10,width:`${pct}%`,transition:"width 1s linear",borderRadius:6}}/>
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <span style={{color:corTimer,fontWeight:700,fontSize:14}}>⏱ {restantes}s para expirar</span>
+          <span style={{color:"#4b5563",fontSize:11}}>🔔 som a cada 5s</span>
+        </div>
+      </div>
+
+      <div style={{background:"#0f172a",borderRadius:12,padding:"16px",marginBottom:14}}>
+        <div style={{textAlign:"center",marginBottom:14,paddingBottom:14,borderBottom:"1px solid #1f2937"}}>
+          <div style={{color:"#6b7280",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Você vai receber</div>
+          <div style={{color:"#34d399",fontWeight:900,fontSize:48,lineHeight:1}}>R${pedido.taxa}</div>
+        </div>
+
+        <div style={{marginBottom:10}}>
+          <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏪 1º — Buscar no estabelecimento</div>
+          <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{pedido.empresaNome}</div>
+          <div style={{color:"#9ca3af",fontSize:13,marginTop:2}}>{pedido.empresaEndereco||"Perequê, Ilhabela/SP"}</div>
+          {pedido.empresaTel && (
+            <a href={`https://wa.me/55${pedido.empresaTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+              style={{display:"inline-block",marginTop:8,background:"#0f2540",color:"#60a5fa",padding:"5px 12px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>
+              💬 Falar com o estabelecimento
+            </a>
+          )}
+        </div>
+
+        <div style={{marginBottom:12}}>
+          <div style={{color:"#34d399",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏠 2º — Entregar para</div>
+          <div style={{color:"#f9fafb",fontWeight:700,fontSize:16}}>{pedido.clienteNome}</div>
+          <div style={{color:"#f9fafb",fontWeight:600,fontSize:14,marginTop:2}}>{pedido.rua}, {pedido.num}</div>
+          <div style={{color:"#34d399",fontSize:14,marginTop:2}}>{pedido.bairro} — Ilhabela/SP</div>
+          {pedido.ref && <div style={{color:"#fbbf24",fontSize:13,marginTop:4}}>📌 {pedido.ref}</div>}
+          {pedido.obs && <div style={{color:"#a78bfa",fontSize:13,marginTop:4,background:"#1a1a2e",borderRadius:6,padding:"6px 10px"}}>💬 Obs: {pedido.obs}</div>}
+        </div>
+
+        <div style={{textAlign:"center",background:"#111827",borderRadius:10,padding:"12px",marginBottom:0}}>
+          <div style={{color:"#6b7280",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Forma de pagamento</div>
+          <div style={{color:PG[pedido.pagamento]?.cor,fontWeight:900,fontSize:22}}>{PG[pedido.pagamento]?.icon} {PG[pedido.pagamento]?.label}</div>
+        </div>
+        {pedido.pagamento==="dinheiro" && (
+          <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"10px 14px",marginTop:10}}>
+            {pedido.valorPedido ? (
+              <>
+                <div style={{color:"#fbbf24",fontSize:13,fontWeight:900,marginBottom:2}}>💵 Cobrar R${pedido.valorPedido.toFixed(2)}</div>
+                {pedido.troco ? (
+                  <div style={{color:"#fbbf24",fontSize:13,fontWeight:700}}>🪙 Cliente paga com R${pedido.valorReceber.toFixed(2)} — levar troco de R${pedido.troco.toFixed(2)}</div>
+                ) : (
+                  <div style={{color:"#fbbf24",fontSize:12}}>Sem troco — valor exato</div>
+                )}
+              </>
+            ) : (
+              <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>💵 Cobrar na entrega e retornar com o dinheiro</div>
+            )}
+          </div>
+        )}
+        {pedido.pagamento==="cartao" && (
+          <div style={{background:"#1a2f4a",border:"1px solid #60a5fa",borderRadius:8,padding:"10px 14px",marginTop:10}}>
+            {pedido.valorPedido ? (
+              <div style={{color:"#60a5fa",fontSize:13,fontWeight:900}}>💳 Cobrar R${pedido.valorPedido.toFixed(2)} na maquininha</div>
+            ) : (
+              <div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>💳 Pegar a maquininha no estabelecimento</div>
+            )}
+          </div>
+        )}
+        {pedido.pagamento==="pix" && <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"8px 12px",marginTop:10}}><div style={{color:"#34d399",fontSize:12,fontWeight:700}}>💠 Pix já pago — só entregar</div></div>}
+      </div>
+
+      <div style={{display:"flex",gap:10}}>
+        <button onClick={onRecusar} style={{flex:1,padding:"14px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:15,cursor:"pointer"}}>
+          ❌ Recusar
+        </button>
+        <button onClick={onAceitar} style={{flex:2,padding:"14px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:900,fontSize:20,cursor:"pointer"}}>
+          ✅ ACEITAR
+        </button>
+      </div>
+    </Overlay>
+  );
+}
+
+function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
+  const [pedidosEntregues, setPedidosEntregues] = useState([]);
+  const [saiuEstab, setSaiuEstab] = useState({});
+  const [modalCancelar, setModalCancelar] = useState(false);
+  const [motivoCancelamento, setMotivoCancelamento] = useState("");
+  const [motivoCustom, setMotivoCustom] = useState("");
+
+  async function sairEstabelecimento(pedidoId) {
+    setSaiuEstab(prev=>({...prev,[pedidoId]:true}));
+    await supabase.from("pedidos").update({
+      status: "saiu_estabelecimento",
+      saiu_estabelecimento_em: new Date().toISOString(),
+    }).eq("id", pedidoId);
+  }
+
+  function marcarEntregue(pedidoId) {
+    const novos = [...pedidosEntregues, pedidoId];
+    setPedidosEntregues(novos);
+    const todos = corrida.pedidos.map(p=>p.id);
+    if (todos.every(id=>novos.includes(id))) {
+      setTimeout(()=>onEntregar(), 800);
+    }
+  }
+
+  function abrirGPSEstab(p) {
+    const destino = p.empresaEndereco
+      ? `${p.empresaEndereco}, Ilhabela, SP`
+      : `${p.empresaNome}, Ilhabela, SP, Brasil`;
+    const end = encodeURIComponent(destino);
+    window.open(`https://www.google.com/maps/dir/?api=1&destination=${end}&travelmode=driving`,"_blank");
+  }
+  function abrirGPSCliente(p) {
+    const destino = `${p.rua}, ${p.num}, ${p.bairro}, Ilhabela, SP`;
+    const end = encodeURIComponent(destino);
+    const urlWeb = `https://www.google.com/maps/search/?api=1&query=${end}`;
+    window.open(urlWeb, "_blank");
+  }
+
+  return (
+    <div>
+      <div style={{marginBottom:14}}>
+        <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>🏍️ Corrida em Andamento</div>
+        <div style={{color:"#6b7280",fontSize:13}}>{corrida.pedidos.length} pedido{corrida.pedidos.length!==1?"s":""} · {pedidosEntregues.length}/{corrida.pedidos.length} entregues</div>
+      </div>
+
+      <div style={{background:"#1f2937",borderRadius:6,height:8,marginBottom:16}}>
+        <div style={{background:"#34d399",borderRadius:6,height:8,width:`${(pedidosEntregues.length/corrida.pedidos.length)*100}%`,transition:"width 0.5s"}}/>
+      </div>
+
+      {corrida.pedidos.map((p,i)=>{
+        const entregue = pedidosEntregues.includes(p.id);
+        const saiu = saiuEstab[p.id];
+        const pg = PG[p.pagamento]||{icon:"•",cor:"#9ca3af",label:p.pagamento};
+        return (
+          <Card key={p.id} style={{marginBottom:12,border:`1px solid ${entregue?"#34d399":saiu?"#fbbf24":"#3b82f6"}`,background:entregue?"#0a1f14":"#111827"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                {entregue ? <Tag label="✅ Entregue" cor="#34d399"/>
+                  : saiu ? <Tag label="🏍️ A caminho do cliente" cor="#fbbf24"/>
+                  : <Tag label={`📦 Pedido #${i+1} — Buscar no estabelecimento`} cor="#60a5fa"/>}
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{color:pg.cor,fontSize:13,fontWeight:700}}>{pg.icon} {pg.label}</div>
+                <div style={{color:"#34d399",fontWeight:900,fontSize:22}}>R${p.taxa}</div>
+              </div>
+            </div>
+
+            {!entregue && !saiu && (
+              <div>
+                <div style={{background:"#1a2f4a",border:"1px solid #3b82f6",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+                  <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏪 1º — Ir buscar no estabelecimento</div>
+                  <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{p.empresaNome}</div>
+                  <div style={{color:"#9ca3af",fontSize:13,marginTop:2}}>{p.empresaEndereco||"Perequê, Ilhabela/SP"}</div>
+                  {p.empresaTel && (
+                    <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
+                      <a href={`https://wa.me/55${p.empresaTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                        style={{background:"#0f2540",color:"#60a5fa",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>💬 Falar com o estabelecimento</a>
+                      <a href={`tel:${p.empresaTel.replace(/\D/g,"")}`}
+                        style={{background:"#0f2540",color:"#60a5fa",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>📱 Ligar</a>
+                    </div>
+                  )}
+                  <button onClick={()=>abrirGPSEstab(p)} style={{marginTop:8,width:"100%",padding:"9px",borderRadius:8,background:"#1e3a5f",border:"1px solid #3b82f6",color:"#60a5fa",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+                    🗺️ Abrir rota para o estabelecimento
+                  </button>
+                  {p.empresaTel && (
+                    <div style={{color:"#4b5563",fontSize:11,textAlign:"center",marginTop:6}}>
+                      💡 Não achou o local? Manda mensagem no WhatsApp do estabelecimento acima
+                    </div>
+                  )}
+                </div>
+
+                <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+                  <div style={{color:"#6b7280",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏠 2º — Depois, entregar para</div>
+                  <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{p.clienteNome}</div>
+                  <div style={{color:"#d1d5db",fontWeight:600,fontSize:14,marginTop:2}}>{p.rua}, {p.num}</div>
+                  <div style={{color:"#9ca3af",fontSize:13,marginTop:2}}>{p.bairro} — Ilhabela/SP</div>
+                  {p.ref && <div style={{color:"#fbbf24",fontSize:12,marginTop:3}}>📌 Ref: {p.ref}</div>}
+                  {p.obs && <div style={{color:"#a78bfa",fontSize:12,marginTop:3,background:"#1a1a2e",borderRadius:6,padding:"5px 8px"}}>💬 Obs: {p.obs}</div>}
+                  <div style={{color:"#4b5563",fontSize:11,marginTop:6}}>📵 Contato do cliente libera depois que você clicar em "Saí do estabelecimento"</div>
+                </div>
+
+                {p.pagamento==="dinheiro" && (
+                  <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+                    {p.valorPedido ? (
+                      <>
+                        <div style={{color:"#fbbf24",fontSize:13,fontWeight:900}}>💵 Cobrar R${p.valorPedido.toFixed(2)}</div>
+                        {p.troco ? (
+                          <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>🪙 Recebe R${p.valorReceber.toFixed(2)} — troco de R${p.troco.toFixed(2)}</div>
+                        ) : <div style={{color:"#fbbf24",fontSize:11}}>Sem troco</div>}
+                      </>
+                    ) : <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>💵 Cobrar na entrega e retornar com o dinheiro</div>}
+                  </div>
+                )}
+                {p.pagamento==="cartao" && (
+                  <div style={{background:"#1a2f4a",border:"1px solid #60a5fa",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+                    {p.valorPedido ? (
+                      <div style={{color:"#60a5fa",fontSize:13,fontWeight:900}}>💳 Cobrar R${p.valorPedido.toFixed(2)} na maquininha</div>
+                    ) : <div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>💳 Pegar a maquininha no estabelecimento</div>}
+                  </div>
+                )}
+
+                <button onClick={()=>sairEstabelecimento(p.id, p)} style={{width:"100%",padding:"14px",borderRadius:10,background:"#f59e0b",border:"none",color:"#000",fontWeight:900,fontSize:16,cursor:"pointer"}}>
+                  🏍️ Saí do estabelecimento — iniciar entrega
+                </button>
+                <div style={{color:"#4b5563",fontSize:11,textAlign:"center",marginTop:6}}>
+                  ⚠️ Clique obrigatório ao sair — registra o horário e libera a navegação para o cliente
+                </div>
+              </div>
+            )}
+
+            {!entregue && saiu && (
+              <div>
+                <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+                  <div style={{color:"#34d399",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏠 Entregar ao cliente</div>
+                  <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{p.clienteNome}</div>
+                  <div style={{color:"#f9fafb",fontWeight:600,fontSize:14,marginTop:2}}>{p.rua}, {p.num}</div>
+                  <div style={{color:"#34d399",fontSize:13,marginTop:2}}>{p.bairro} — Ilhabela/SP</div>
+                  {p.ref && <div style={{color:"#fbbf24",fontSize:12,marginTop:3}}>📌 Ref: {p.ref}</div>}
+                  {p.obs && <div style={{color:"#9ca3af",fontSize:12,marginTop:3}}>💬 {p.obs}</div>}
+                  {p.clienteTel && (
+                    <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
+                      <a href={`https://wa.me/55${p.clienteTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                        style={{background:"#0a2a1e",color:"#34d399",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>💬 WhatsApp</a>
+                      <a href={`tel:${p.clienteTel.replace(/\D/g,"")}`}
+                        style={{background:"#0a2a1e",color:"#34d399",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>📱 Ligar</a>
+                    </div>
+                  )}
+                  <button onClick={()=>abrirGPSCliente(p)} style={{marginTop:8,width:"100%",padding:"9px",borderRadius:8,background:"#0a2a1e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+                    🗺️ Abrir rota para o cliente
+                  </button>
+                </div>
+
+                {p.pagamento==="dinheiro" && (
+                  <div style={{background:"#3d2a00",border:"1px solid #fbbf24",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+                    {p.valorPedido ? (
+                      <>
+                        <div style={{color:"#fbbf24",fontSize:13,fontWeight:900}}>💵 Cobrar R${p.valorPedido.toFixed(2)}</div>
+                        {p.troco ? (
+                          <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>🪙 Recebe R${p.valorReceber.toFixed(2)} — troco de R${p.troco.toFixed(2)}</div>
+                        ) : <div style={{color:"#fbbf24",fontSize:11}}>Sem troco</div>}
+                      </>
+                    ) : <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>💵 Cobrar na entrega</div>}
+                  </div>
+                )}
+                {p.pagamento==="cartao" && (
+                  <div style={{background:"#1a2f4a",border:"1px solid #60a5fa",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+                    {p.valorPedido ? (
+                      <div style={{color:"#60a5fa",fontSize:13,fontWeight:900}}>💳 Cobrar R${p.valorPedido.toFixed(2)} na maquininha</div>
+                    ) : <div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>💳 Cobrar na maquininha</div>}
+                  </div>
+                )}
+                {p.pagamento==="pix" && (
+                  <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+                    <div style={{color:"#34d399",fontSize:13,fontWeight:900}}>💠 Pix já pago — sem cobrança</div>
+                  </div>
+                )}
+
+                <div style={{background:"#0f172a",borderRadius:8,padding:"8px 12px",marginBottom:10}}>
+                  <div style={{color:"#9ca3af",fontSize:12,fontWeight:700}}>ℹ️ O estabelecimento já avisa o cliente que o pedido saiu.</div>
+                </div>
+
+                {p.empresaTel && (
+                  <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:10,padding:"10px 14px",marginBottom:10,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+                    <div>
+                      <div style={{color:"#9ca3af",fontSize:11,fontWeight:700}}>🏪 Precisa falar com o estabelecimento?</div>
+                      <div style={{color:"#6b7280",fontSize:11,marginTop:1}}>{p.empresaNome} — ex: cliente não responde, endereço errado</div>
+                    </div>
+                    <a href={`https://wa.me/55${p.empresaTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                      style={{background:"#0d3d2e",color:"#34d399",padding:"6px 12px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none",whiteSpace:"nowrap"}}>💬 WhatsApp</a>
+                  </div>
+                )}
+
+                <button onClick={()=>marcarEntregue(p.id)} style={{width:"100%",padding:"14px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
+                  ✅ Confirmar entrega
+                </button>
+              </div>
+            )}
+
+            {entregue && (
+              <div style={{textAlign:"center",padding:"10px",background:"#0d3d2e",borderRadius:8}}>
+                <span style={{color:"#34d399",fontWeight:700,fontSize:13}}>✅ Entregue para {p.clienteNome}!</span>
+              </div>
+            )}
+          </Card>
+        );
+      })}
+
+      <div style={{marginTop:10}}>
+        <button onClick={()=>setModalCancelar(true)} style={{width:"100%",padding:"12px",borderRadius:10,background:"#1f2937",border:"1px solid #ef444466",color:"#f87171",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+          ⚠️ Problema na entrega
+        </button>
+      </div>
+
+      {modalCancelar && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:"#111827",border:"2px solid #ef4444",borderRadius:16,width:"100%",maxWidth:420,padding:24}}>
+            <div style={{color:"#f87171",fontWeight:900,fontSize:18,marginBottom:6}}>⚠️ Problema na entrega</div>
+            <div style={{color:"#9ca3af",fontSize:13,marginBottom:16}}>Selecione o motivo. O empresário e a plataforma serão notificados imediatamente.</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
+              {[
+                {id:"pneu",    icon:"🔴", label:"Pneu furado"},
+                {id:"gasolina",icon:"⛽", label:"Acabou a gasolina"},
+                {id:"acidente",icon:"🤕", label:"Acidente / queda"},
+                {id:"saude",   icon:"🏥", label:"Problema de saúde"},
+                {id:"longe",   icon:"📍", label:"Muito longe pra buscar"},
+                {id:"outro",   icon:"📝", label:"Outro motivo"},
+              ].map(m=>(
+                <button key={m.id} onClick={()=>setMotivoCancelamento(m.id)} style={{
+                  padding:"12px 16px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:14,textAlign:"left",
+                  background:motivoCancelamento===m.id?"#3d1010":"#0f172a",
+                  border:motivoCancelamento===m.id?"2px solid #ef4444":"2px solid #1f2937",
+                  color:motivoCancelamento===m.id?"#f87171":"#d1d5db",
+                }}>{m.icon} {m.label}</button>
+              ))}
+            </div>
+            {motivoCancelamento==="outro" && (
+              <div style={{marginBottom:14}}>
+                <textarea value={motivoCustom} onChange={e=>setMotivoCustom(e.target.value)}
+                  placeholder="Descreva o problema..." rows={3}
+                  style={{background:"#0f172a",border:"1px solid #ef4444",borderRadius:8,color:"#f9fafb",padding:"10px 12px",width:"100%",fontSize:13,outline:"none",resize:"none",boxSizing:"border-box"}}/>
+              </div>
+            )}
+            <div style={{background:"#3d1010",borderRadius:8,padding:"10px 14px",marginBottom:14}}>
+              <div style={{color:"#f87171",fontSize:12,fontWeight:700}}>⚠️ Ao confirmar você ficará offline automaticamente e o empresário receberá um aviso automático na tela dele com o motivo.</div>
+              <div style={{color:"#fbbf24",fontSize:11,marginTop:6}}>💡 Se der, avisa o estabelecimento direto pelo WhatsApp também (botão "Falar com o estabelecimento" na tela da corrida) — assim ele já sabe na hora e não fica esperando.</div>
+            </div>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{
+                const motivo = motivoCancelamento==="outro" ? motivoCustom : {pneu:"Pneu furado",gasolina:"Acabou a gasolina",acidente:"Acidente / queda",saude:"Problema de saúde",longe:"Muito longe pra buscar"}[motivoCancelamento];
+                if (!motivo) return;
+                onCancelar(motivo);
+                setModalCancelar(false);
+              }}
+                disabled={!motivoCancelamento||(motivoCancelamento==="outro"&&!motivoCustom.trim())}
+                style={{flex:2,padding:"13px",borderRadius:10,background:"#ef4444",border:"none",color:"#fff",fontWeight:800,fontSize:15,cursor:"pointer",
+                  opacity:(!motivoCancelamento||(motivoCancelamento==="outro"&&!motivoCustom.trim()))?0.4:1}}>
+                Confirmar cancelamento
+              </button>
+              <button onClick={()=>{setModalCancelar(false);setMotivoCancelamento("");setMotivoCustom("");}}
+                style={{flex:1,padding:"13px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+                Voltar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy }) {
+  const [verTudo, setVerTudo] = useState(false);
+  const [dataSelecionada, setDataSelecionada] = useState(dataLocalISO());
+
+  const agora = new Date();
+  const mesAtual = agora.getMonth() + 1;
+  const segundaAtual = segundaFeiraDaSemana(agora);
+  const nomesMes = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  const nomeMesAtual = nomesMes[mesAtual-1];
+  const hojeStr = agora.toLocaleDateString("pt-BR");
+  const hojeISO = dataLocalISO();
+  const ontemISO = (()=>{ const d=new Date(); d.setDate(d.getDate()-1); return dataLocalISO(d); })();
+
+  const entregues = historico.filter(e=>e.status==="Entregue");
+
+  const semanaAtual = entregues.filter(e=>e.semana===segundaAtual&&!e.repasePago);
+  const saldoSemana = semanaAtual.reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
+
+  const semanasAnteriores = entregues.filter(e=>e.semana<segundaAtual&&!e.repasePago);
+  const saldoSemanasAnteriores = semanasAnteriores.reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
+
+  const totalHistorico = entregues.reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
+  const totalEntregas  = entregues.length;
+
+  const entregasDoDia = entregues.filter(e=>e.dataISO===dataSelecionada);
+  const totalDoDia = entregasDoDia.reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
+  const dataDoDiaFmt = new Date(dataSelecionada+"T12:00:00").toLocaleDateString("pt-BR");
+
+  const porDia = {};
+  entregues.forEach(e=>{
+    if (!e.dataISO) return;
+    if (!porDia[e.dataISO]) porDia[e.dataISO] = {qtd:0, total:0, todasPagas:true};
+    porDia[e.dataISO].qtd++;
+    porDia[e.dataISO].total += (Number(e.taxa)||0);
+    if (!e.repasePago) porDia[e.dataISO].todasPagas = false;
+  });
+  const diasOrdenados = Object.entries(porDia).sort((a,b)=>b[0].localeCompare(a[0]));
+
+  const mesMes = entregues.filter(e=>e.mes===mesAtual);
+  const ganhosMes = mesMes.reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
+
+  const entregasHoje = entregues.filter(e=>e.data===hojeStr).length;
+
+  const ranking = (() => {
+    if (!todosHistorico || todosHistorico.length === 0) return null;
+    const contagem = {};
+    todosHistorico.filter(e=>e.status==="Entregue"&&e.mes===mesAtual).forEach(e=>{
+      contagem[e.motoboyId] = (contagem[e.motoboyId]||0) + 1;
+    });
+    const minhas = contagem[motoboyId] || 0;
+    const posicao = Object.values(contagem).filter(v=>v>minhas).length + 1;
+    return posicao;
+  })();
+
+  const lista = verTudo ? entregues.slice().reverse() : semanaAtual.slice().reverse();
+
+  return (
+    <div>
+      <div style={{marginBottom:16}}>
+        <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>💰 Meus Ganhos</div>
+        <div style={{color:"#6b7280",fontSize:13}}>Repasse toda terça-feira</div>
+      </div>
+
+      <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:12,padding:"16px 18px",marginBottom:14}}>
+        <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📅 Taxas por dia</div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginBottom:12}}>
+          <input type="date" value={dataSelecionada} onChange={e=>setDataSelecionada(e.target.value)}
+            style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"9px 12px",fontSize:14,outline:"none"}}/>
+          <button onClick={()=>setDataSelecionada(hojeISO)} style={{padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:12,background:dataSelecionada===hojeISO?"#0d3d2e":"#1f2937",border:dataSelecionada===hojeISO?"1px solid #34d399":"1px solid #374151",color:dataSelecionada===hojeISO?"#34d399":"#9ca3af"}}>Hoje</button>
+          <button onClick={()=>setDataSelecionada(ontemISO)} style={{padding:"8px 14px",borderRadius:8,cursor:"pointer",fontWeight:700,fontSize:12,background:dataSelecionada===ontemISO?"#0d3d2e":"#1f2937",border:dataSelecionada===ontemISO?"1px solid #34d399":"1px solid #374151",color:dataSelecionada===ontemISO?"#34d399":"#9ca3af"}}>Ontem</button>
+        </div>
+        <div style={{color:"#6b7280",fontSize:12,marginBottom:4}}>{dataDoDiaFmt}</div>
+        <div style={{color:"#34d399",fontSize:32,fontWeight:900}}>R${totalDoDia}</div>
+        <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>{entregasDoDia.length} entrega{entregasDoDia.length!==1?"s":""} nesta data{entregasDoDia.length>0 && (entregasDoDia.every(e=>e.repasePago) ? " · ✅ já paga" : " · ⏳ ainda não paga")}</div>
+      </div>
+
+      {entregasDoDia.length>0 && (
+        <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"14px 16px",marginBottom:14}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Entregas de {dataDoDiaFmt}</div>
+          {entregasDoDia.map(e=>(
+            <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #1f2937"}}>
+              <div>
+                <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
+                <span style={{color:"#34d399",fontSize:12,marginLeft:8}}>{e.bairro}</span>
+              </div>
+              <span style={{color:"#fbbf24",fontWeight:700,fontSize:13}}>R${e.taxa}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {diasOrdenados.length>0 && (
+        <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📆 Dias anteriores</div>
+          {diasOrdenados.slice(0,30).map(([data,info])=>{
+            const dFmt = new Date(data+"T12:00:00").toLocaleDateString("pt-BR");
+            const sel = data===dataSelecionada;
+            return (
+              <div key={data} onClick={()=>setDataSelecionada(data)}
+                style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:sel?"#0d3d2e":"#0f172a",border:sel?"1px solid #34d399":"1px solid #1f2937",borderRadius:8,padding:"9px 14px",marginBottom:6,cursor:"pointer",flexWrap:"wrap",gap:6}}>
+                <span style={{color:sel?"#34d399":"#d1d5db",fontSize:13,fontWeight:600}}>{dFmt}</span>
+                <span style={{color:"#6b7280",fontSize:12}}>{info.qtd} entrega{info.qtd!==1?"s":""}</span>
+                <span style={{color:"#fbbf24",fontWeight:700,fontSize:14}}>R${info.total.toFixed(2)}</span>
+                <span style={{background:info.todasPagas?"#0d3d2e":"#3d2a00",color:info.todasPagas?"#34d399":"#fbbf24",padding:"2px 8px",borderRadius:10,fontSize:10,fontWeight:700,border:`1px solid ${info.todasPagas?"#34d399":"#fbbf24"}44`}}>{info.todasPagas?"✅ Pago":"⏳ Pendente"}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
+        <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"16px 18px",flex:1,minWidth:130}}>
+          <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>A receber esta semana</div>
+          <div style={{color:"#fbbf24",fontSize:28,fontWeight:900,lineHeight:1}}>R${saldoSemana}</div>
+          <div style={{color:"#6b7280",fontSize:11,marginTop:4}}>{semanaAtual.length} entrega{semanaAtual.length!==1?"s":""} — semana de {segundaAtual.split("-").reverse().join("/")}</div>
+          <div style={{background:"#1f2937",borderRadius:4,height:4,marginTop:8}}>
+            <div style={{background:"#fbbf24",borderRadius:4,height:4,width:"60%"}}/>
+          </div>
+          <div style={{color:"#4b5563",fontSize:10,marginTop:4}}>Pago toda terça-feira via PIX</div>
+        </div>
+        {semanasAnteriores.length>0 && (
+          <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:10,padding:"16px 18px",flex:1,minWidth:130}}>
+            <div style={{color:"#fbbf24",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>⏳ A receber semana passada</div>
+            <div style={{color:"#f59e0b",fontSize:28,fontWeight:900,lineHeight:1}}>R${saldoSemanasAnteriores}</div>
+            <div style={{color:"#6b7280",fontSize:11,marginTop:4}}>{semanasAnteriores.length} entrega{semanasAnteriores.length!==1?"s":""} ainda não paga{semanasAnteriores.length!==1?"s":""}</div>
+            <div style={{color:"#4b5563",fontSize:10,marginTop:8}}>Confere com o PIX que a plataforma te mandar — some daqui assim que for pago</div>
+          </div>
+        )}
+        <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"16px 18px",flex:1,minWidth:130}}>
+          <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Ganhos este mês</div>
+          <div style={{color:"#60a5fa",fontSize:24,fontWeight:800,lineHeight:1}}>R${ganhosMes}</div>
+          <div style={{color:"#6b7280",fontSize:11,marginTop:4}}>{mesMes.length} entregas em {nomeMesAtual}</div>
+        </div>
+        <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"16px 18px",flex:1,minWidth:130}}>
+          <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:5}}>Total histórico</div>
+          <div style={{color:"#a78bfa",fontSize:24,fontWeight:800,lineHeight:1}}>R${totalHistorico}</div>
+          <div style={{color:"#6b7280",fontSize:11,marginTop:4}}>{totalEntregas} entregas no total</div>
+        </div>
+      </div>
+
+      {rankingGeral && rankingGeral.length > 0 && (
+        <div style={{marginBottom:16}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>
+            🏆 Ranking de {nomeMesAtual} — {rankingGeral.length} motoboy{rankingGeral.length!==1?"s":""}
+          </div>
+
+          {(()=>{
+            const minhaPosicao = rankingGeral.findIndex(m=>m.id===motoboyId);
+            const minhasEntregas = minhaPosicao>=0 ? rankingGeral[minhaPosicao].qtd : mesMes.length;
+            const pos = minhaPosicao+1;
+            const proximo = minhaPosicao>0 ? rankingGeral[minhaPosicao-1] : null;
+            const faltam = proximo ? proximo.qtd - minhasEntregas + 1 : 0;
+
+            return (
+              <div style={{background:"#1a1000",border:"2px solid #f59e0b",borderRadius:12,padding:"14px 16px",marginBottom:12}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{fontSize:36}}>{pos===1?"🥇":pos===2?"🥈":pos===3?"🥉":"🏆"}</div>
+                  <div style={{flex:1}}>
+                    <div style={{color:"#f59e0b",fontWeight:900,fontSize:16}}>Você está em #{pos}º lugar!</div>
+                    <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>
+                      {minhasEntregas} entrega{minhasEntregas!==1?"s":""} este mês
+                    </div>
+                    {proximo && (
+                      <div style={{color:"#34d399",fontSize:12,marginTop:4,fontWeight:700}}>
+                        ⬆️ Faltam {faltam} entrega{faltam!==1?"s":""} para passar {proximo.nome.split(" ")[0]}
+                      </div>
+                    )}
+                    {pos===1 && <div style={{color:"#34d399",fontSize:12,marginTop:4,fontWeight:700}}>🚀 Você é o líder! Continue assim!</div>}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,overflow:"hidden"}}>
+            {rankingGeral.map((mb, i)=>{
+              const isEu = mb.id === motoboyId;
+              const medal = i===0?"🥇":i===1?"🥈":i===2?"🥉":null;
+              const corBg = isEu?"#0d2a1e":i<3?"#0f172a":"transparent";
+              const maxQtd = rankingGeral[0]?.qtd || 1;
+
+              return (
+                <div key={mb.id} style={{
+                  background:corBg,
+                  borderBottom:"1px solid #1f2937",
+                  borderLeft:`3px solid ${isEu?"#34d399":"transparent"}`,
+                  padding:"10px 14px",
+                }}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{
+                      width:28,height:28,borderRadius:"50%",flexShrink:0,
+                      display:"flex",alignItems:"center",justifyContent:"center",
+                      fontWeight:900,fontSize:i<3?16:12,
+                      background:i===0?"#f59e0b":i===1?"#9ca3af":i===2?"#b45309":"#1f2937",
+                      color:i<3?"#000":"#6b7280",
+                    }}>
+                      {medal || i+1}
+                    </div>
+
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:3}}>
+                        <span style={{
+                          color:isEu?"#34d399":"#f9fafb",
+                          fontWeight:isEu?900:600,
+                          fontSize:13,
+                        }}>
+                          {mb.nome.split(" ").slice(0,2).join(" ")}
+                          {isEu && <span style={{color:"#34d399",fontSize:10,fontWeight:700,marginLeft:6,background:"#0d3d2e",padding:"1px 6px",borderRadius:8}}>VOCÊ</span>}
+                        </span>
+                        <div style={{textAlign:"right",flexShrink:0}}>
+                          <span style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>{mb.qtd} entrega{mb.qtd!==1?"s":""}</span>
+                        </div>
+                      </div>
+                      <div style={{background:"#1f2937",borderRadius:4,height:4}}>
+                        <div style={{
+                          background:isEu?"#34d399":i===0?"#f59e0b":"#374151",
+                          borderRadius:4,height:4,
+                          width:`${Math.round((mb.qtd/maxQtd)*100)}%`,
+                          transition:"width 0.5s",
+                        }}/>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {(!rankingGeral || rankingGeral.length === 0) && mesMes.length > 0 && (
+        <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:10,padding:"12px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:12}}>
+          <div style={{fontSize:32}}>🏆</div>
+          <div>
+            <div style={{color:"#f59e0b",fontWeight:800,fontSize:14}}>{mesMes.length} entrega{mesMes.length!==1?"s":""} em {nomeMesAtual}</div>
+            <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>Ranking carregando... 🚀</div>
+          </div>
+        </div>
+      )}
+
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>
+          {verTudo?"Histórico completo":"Extrato desta semana"}
+        </div>
+        <button onClick={()=>setVerTudo(x=>!x)} style={{background:"#1f2937",border:"1px solid #374151",borderRadius:6,color:"#9ca3af",padding:"5px 12px",cursor:"pointer",fontSize:12,fontWeight:700}}>
+          {verTudo?"Ver semana":"Ver tudo"}
+        </button>
+      </div>
+
+      <div>
+        {lista.map(e=>{
+          const pg = PG[e.pagamento]||{icon:"•",cor:"#9ca3af",label:e.pagamento};
+          const entregue = e.status==="Entregue";
+          return (
+            <div key={e.id} style={{background:"#111827",border:`1px solid ${entregue?"#1f2937":"#3d1010"}`,borderRadius:10,padding:"14px 16px",marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                <span style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:700}}>
+                  {entregue?"✅ Entregue":"❌ Cancelada"}
+                </span>
+                <div style={{textAlign:"right"}}>
+                  <div style={{color:"#fbbf24",fontWeight:900,fontSize:18}}>R${e.taxa}</div>
+                  <div style={{color:pg.cor,fontSize:11,fontWeight:700}}>{pg.icon} {pg.label}</div>
+                </div>
+              </div>
+              <div style={{marginBottom:6}}>
+                <div style={{color:"#f9fafb",fontWeight:700,fontSize:14}}>{e.clienteNome}</div>
+                <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>🏪 {e.empresaNome}</div>
+                <div style={{color:"#34d399",fontSize:12,marginTop:2}}>📍 {e.bairro}</div>
+              </div>
+              <div style={{display:"flex",gap:12,borderTop:"1px solid #1f2937",paddingTop:8,marginTop:4}}>
+                <div style={{fontSize:11,color:"#6b7280"}}>📅 {e.data}</div>
+                <div style={{fontSize:11,color:"#6b7280"}}>🕐 {e.hora}</div>
+              </div>
+            </div>
+          );
+        })}
+        {lista.length===0 && <div style={{textAlign:"center",padding:24,color:"#4b5563",background:"#111827",borderRadius:10}}>Nenhuma entrega ainda.</div>}
+      </div>
+
+      {!verTudo && semanaAtual.length>0 && (
+        <div style={{marginTop:10,textAlign:"center"}}>
+          <div style={{background:"#0f172a",borderRadius:8,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{color:"#9ca3af",fontWeight:700}}>TOTAL A RECEBER TERÇA</span>
+            <span style={{color:"#fbbf24",fontWeight:900,fontSize:22}}>R${saldoSemana}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function Motoboy() {
+  const navigate = useNavigate();
+  const [somAtivado, setSomAtivado] = useState(()=>{
+    try { return localStorage.getItem("motofast_som_ativado") === "1"; } catch(e) { return false; }
+  });
+  const audioCtxRef = useRef(null);
+  const [online, setOnline] = useState(false);
+  const [aba, setAba] = useState("home");
+  const [historico, setHistorico] = useState([]);
+  const [pedidoDisponivel, setPedidoDisponivel] = useState(null);
+  const [corridaAtiva, setCorridaAtiva] = useState(null);
+  const [tipoSom, setTipoSom] = useState("alerta_forte");
+  const [pedidoCancelado, setPedidoCancelado] = useState(false);
+  const [motoboyId, setMotoboyId] = useState(null);
+  const [motoboy, setMotoboy] = useState(MOTOBOY_VAZIO);
+  const [rankingGeral, setRankingGeral] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const tentativas = useRef(0);
+  const pedidoRef = useRef(null);
+  const ofertaAtivaRef = useRef(null);
+  const recusadosRef = useRef({});
+  const [permissaoNotificacao, setPermissaoNotificacao] = useState(()=>{
+    try { return ("Notification" in window) ? Notification.permission : "unsupported"; }
+    catch(e) { return "unsupported"; }
+  });
+
+  const ehContaMonitoramento = motoboyId ? CONTAS_MONITORAMENTO_IDS.includes(motoboyId) : false;
+
+  function ativarNotificacoesAgora() {
+    try {
+      if (window.OneSignalDeferred) {
+        window.OneSignalDeferred.push(async function(OneSignal) {
+          await OneSignal.Notifications.requestPermission();
+          try { setPermissaoNotificacao(Notification.permission); } catch(e) {}
+        });
+      } else if ("Notification" in window) {
+        Notification.requestPermission().then(p=>setPermissaoNotificacao(p));
+      }
+    } catch(e) { console.log("Erro ao pedir permissão manualmente:", e); }
+  }
+
+  useEffect(()=>{
+    async function carregar() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) { return; }
+
+        const { data: mb, error } = await supabase
+          .from("motoboys")
+          .select("*")
+          .eq("user_id", user.id)
+          .maybeSingle();
+
+        if (error) console.error("Erro ao buscar motoboy:", error);
+        if (mb) {
+          setMotoboyId(mb.id);
+          try {
+            if (window.OneSignalDeferred) {
+              window.OneSignalDeferred.push(async function(OneSignal) {
+                await OneSignal.login(String(mb.id));
+                await OneSignal.Notifications.requestPermission();
+              });
+            } else if ("Notification" in window && Notification.permission === "default") {
+              await Notification.requestPermission();
+            }
+          } catch(e) { console.log("OneSignal login/permissão:", e); }
+          setMotoboy({
+            id: mb.id,
+            nomeCompleto: mb.nome_completo,
+            tel: mb.telefone,
+            pix: mb.pix,
+            bairroBase: mb.bairro_base,
+          });
+          setOnline(mb.online || false);
+
+          const { data: pedidosDB } = await supabase
+            .from("pedidos")
+            .select("*, empresarios(nome)")
+            .eq("motoboy_id", mb.id)
+            .in("status", ["entregue", "cancelado"])
+            .order("criado_em", { ascending: false });
+
+          const { data: pedidosAtivosDB } = await supabase
+            .from("pedidos")
+            .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
+            .eq("motoboy_id", mb.id)
+            .in("status", ["aceito", "saiu_estabelecimento"])
+            .order("criado_em", { ascending: true });
+
+          if (pedidosAtivosDB && pedidosAtivosDB.length > 0) {
+            const corridaIdAtiva = pedidosAtivosDB[0].corrida_id;
+            setCorridaAtiva({
+              id: corridaIdAtiva,
+              pedidos: pedidosAtivosDB.map(p=>({
+                id: p.id,
+                empresaNome: p.empresarios?.nome || "Estabelecimento",
+                empresaTel: p.empresarios?.telefone || "",
+                empresaEndereco: p.empresarios?.endereco_estabelecimento || "",
+                clienteNome: p.cliente_nome,
+                clienteTel: p.cliente_telefone,
+                rua: p.rua, num: p.numero,
+                bairro: p.bairro, ref: p.referencia, obs: p.observacao,
+                pagamento: p.forma_pagamento, taxa: p.taxa_motoboy || p.taxa,
+                valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
+                criadoEm: new Date(p.criado_em).getTime(),
+                statusBanco: p.status,
+              })),
+            });
+          }
+
+          if (pedidosDB) {
+            setHistorico(pedidosDB.map(p=>{
+              const d = new Date(p.criado_em);
+              return {
+                id: p.id,
+                clienteNome: p.cliente_nome,
+                empresaNome: p.empresarios?.nome || "Estabelecimento",
+                bairro: p.bairro,
+                pagamento: p.forma_pagamento,
+                taxa: p.taxa_motoboy || p.taxa,
+                status: p.status==="entregue" ? "Entregue" : "Cancelada",
+                data: d.toLocaleDateString("pt-BR"),
+                dataISO: dataLocalISO(d),
+                hora: d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
+                semana: segundaFeiraDaSemana(d), mes: d.getMonth()+1,
+                repasePago: p.repasse_pago || false,
+              };
+            }));
+          }
+
+          const mesAtualRank = new Date().getMonth()+1;
+          const anoAtualRank = new Date().getFullYear();
+          const inicioMes = new Date(anoAtualRank, mesAtualRank-1, 1).toISOString();
+          const { data: pedidosMes } = await supabase
+            .from("pedidos")
+            .select("motoboy_id, taxa, motoboys(nome_completo)")
+            .eq("status", "entregue")
+            .gte("criado_em", inicioMes);
+
+          if (pedidosMes) {
+            const contagem = {};
+            pedidosMes.forEach(p=>{
+              if (!p.motoboy_id) return;
+              if (!contagem[p.motoboy_id]) {
+                contagem[p.motoboy_id] = {
+                  id: p.motoboy_id,
+                  nome: p.motoboys?.nome_completo || "Motoboy",
+                  qtd: 0,
+                  ganhos: 0,
+                };
+              }
+              contagem[p.motoboy_id].qtd++;
+              contagem[p.motoboy_id].ganhos += p.taxa || 0;
+            });
+            const rank = Object.values(contagem).sort((a,b)=>b.qtd-a.qtd);
+            setRankingGeral(rank);
+          }
+        }
+      } catch (e) {
+        console.error("Erro ao carregar motoboy:", e);
+      } finally {
+        setCarregando(false);
+      }
+    }
+    carregar();
+  },[]);
+
+  useEffect(()=>{
+    // Adicionado em 30/08/2026: as duas contas de monitoramento (Alessandro/
+    // Alencar) continuam vendo pedido novo MESMO já estando numa corrida —
+    // pra não "ficarem queimadas" enquanto tampam um buraco de falta de
+    // motoboy. Motoboys comuns continuam bloqueados durante corrida, como
+    // sempre foi (não sobrecarrega ninguém sem querer).
+    if (!online || !motoboyId) return;
+    if (corridaAtiva && !ehContaMonitoramento) return;
+    if (pedidoRef.current) return;
+
+    async function buscarPedidoReal() {
+      if (pedidoRef.current) {
+        const { data: verificacao } = await supabase
+          .from("pedidos")
+          .select("status")
+          .eq("id", pedidoRef.current.id)
+          .maybeSingle();
+        if (!verificacao || verificacao.status !== "aguardando") {
+          if (verificacao && verificacao.status === "cancelado") {
+            setPedidoCancelado(true);
+            setTimeout(() => setPedidoCancelado(false), 4000);
+          }
+          setPedidoDisponivel(null);
+          pedidoRef.current = null;
+          ofertaAtivaRef.current = null;
+          tentativas.current = 0;
+        }
+        return;
+      }
+
+      let candidato = null;
+
+      // PAUSADO em 30/08/2026 a pedido do Alessandro: plataforma ainda
+      // pequena, rodízio de 30s por motoboy demorando demais pra achar
+      // alguém disponível. Todo mundo volta a ver todo pedido "aguardando",
+      // igual sempre foi. O bloco do rodízio (comentado no else abaixo, na
+      // versão anterior) NÃO foi apagado do histórico do projeto — quando a
+      // base de motoboys crescer, é só reverter esse "if" pra usar de novo a
+      // lógica de ofertas_pedido específica de cada motoboy.
+      {
+        const { data } = await supabase
+          .from("pedidos")
+          .select("*, empresarios(nome, telefone, endereco_estabelecimento, prioridade_paga)")
+          .eq("status", "aguardando")
+          .order("criado_em", { ascending: true })
+          .limit(10);
+
+        if (!data || data.length === 0) return;
+
+        const agora = Date.now();
+        Object.keys(recusadosRef.current).forEach(id=>{
+          if (agora - recusadosRef.current[id] >= TEMPO_COOLDOWN_RECUSA_MS) {
+            delete recusadosRef.current[id];
+          }
+        });
+
+        // ─── PRIORIDADE DO TURNO FIXO — adicionado em 30/08/2026 ───
+        // Se um pedido nasceu com uma janela de prioridade ativa
+        // (prioridade_ate no futuro), só quem está cadastrado naquele turno
+        // específico consegue ver ele agora — todo mundo mais espera a
+        // janela passar sozinha (o próprio pedido libera geral depois,
+        // sem precisar de nada especial, só o tempo passar).
+        const { data: meuTurnoFixo } = await supabase
+          .from("motoboys_turno_fixo")
+          .select("turno")
+          .eq("motoboy_id", motoboyId)
+          .eq("ativo", true);
+        const meusTurnos = new Set((meuTurnoFixo || []).map(t => t.turno));
+
+        // ─── PRIORIDADE GARANTIDA (B2B) — adicionada em 30/08/2026 ───
+        // Entre os pedidos que EU já poderia ver (passou pela checagem do
+        // turno fixo acima), os de estabelecimentos com "Prioridade
+        // Garantida" contratada vêm sempre primeiro na lista, mesmo que
+        // outro pedido tenha sido feito antes — só entre pedidos que já
+        // eram visíveis pra mim, nunca pula a fila de turno fixo.
+        const candidatosValidos = data.filter(p=>{
+          const recusadoEm = recusadosRef.current[p.id];
+          if (recusadoEm && (agora - recusadoEm < TEMPO_COOLDOWN_RECUSA_MS)) return false;
+          if (p.prioridade_ate && new Date(p.prioridade_ate).getTime() > agora) {
+            if (!meusTurnos.has(p.turno_prioridade)) return false;
+          }
+          return true;
+        });
+        candidatosValidos.sort((a,b)=>{
+          const prioA = a.empresarios?.prioridade_paga ? 1 : 0;
+          const prioB = b.empresarios?.prioridade_paga ? 1 : 0;
+          if (prioA !== prioB) return prioB - prioA;
+          return new Date(a.criado_em).getTime() - new Date(b.criado_em).getTime();
+        });
+        candidato = candidatosValidos[0];
+        if (!candidato) return;
+      }
+
+      if (candidato && !pedidoRef.current) {
+        const novoPedido = {
+          id: candidato.id,
+          empresaNome: candidato.empresarios?.nome || "Estabelecimento",
+          empresaTel: candidato.empresarios?.telefone || "",
+          empresaEndereco: candidato.empresarios?.endereco_estabelecimento || "",
+          clienteNome: candidato.cliente_nome,
+          clienteTel: candidato.cliente_telefone,
+          rua: candidato.rua, num: candidato.numero,
+          bairro: candidato.bairro, ref: candidato.referencia,
+          pagamento: candidato.forma_pagamento, taxa: candidato.taxa_motoboy || candidato.taxa, obs: candidato.observacao,
+          valorPedido: candidato.valor_pedido, valorReceber: candidato.valor_receber, troco: candidato.valor_troco,
+          criadoEm: new Date(candidato.criado_em).getTime(),
+        };
+        pedidoRef.current = novoPedido;
+        setPedidoDisponivel(novoPedido);
+        dispararNotificacaoPush(
+          "🏍️ Novo Pedido MotoFast!",
+          `Entrega para ${novoPedido.clienteNome} em ${novoPedido.bairro} — R$${novoPedido.taxa}. Você tem 30 segundos para aceitar!`
+        );
+      }
+    }
+
+    buscarPedidoReal();
+
+    const canal = supabase
+      .channel("pedidos-motoboy")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "pedidos" }, () => {
+        buscarPedidoReal();
+      })
+      .subscribe();
+
+    const intervalo = setInterval(buscarPedidoReal, 2000);
+
+    return () => { supabase.removeChannel(canal); clearInterval(intervalo); };
+  },[online, corridaAtiva, motoboyId, ehContaMonitoramento]);
+
+  useEffect(()=>{
+    if (!pedidoDisponivel) return;
+    const t = setTimeout(()=>{
+      tentativas.current += 1;
+      if (tentativas.current >= MAX_TENTATIVAS) {
+        setPedidoDisponivel(null);
+        pedidoRef.current = null;
+        ofertaAtivaRef.current = null;
+        tentativas.current = 0;
+      } else {
+        setPedidoDisponivel(p=>p ? {...p, criadoEm:Date.now()} : null);
+      }
+    }, TEMPO_PEDIDO * 1000);
+    return ()=>clearTimeout(t);
+  },[pedidoDisponivel]);
+
+  async function recarregarCorrida(corridaId) {
+    if (!corridaId || !motoboyId) return;
+    const { data, error } = await supabase
+      .from("pedidos")
+      .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
+      .eq("corrida_id", corridaId)
+      .in("status", ["aceito","saiu_estabelecimento","cancelado"])
+      .order("criado_em", { ascending: true });
+
+    if (error || !data || data.length === 0) return;
+
+    const todosCancelados = data.every(p => p.status === "cancelado");
+    if (todosCancelados) {
+      setPedidoCancelado(true);
+      setTimeout(() => setPedidoCancelado(false), 4000);
+      setCorridaAtiva(null);
+      setAba("home");
+      return;
+    }
+
+    setCorridaAtiva(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        pedidos: data.map(p=>({
+          id: p.id,
+          empresaNome: p.empresarios?.nome || "Estabelecimento",
+          empresaTel: p.empresarios?.telefone || "",
+          empresaEndereco: p.empresarios?.endereco_estabelecimento || "",
+          clienteNome: p.cliente_nome,
+          clienteTel: p.cliente_telefone,
+          rua: p.rua, num: p.numero,
+          bairro: p.bairro, ref: p.referencia, obs: p.observacao,
+          pagamento: p.forma_pagamento, taxa: p.taxa_motoboy || p.taxa,
+          valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
+          criadoEm: new Date(p.criado_em).getTime(),
+          statusBanco: p.status,
+        })),
+      };
+    });
+  }
+
+  const corridaIdRef = useRef(null);
+  useEffect(()=>{ corridaIdRef.current = corridaAtiva?.id || null; },[corridaAtiva?.id]);
+
+  useEffect(()=>{
+    if (!motoboyId) return;
+    const intervalo = setInterval(()=>{
+      if (corridaIdRef.current) recarregarCorrida(corridaIdRef.current);
+    }, 3000);
+    return () => clearInterval(intervalo);
+  },[motoboyId]);
+
+  useEffect(()=>{
+    if (!motoboyId || !corridaAtiva) return;
+
+    function enviarLocalizacao() {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          await supabase.from("motoboys").update({
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            ultima_localizacao: new Date().toISOString(),
+          }).eq("id", motoboyId);
+        },
+        (err) => console.log("GPS erro:", err.message),
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+      );
+    }
+
+    enviarLocalizacao();
+    const intervalo = setInterval(enviarLocalizacao, 5000);
+    return () => clearInterval(intervalo);
+  },[motoboyId, corridaAtiva?.id]);
+
+  async function aceitar() {
+    if (!pedidoDisponivel || !motoboyId) return;
+
+    // ATUALIZADO em 30/08/2026: se já existe uma corrida em andamento
+    // (relevante pras contas de monitoramento, que agora podem aceitar
+    // pedido novo mesmo em corrida), o pedido novo entra na MESMA corrida,
+    // em vez de criar uma nova e "perder de vista" a anterior.
+    let corridaIdParaUsar = corridaAtiva?.id;
+    if (!corridaIdParaUsar) {
+      const { data: corridaDB } = await supabase
+        .from("corridas")
+        .insert({ motoboy_id: motoboyId, status: "ativa" })
+        .select()
+        .single();
+      corridaIdParaUsar = corridaDB?.id;
+    }
+
+    const { data, error } = await supabase
+      .from("pedidos")
+      .update({ status: "aceito", motoboy_id: motoboyId, corrida_id: corridaIdParaUsar, aceito_em: new Date().toISOString() })
+      .eq("id", pedidoDisponivel.id)
+      .eq("status", "aguardando")
+      .select()
+      .maybeSingle();
+
+    if (!data) {
+      setPedidoDisponivel(null);
+      pedidoRef.current = null;
+      ofertaAtivaRef.current = null;
+      tentativas.current = 0;
+      return;
+    }
+
+    // REATIVADO em 28/08/2026: marca a oferta como aceita e soma +1 no
+    // contador do rodízio de hoje (exclusivo pra fila, nunca mexe no
+    // histórico/ranking real, que continuam vindo só da tabela "pedidos").
+    if (ofertaAtivaRef.current) {
+      await supabase.from("ofertas_pedido").update({ respondido: true, aceito: true }).eq("id", ofertaAtivaRef.current);
+    }
+    if (!ehContaMonitoramento) {
+      const hojeISO = dataLocalISO();
+      const { data: contadorAtual } = await supabase
+        .from("rodizio_contador")
+        .select("corridas_hoje, data_referencia")
+        .eq("motoboy_id", motoboyId)
+        .maybeSingle();
+      const valorBase = (contadorAtual && contadorAtual.data_referencia === hojeISO) ? contadorAtual.corridas_hoje : 0;
+      await supabase.from("rodizio_contador").upsert({
+        motoboy_id: motoboyId,
+        corridas_hoje: valorBase + 1,
+        data_referencia: hojeISO,
+      });
+    }
+
+    // Registra ESSA ação, pra sempre — usado no Admin pra você ver quantas
+    // vezes cada motoboy do turno fixo aceitou vs recusou (adicionado em
+    // 30/08/2026, a pedido do Alessandro pra fiscalizar o compromisso do
+    // piso garantido)
+    supabase.from("acoes_motoboy").insert({
+      motoboy_id: motoboyId, pedido_id: pedidoDisponivel.id, acao: "aceito",
+    }).then(()=>{}, e=>console.log("Erro ao registrar aceite:", e));
+
+    setCorridaAtiva(prev => prev
+      ? { ...prev, pedidos: [...prev.pedidos, {...pedidoDisponivel}] }
+      : { id: corridaIdParaUsar || Date.now(), pedidos: [{...pedidoDisponivel}] }
+    );
+    setPedidoDisponivel(null);
+    pedidoRef.current = null;
+    ofertaAtivaRef.current = null;
+    tentativas.current = 0;
+    setAba("corrida");
+  }
+
+  function recusar() {
+    if (pedidoDisponivel && motoboyId) {
+      supabase.from("acoes_motoboy").insert({
+        motoboy_id: motoboyId, pedido_id: pedidoDisponivel.id, acao: "recusado",
+      }).then(()=>{}, e=>console.log("Erro ao registrar recusa:", e));
+    }
+    if (pedidoDisponivel) {
+      recusadosRef.current[pedidoDisponivel.id] = Date.now();
+    }
+    if (ofertaAtivaRef.current) {
+      const pedidoIdRecusado = pedidoDisponivel?.id;
+      supabase.from("ofertas_pedido").update({ respondido: true, aceito: false }).eq("id", ofertaAtivaRef.current)
+        .then(()=>{
+          if (pedidoIdRecusado) {
+            fetch(`${WEB_APP_URL}/api/avancar-fila-pedido`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ pedido_id: pedidoIdRecusado }),
+            }).catch(e => console.log("Erro ao avançar fila após recusa:", e));
+          }
+        });
+    }
+    setPedidoDisponivel(null); pedidoRef.current = null; ofertaAtivaRef.current = null; tentativas.current = 0;
+  }
+
+  async function finalizarCorrida() {
+    if (!corridaAtiva) return;
+    for (const p of corridaAtiva.pedidos) {
+      await supabase.from("pedidos").update({
+        status: "entregue",
+        entregue_em: new Date().toISOString(),
+      }).eq("id", p.id);
+    }
+    const novos = corridaAtiva.pedidos.map(p=>({
+      id:Date.now()+Math.random(),
+      clienteNome:p.clienteNome, empresaNome:p.empresaNome,
+      bairro:p.bairro, pagamento:p.pagamento, taxa:p.taxa,
+      status:"Entregue", data:"Hoje", hora:"agora",
+      semana:3, mes:6, repasePago:false,
+    }));
+    setHistorico(prev=>[...prev,...novos]);
+    setCorridaAtiva(null);
+    setAba("ganhos");
+  }
+
+  async function cancelarCorrida(motivo) {
+    if (corridaAtiva) {
+      for (const p of corridaAtiva.pedidos) {
+        await supabase.from("pedidos").update({
+          status: "cancelado",
+          motivo_cancelamento: motivo,
+          cancelado_por_motoboy: true,
+        }).eq("id", p.id);
+      }
+    }
+    setCorridaAtiva(null);
+    setOnline(false);
+    if (motoboyId) {
+      await supabase.from("motoboys").update({online: false}).eq("id", motoboyId);
+    }
+    setAba("home");
+  }
+
+  const _agora = new Date();
+  const _segundaAtual = segundaFeiraDaSemana(_agora);
+  const saldoSemana = historico.filter(e=>e.status==="Entregue"&&e.semana===_segundaAtual&&!e.repasePago).reduce((s,e)=>s+(Number(e.taxa)||0),0).toFixed(2);
+
+  const ABAS = [
+    {id:"home",   label:"🏠 Início"},
+    {id:"corrida",label:"🏍️ Corrida", badge:corridaAtiva?1:0},
+    {id:"ganhos", label:"💰 Ganhos"},
+  ];
+
+  if (carregando) {
+    return (
+      <div style={{minHeight:"100vh",background:"#0a0f1a",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter','Segoe UI',sans-serif"}}>
+        <div style={{textAlign:"center"}}>
+          <div style={{fontSize:48,marginBottom:16}}>⚡</div>
+          <div style={{color:"#34d399",fontWeight:700,fontSize:18}}>Carregando...</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{minHeight:"100vh",background:"#0a0f1a",fontFamily:"'Inter','Segoe UI',sans-serif",color:"#f9fafb"}}>
+      <div style={{background:"#111827",borderBottom:"1px solid #1f2937",padding:"0 20px",position:"sticky",top:0,zIndex:100}}>
+        <div style={{maxWidth:600,margin:"0 auto",display:"flex",alignItems:"center",gap:0}}>
+          <div style={{padding:"12px 16px 12px 0",borderRight:"1px solid #1f2937",marginRight:14,flexShrink:0}}>
+            <div style={{color:"#34d399",fontWeight:900,fontSize:16,letterSpacing:-0.5}}>⚡ MotoFast</div>
+            <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>{(motoboy?.nomeCompleto || "MotoFast").split(" ")[0]}</div>
+          </div>
+          <nav style={{display:"flex",flex:1}}>
+            {ABAS.map(a=>(
+              <button key={a.id} onClick={()=>setAba(a.id)} style={{background:aba===a.id?"#0d3d2e":"transparent",color:aba===a.id?"#34d399":"#6b7280",border:"none",borderBottom:aba===a.id?"2px solid #34d399":"2px solid transparent",padding:"13px 12px",cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap",position:"relative"}}>
+                {a.label}
+                {a.badge>0 && <span style={{background:"#ef4444",color:"#fff",borderRadius:"50%",fontSize:10,fontWeight:800,padding:"1px 5px",marginLeft:4}}>{a.badge}</span>}
+              </button>
+            ))}
+          </nav>
+          <button onClick={async()=>{
+            const novoStatus = !online;
+            setOnline(novoStatus);
+            if (motoboyId) {
+              await supabase.from("motoboys").update({online: novoStatus}).eq("id", motoboyId);
+            }
+          }} style={{flexShrink:0,margin:"0 0 0 8px",padding:"6px 14px",borderRadius:20,cursor:"pointer",fontWeight:700,fontSize:12,border:"none",background:online?"#0d3d2e":"#1f2937",color:online?"#34d399":"#6b7280",transition:"all 0.2s"}}>
+            {online?"🟢 Online":"⚫ Offline"}
+          </button>
+          <button onClick={async()=>{ await supabase.auth.signOut(); navigate("/"); }}
+            style={{flexShrink:0,margin:"0 0 0 8px",background:"transparent",border:"1px solid #374151",color:"#9ca3af",padding:"6px 10px",borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700}}>
+            🚪 Sair
+          </button>
+        </div>
+      </div>
+
+      <div style={{maxWidth:600,margin:"0 auto",padding:"20px 16px"}}>
+
+        {aba==="home" && (
+          <div>
+            {/* Caso 1: ainda não pediu permissão — o botão funciona normal,
+                mostra o pedido nativo do navegador */}
+            {permissaoNotificacao==="default" && (
+              <Card style={{marginBottom:14,background:"#3d2a00",border:"2px solid #f59e0b"}}>
+                <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap"}}>
+                  <div style={{fontSize:32}}>🔔</div>
+                  <div style={{flex:1,minWidth:180}}>
+                    <div style={{color:"#fbbf24",fontWeight:800,fontSize:15}}>Ative as notificações</div>
+                    <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>Sem isso, você só recebe pedido com o app aberto na tela. Toque no botão abaixo e depois em "Permitir".</div>
+                  </div>
+                </div>
+                <button onClick={ativarNotificacoesAgora} style={{marginTop:10,width:"100%",padding:"12px",borderRadius:10,background:"#f59e0b",border:"none",color:"#000",fontWeight:900,fontSize:15,cursor:"pointer"}}>
+                  🔔 Ativar Notificações Agora
+                </button>
+              </Card>
+            )}
+
+            {/* Caso 2: JÁ FOI NEGADA — adicionado em 28/08/2026. Uma vez que o
+                Android nega, o navegador NUNCA mais mostra o pedido de
+                permissão sozinho, então o botão acima clicaria sem fazer
+                nada (aparência de "travado"). A única saída é o próprio
+                motoboy liberar manualmente nas configurações do site. */}
+            {permissaoNotificacao==="denied" && (
+              <Card style={{marginBottom:14,background:"#3d1010",border:"2px solid #ef4444"}}>
+                <div style={{display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:10}}>
+                  <div style={{fontSize:32}}>🔕</div>
+                  <div style={{flex:1,minWidth:180}}>
+                    <div style={{color:"#f87171",fontWeight:800,fontSize:15}}>Notificações BLOQUEADAS no seu celular</div>
+                    <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>Você só recebe pedido com o app aberto na tela — sem isso, perde corrida quando sai do app. Precisa liberar manualmente, o botão sozinho não resolve mais.</div>
+                  </div>
+                </div>
+                <div style={{background:"#111827",borderRadius:8,padding:"12px 14px",fontSize:12,color:"#d1d5db",lineHeight:1.7}}>
+                  <strong style={{color:"#fbbf24"}}>Como liberar no Android (Chrome):</strong>
+                  <ol style={{margin:"6px 0 0 18px",padding:0}}>
+                    <li>Toque nos <strong>3 pontinhos</strong> no canto superior direito do navegador</li>
+                    <li>Toque em <strong>"Configurações do site"</strong> (ou no cadeado/ícone ao lado do endereço)</li>
+                    <li>Toque em <strong>"Notificações"</strong></li>
+                    <li>Mude de "Bloqueado" para <strong>"Permitir"</strong></li>
+                    <li>Feche e abra o app de novo</li>
+                  </ol>
+                </div>
+              </Card>
+            )}
+
+            <Card style={{marginBottom:14,background:online?"#0d2a1e":"#1a1a1a",border:online?"1px solid #34d399":"1px solid #374151"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div>
+                  <div style={{color:online?"#34d399":"#6b7280",fontWeight:800,fontSize:18}}>
+                    {online?"🟢 Você está Online":"⚫ Você está Offline"}
+                  </div>
+                  <div style={{color:"#6b7280",fontSize:13,marginTop:4}}>
+                    {online?"Aguardando pedidos... fique de olho no som!":"Ative o modo online para receber pedidos"}
+                  </div>
+                </div>
+                <button onClick={async()=>{
+                  const novoStatus = !online;
+                  setOnline(novoStatus);
+                  if (motoboyId) {
+                    await supabase.from("motoboys").update({online: novoStatus}).eq("id", motoboyId);
+                  }
+                }} style={{padding:"10px 18px",borderRadius:10,cursor:"pointer",fontWeight:800,fontSize:14,border:"none",background:online?"#ef4444":"#10b981",color:"#fff"}}>
+                  {online?"Sair":"Entrar"}
+                </button>
+              </div>
+              {online && (
+                <div style={{marginTop:12,background:"#111827",borderRadius:8,padding:"10px 14px"}}>
+                  <div style={{color:"#9ca3af",fontSize:12}}>🔔 O som vai tocar quando chegar um pedido. Você terá <strong style={{color:"#fbbf24"}}>30 segundos</strong> para aceitar.</div>
+                </div>
+              )}
+            </Card>
+
+            <div style={{display:"flex",gap:10,marginBottom:14}}>
+              <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"14px 16px",flex:1,textAlign:"center"}}>
+                <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>A receber terça</div>
+                <div style={{color:"#fbbf24",fontWeight:900,fontSize:24}}>R${saldoSemana}</div>
+              </div>
+              <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"14px 16px",flex:1,textAlign:"center"}}>
+                <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Entregas hoje</div>
+                <div style={{color:"#60a5fa",fontWeight:900,fontSize:24}}>
+                  {historico.filter(e=>e.data===new Date().toLocaleDateString("pt-BR")&&e.status==="Entregue").length}
+                </div>
+              </div>
+              <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:10,padding:"14px 16px",flex:1,textAlign:"center"}}>
+                <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Ranking</div>
+                <div style={{color:"#f59e0b",fontWeight:900,fontSize:24}}>
+                  {(()=>{
+                    if (!rankingGeral || rankingGeral.length === 0) return "🏆 —";
+                    const pos = rankingGeral.findIndex(m=>m.id===motoboyId)+1;
+                    if (pos===0) return "🏆 —";
+                    return pos===1?"🥇 1º":pos===2?"🥈 2º":pos===3?"🥉 3º":`#${pos}º`;
+                  })()}
+                </div>
+              </div>
+            </div>
+
+            {corridaAtiva && (
+              <Card style={{marginBottom:14,border:"1px solid #34d399",background:"#0a1f14"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <div>
+                    <div style={{color:"#34d399",fontWeight:800,fontSize:15}}>🏍️ Corrida em andamento</div>
+                    <div style={{color:"#6b7280",fontSize:13}}>{corridaAtiva.pedidos.length} pedido{corridaAtiva.pedidos.length!==1?"s":""}</div>
+                  </div>
+                  <Btn small cor="verde" onClick={()=>setAba("corrida")}>Ver corrida →</Btn>
+                </div>
+              </Card>
+            )}
+
+            <Card style={{background:"#0f172a",border:"1px solid #1f2937",marginBottom:14}}>
+              <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>🔔 Som de Notificação</div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {Object.entries(SONS).map(([key,som])=>(
+                  <button key={key} onClick={()=>{setTipoSom(key);tocarSomEscolhido(key);}}
+                    style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13,
+                      background:tipoSom===key?"#1e293b":"#111827",
+                      border:tipoSom===key?"1px solid #34d399":"1px solid #1f2937",
+                      color:tipoSom===key?"#34d399":"#9ca3af",textAlign:"left"}}>
+                    <span>{som.emoji} {som.label}</span>
+                    <span style={{fontSize:11,color:tipoSom===key?"#34d399":"#4b5563"}}>
+                      {tipoSom===key?"✅ Selecionado — clique para ouvir":"Clique para ouvir"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+              <div style={{color:"#4b5563",fontSize:11,marginTop:10}}>
+                💡 O som escolhido tocará a cada 5 segundos quando chegar um pedido
+              </div>
+            </Card>
+
+            {online && !corridaAtiva && (
+              <Card style={{background:"#0f172a",border:"1px solid #1f2937"}}>
+                <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>📌 Lembretes</div>
+                <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                  {[
+                    {icon:"🔔",text:"Deixe o som do celular no máximo"},
+                    {icon:"🗺️",text:"Ao aceitar, o Google Maps abre automático"},
+                    {icon:"💵",text:"Dinheiro recebido? Retorne ao estabelecimento"},
+                    {icon:"✅",text:"Clique em 'Entregue' após cada entrega"},
+                    {icon:"🕐",text:`Suporte: ${SUPORTE_HORARIO}`},
+                  ].map((d,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",gap:10}}>
+                      <span style={{fontSize:18}}>{d.icon}</span>
+                      <span style={{color:"#d1d5db",fontSize:13}}>{d.text}</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+          </div>
+        )}
+
+        {aba==="corrida" && (
+          corridaAtiva
+            ? <CorridaAtiva corrida={corridaAtiva} onEntregar={finalizarCorrida} onCancelar={cancelarCorrida}/>
+            : <Card style={{textAlign:"center",padding:40}}>
+                <div style={{fontSize:48,marginBottom:12}}>🏍️</div>
+                <div style={{color:"#6b7280",fontSize:15}}>Nenhuma corrida ativa</div>
+                <div style={{color:"#4b5563",fontSize:13,marginTop:6}}>Fique online para receber pedidos</div>
+                <div style={{marginTop:16}}><Btn onClick={()=>setAba("home")}>Ir para Início</Btn></div>
+              </Card>
+        )}
+
+        {aba==="ganhos" && <Ganhos historico={historico} motoboyId={motoboyId} todosHistorico={historico} rankingGeral={rankingGeral} motoboy={motoboy}/>}
+      </div>
+
+
+      {pedidoCancelado && (
+        <div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",zIndex:500,
+          background:"#3d1010",border:"2px solid #ef4444",borderRadius:12,padding:"16px 24px",
+          textAlign:"center",boxShadow:"0 4px 20px rgba(239,68,68,0.4)",minWidth:280}}>
+          <div style={{fontSize:32,marginBottom:8}}>❌</div>
+          <div style={{color:"#f87171",fontWeight:900,fontSize:16}}>Pedido cancelado</div>
+          <div style={{color:"#9ca3af",fontSize:13,marginTop:4}}>O estabelecimento cancelou este pedido</div>
+        </div>
+      )}
+
+      <div style={{maxWidth:600,margin:"0 auto",padding:"0 16px 30px"}}>
+        <a href={`https://wa.me/${SUPORTE_TEL}?text=Olá, sou motoboy no MotoFast e preciso de suporte`}
+          target="_blank" rel="noreferrer"
+          style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"12px 20px",textDecoration:"none"}}>
+          <span style={{fontSize:18}}>💬</span>
+          <div>
+            <div style={{color:"#34d399",fontWeight:700,fontSize:13}}>Suporte MotoFast</div>
+            <div style={{color:"#6b7280",fontSize:11}}>{SUPORTE_HORARIO}</div>
+          </div>
+        </a>
+      </div>
+
+      {pedidoDisponivel && online && (!corridaAtiva || ehContaMonitoramento) && (
+        <ModalPedidoDisponivel
+          pedido={pedidoDisponivel}
+          tipoSom={tipoSom}
+          onAceitar={aceitar}
+          onRecusar={recusar}
+        />
+      )}
+    </div>
+  );
+}
