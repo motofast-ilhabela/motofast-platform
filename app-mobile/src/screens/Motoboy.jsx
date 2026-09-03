@@ -1426,12 +1426,12 @@ export default function Motoboy() {
   return (
     <div style={{minHeight:"100vh",background:"#0a0f1a",fontFamily:"'Inter','Segoe UI',sans-serif",color:"#f9fafb"}}>
       <div style={{background:"#111827",borderBottom:"1px solid #1f2937",padding:"0 20px",position:"sticky",top:0,zIndex:100}}>
-        <div style={{maxWidth:600,margin:"0 auto",display:"flex",alignItems:"center",gap:0}}>
+        <div style={{maxWidth:600,margin:"0 auto",display:"flex",alignItems:"center",flexWrap:"wrap",gap:0}}>
           <div style={{padding:"12px 16px 12px 0",borderRight:"1px solid #1f2937",marginRight:14,flexShrink:0}}>
             <div style={{color:"#34d399",fontWeight:900,fontSize:16,letterSpacing:-0.5}}>⚡ MotoFast</div>
             <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>{(motoboy?.nomeCompleto || "MotoFast").split(" ")[0]}</div>
           </div>
-          <nav style={{display:"flex",flex:1}}>
+          <nav style={{display:"flex",flexWrap:"wrap",flex:1}}>
             {ABAS.map(a=>(
               <button key={a.id} onClick={()=>setAba(a.id)} style={{background:aba===a.id?"#0d3d2e":"transparent",color:aba===a.id?"#34d399":"#6b7280",border:"none",borderBottom:aba===a.id?"2px solid #34d399":"2px solid transparent",padding:"13px 12px",cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap",position:"relative"}}>
                 {a.label}
