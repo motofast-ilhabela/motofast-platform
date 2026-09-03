@@ -929,8 +929,17 @@ export default function AppMotoboy() {
             tel: mb.telefone,
             pix: mb.pix,
             bairroBase: mb.bairro_base,
+            bloqueado: mb.bloqueado || false,
+            banido: mb.banido || false,
           });
-          setOnline(mb.online || false);
+          // Motoboy bloqueado/banido nunca fica online, mesmo que o banco
+          // ainda tenha online:true de antes do bloqueio (corrige bug em que
+          // bloquear/banir no Admin não impedia o motoboy de continuar
+          // recebendo pedido novo — 03/09/2026).
+          setOnline(mb.bloqueado || mb.banido ? false : (mb.online || false));
+          if ((mb.bloqueado || mb.banido) && mb.online) {
+            await supabase.from("motoboys").update({ online: false }).eq("id", mb.id);
+          }
 
           const { data: pedidosDB } = await supabase
             .from("pedidos")
@@ -1031,6 +1040,7 @@ export default function AppMotoboy() {
     // motoboy. Motoboys comuns continuam bloqueados durante corrida, como
     // sempre foi (não sobrecarrega ninguém sem querer).
     if (!online || !motoboyId) return;
+    if (motoboy?.bloqueado || motoboy?.banido) return;
     if (corridaAtiva && !ehContaMonitoramento) return;
     if (pedidoRef.current) return;
 
@@ -1249,6 +1259,25 @@ export default function AppMotoboy() {
   async function aceitar() {
     if (!pedidoDisponivel || !motoboyId) return;
 
+    // Trava de segurança adicionada em 03/09/2026: confere bloqueado/banido
+    // direto no banco (não confia no estado local, que só é carregado no
+    // login) bem no instante de aceitar — impede que um motoboy bloqueado
+    // pelo Admin enquanto já está online/logado continue pegando pedido.
+    const { data: statusAtual } = await supabase
+      .from("motoboys")
+      .select("bloqueado, banido")
+      .eq("id", motoboyId)
+      .maybeSingle();
+    if (statusAtual?.bloqueado || statusAtual?.banido) {
+      setOnline(false);
+      await supabase.from("motoboys").update({ online: false }).eq("id", motoboyId);
+      setPedidoDisponivel(null);
+      pedidoRef.current = null;
+      ofertaAtivaRef.current = null;
+      tentativas.current = 0;
+      return;
+    }
+
     // ATUALIZADO em 30/08/2026: se já existe uma corrida em andamento
     // (relevante pras contas de monitoramento, que agora podem aceitar
     // pedido novo mesmo em corrida), o pedido novo entra na MESMA corrida,
@@ -1421,6 +1450,10 @@ export default function AppMotoboy() {
           </nav>
           <button onClick={async()=>{
             const novoStatus = !online;
+            if (novoStatus && (motoboy?.bloqueado || motoboy?.banido)) {
+              alert("Sua conta está bloqueada. Fale com o suporte do MotoFast.");
+              return;
+            }
             setOnline(novoStatus);
             if (motoboyId) {
               await supabase.from("motoboys").update({online: novoStatus}).eq("id", motoboyId);
@@ -1495,6 +1528,10 @@ export default function AppMotoboy() {
                 </div>
                 <button onClick={async()=>{
                   const novoStatus = !online;
+                  if (novoStatus && (motoboy?.bloqueado || motoboy?.banido)) {
+                    alert("Sua conta está bloqueada. Fale com o suporte do MotoFast.");
+                    return;
+                  }
                   setOnline(novoStatus);
                   if (motoboyId) {
                     await supabase.from("motoboys").update({online: novoStatus}).eq("id", motoboyId);
