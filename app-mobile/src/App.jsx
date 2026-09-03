@@ -4,19 +4,7 @@ import { supabase } from './supabaseClient.js'
 import Cadastro from './screens/Cadastro.jsx'
 import Motoboy from './screens/Motoboy.jsx'
 import Empresario from './screens/Empresario.jsx'
-
-// ─── TELAS AINDA NÃO PORTADAS (placeholder até migrarmos cada uma) ───────────
-function EmConstrucao({ nome }) {
-  return (
-    <div style={{minHeight:"100vh",background:"#0a0f1a",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter','Segoe UI',sans-serif",padding:20}}>
-      <div style={{textAlign:"center",color:"#9ca3af"}}>
-        <div style={{fontSize:48,marginBottom:16}}>🚧</div>
-        <div style={{color:"#34d399",fontWeight:800,fontSize:18}}>Tela "{nome}" ainda não portada</div>
-        <div style={{fontSize:13,marginTop:8}}>Em construção no app nativo.</div>
-      </div>
-    </div>
-  )
-}
+import Admin from './screens/Admin.jsx'
 
 // Email autorizado como admin — mesma regra da plataforma web
 const ADMIN_EMAIL = "botdahora@gmail.com"
@@ -40,7 +28,7 @@ function RotaAdmin() {
 
   if (estado === "verificando") return <Verificando />
   if (estado === "negado") return <Navigate to="/" replace />
-  return <EmConstrucao nome="Admin" />
+  return <Admin />
 }
 
 // ─── PROTEÇÃO DE ROTA DO EMPRESÁRIO ──────────────────────────────────────────
