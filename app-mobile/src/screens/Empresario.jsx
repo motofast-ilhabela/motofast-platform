@@ -2759,27 +2759,33 @@ export default function Empresario() {
   return (
     <div style={{minHeight:"100vh",background:"#0a0f1a",fontFamily:"'Inter','Segoe UI',sans-serif",color:"#f9fafb"}}>
       {/* Header */}
-      <div style={{background:"#111827",borderBottom:"1px solid #1f2937",padding:"0 20px",position:"sticky",top:0,zIndex:100}}>
-        <div style={{maxWidth:900,margin:"0 auto",display:"flex",alignItems:"center",flexWrap:"wrap"}}>
-          <div style={{padding:"12px 20px 12px 0",borderRight:"1px solid #1f2937",marginRight:16,flexShrink:0}}>
+      <div style={{background:"#111827",borderBottom:"1px solid #1f2937",padding:"10px 16px",position:"sticky",top:0,zIndex:100}}>
+        <div style={{maxWidth:900,margin:"0 auto",display:"flex",flexDirection:"column",gap:10}}>
+          {/* Fileira 1: logo */}
+          <div>
             <div style={{color:"#34d399",fontWeight:900,fontSize:16,letterSpacing:-0.5}}>⚡ MotoFast</div>
             <div style={{color:"#6b7280",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>{empresa?.nome || EMPRESA.nome}</div>
           </div>
-          <nav style={{display:"flex",flexWrap:"wrap",flex:1}}>
+
+          {/* Fileira 2: abas principais lado a lado, sempre numa linha só —
+              o texto quebra dentro do próprio botão se precisar, em vez de
+              criar uma segunda linha de abas. */}
+          <nav style={{display:"flex",gap:6}}>
             {ABAS.map(a=>(
-              <button key={a.id} onClick={()=>setAba(a.id)} style={{background:aba===a.id?"#0d3d2e":"transparent",color:aba===a.id?"#34d399":"#6b7280",border:"none",borderBottom:aba===a.id?"2px solid #34d399":"2px solid transparent",padding:"13px 12px",cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap",position:"relative"}}>
+              <button key={a.id} onClick={()=>setAba(a.id)} style={{flex:1,background:aba===a.id?"#0d3d2e":"transparent",color:aba===a.id?"#34d399":"#6b7280",border:"none",borderRadius:8,borderBottom:aba===a.id?"2px solid #34d399":"2px solid transparent",padding:"8px 4px",cursor:"pointer",fontSize:11,fontWeight:700,lineHeight:1.3,position:"relative"}}>
                 {a.label}
-                {a.badge>0 && <span style={{background:"#ef4444",color:"#fff",borderRadius:"50%",fontSize:10,fontWeight:800,padding:"1px 5px",marginLeft:6}}>{a.badge}</span>}
+                {a.badge>0 && <span style={{background:"#ef4444",color:"#fff",borderRadius:"50%",fontSize:10,fontWeight:800,padding:"1px 5px",marginLeft:4}}>{a.badge}</span>}
               </button>
             ))}
           </nav>
-          {/* Info plano */}
-          <div style={{padding:"8px 0",flexShrink:0,display:"flex",alignItems:"center",gap:10}}>
+
+          {/* Fileira 3: plano / Sair lado a lado */}
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
             {(empresa?.planoGratis ?? EMPRESA.planoGratis)
               ? <Tag label={`🎁 Grátis até ${empresa?.dataFimGratis || EMPRESA.dataFimGratis}`} cor="#a78bfa"/>
               : <Tag label="✅ Plano ativo" cor="#34d399"/>}
             <button onClick={async()=>{ await supabase.auth.signOut(); navigate("/"); }}
-              style={{background:"transparent",border:"1px solid #374151",color:"#9ca3af",padding:"6px 12px",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700}}>
+              style={{background:"transparent",border:"1px solid #374151",color:"#9ca3af",padding:"6px 12px",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>
               🚪 Sair
             </button>
           </div>
