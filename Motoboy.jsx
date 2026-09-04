@@ -297,12 +297,14 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
   );
 }
 
-function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
+function CorridaAtiva({ corrida, onEntregar, onCancelar, onCancelarItem }) {
   const [pedidosEntregues, setPedidosEntregues] = useState([]);
   const [saiuEstab, setSaiuEstab] = useState({});
   const [modalCancelar, setModalCancelar] = useState(false);
   const [motivoCancelamento, setMotivoCancelamento] = useState("");
   const [motivoCustom, setMotivoCustom] = useState("");
+  const [modalCancelarItem, setModalCancelarItem] = useState(null); // id do pedido, ou null
+  const [motivoItem, setMotivoItem] = useState("");
 
   async function sairEstabelecimento(pedidoId) {
     setSaiuEstab(prev=>({...prev,[pedidoId]:true}));
@@ -500,13 +502,50 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
                 <span style={{color:"#34d399",fontWeight:700,fontSize:13}}>✅ Entregue para {p.clienteNome}!</span>
               </div>
             )}
+
+            {!entregue && corrida.pedidos.length > 1 && (
+              <button onClick={()=>{setModalCancelarItem(p.id);setMotivoItem("");}}
+                style={{width:"100%",padding:"8px",marginTop:8,borderRadius:8,background:"transparent",border:"none",color:"#6b7280",fontWeight:600,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>
+                Pedido duplicado ou errado? Cancelar só este
+              </button>
+            )}
           </Card>
         );
       })}
 
+      {modalCancelarItem && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:"#111827",border:"2px solid #f59e0b",borderRadius:16,width:"100%",maxWidth:420,padding:24}}>
+            <div style={{color:"#fbbf24",fontWeight:900,fontSize:18,marginBottom:6}}>Cancelar só este pedido</div>
+            <div style={{color:"#9ca3af",fontSize:13,marginBottom:14}}>
+              Isso cancela <b>apenas este pedido</b>. Os outros pedidos da corrida continuam normais, você não fica offline e não precisa refazer nada.
+            </div>
+            <textarea value={motivoItem} onChange={e=>setMotivoItem(e.target.value)}
+              placeholder="Por que está cancelando este pedido? (ex: lançado em duplicidade)" rows={3}
+              style={{background:"#0f172a",border:"1px solid #f59e0b",borderRadius:8,color:"#f9fafb",padding:"10px 12px",width:"100%",fontSize:13,outline:"none",resize:"none",boxSizing:"border-box",marginBottom:14}}/>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{
+                if (!motivoItem.trim()) return;
+                onCancelarItem(modalCancelarItem, motivoItem.trim());
+                setModalCancelarItem(null);
+                setMotivoItem("");
+              }}
+                disabled={!motivoItem.trim()}
+                style={{flex:2,padding:"13px",borderRadius:10,background:"#f59e0b",border:"none",color:"#000",fontWeight:800,fontSize:15,cursor:"pointer",opacity:!motivoItem.trim()?0.4:1}}>
+                Confirmar — cancelar só este
+              </button>
+              <button onClick={()=>{setModalCancelarItem(null);setMotivoItem("");}}
+                style={{flex:1,padding:"13px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+                Voltar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{marginTop:10}}>
         <button onClick={()=>setModalCancelar(true)} style={{width:"100%",padding:"12px",borderRadius:10,background:"#1f2937",border:"1px solid #ef444466",color:"#f87171",fontWeight:700,fontSize:14,cursor:"pointer"}}>
-          ⚠️ Problema na entrega
+          ⚠️ Problema na entrega — não vou conseguir continuar nenhuma
         </button>
       </div>
 
@@ -1393,6 +1432,22 @@ export default function AppMotoboy() {
     setAba("ganhos");
   }
 
+  async function cancelarPedidoIndividual(pedidoId, motivo) {
+    await supabase.from("pedidos").update({
+      status: "cancelado",
+      motivo_cancelamento: motivo,
+      cancelado_por_motoboy: true,
+    }).eq("id", pedidoId);
+    setCorridaAtiva(prev => {
+      if (!prev) return prev;
+      const restantes = prev.pedidos.filter(p => p.id !== pedidoId);
+      // Se não sobrou nenhum pedido pra entregar nessa corrida, encerra ela
+      // (sem marcar nada como entregue, já que os outros já foram marcados
+      // entregues individualmente antes de chegar aqui, se for o caso).
+      return restantes.length === 0 ? null : { ...prev, pedidos: restantes };
+    });
+  }
+
   async function cancelarCorrida(motivo) {
     if (corridaAtiva) {
       for (const p of corridaAtiva.pedidos) {
@@ -1628,7 +1683,7 @@ export default function AppMotoboy() {
 
         {aba==="corrida" && (
           corridaAtiva
-            ? <CorridaAtiva corrida={corridaAtiva} onEntregar={finalizarCorrida} onCancelar={cancelarCorrida}/>
+            ? <CorridaAtiva corrida={corridaAtiva} onEntregar={finalizarCorrida} onCancelar={cancelarCorrida} onCancelarItem={cancelarPedidoIndividual}/>
             : <Card style={{textAlign:"center",padding:40}}>
                 <div style={{fontSize:48,marginBottom:12}}>🏍️</div>
                 <div style={{color:"#6b7280",fontSize:15}}>Nenhuma corrida ativa</div>
