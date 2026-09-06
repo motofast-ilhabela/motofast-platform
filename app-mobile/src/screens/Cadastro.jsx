@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient.js";
 
@@ -693,14 +693,33 @@ function TelaLogin({ tipo, onCadastrar }) {
 
 // ─── APP PRINCIPAL ────────────────────────────────────────────────────────────
 export default function Cadastro() {
+  const navigate = useNavigate();
   const [tela, setTela] = useState("inicio"); // inicio | login-emp | login-mb | cad-emp | cad-mb | sucesso-emp | sucesso-mb
+
+  // Acesso escondido ao Admin: no app nativo não existe barra de endereço pra
+  // digitar /admin como na web, então 5 toques seguidos no logo (em até 2s)
+  // abrem a tela de login do Admin. Não é exibido em lugar nenhum — só quem
+  // sabe do gesto acessa. Toques normais continuam voltando pra tela inicial.
+  const toquesLogoRef = useRef(0);
+  const timeoutLogoRef = useRef(null);
+  function tocarLogo() {
+    toquesLogoRef.current += 1;
+    if (timeoutLogoRef.current) clearTimeout(timeoutLogoRef.current);
+    if (toquesLogoRef.current >= 5) {
+      toquesLogoRef.current = 0;
+      navigate("/admin");
+      return;
+    }
+    timeoutLogoRef.current = setTimeout(() => { toquesLogoRef.current = 0; }, 2000);
+    setTela("inicio");
+  }
 
   return (
     <div style={{minHeight:"100vh",background:"#0a0f1a",fontFamily:"'Inter','Segoe UI',sans-serif",color:"#f9fafb",display:"flex",flexDirection:"column"}}>
 
       {/* Header */}
       <div style={{background:"#111827",borderBottom:"1px solid #1f2937",padding:"14px 24px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={()=>setTela("inicio")}>
+        <div style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}} onClick={tocarLogo}>
           <span style={{color:"#34d399",fontWeight:900,fontSize:20,letterSpacing:-0.5}}>⚡ MotoFast</span>
         </div>
         {tela!=="inicio" && (

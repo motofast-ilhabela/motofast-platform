@@ -1,4 +1,4 @@
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient.js'
 import Cadastro from './screens/Cadastro.jsx'
@@ -8,6 +8,85 @@ import Admin from './screens/Admin.jsx'
 
 // Email autorizado como admin — mesma regra da plataforma web
 const ADMIN_EMAIL = "botdahora@gmail.com"
+
+// ─── TELA DE LOGIN DO ADMIN ───────────────────────────────────────────────────
+// Cópia adaptada do LoginAdmin de App.jsx da web: na web, o Admin NUNCA loga
+// pela tela de Cadastro — tem essa tela própria, exclusiva, ligada direto à
+// rota /admin. Só troquei o "← Voltar para o início" de <a href="/"> pra
+// useNavigate (HashRouter). Sem essa tela, tentar logar como Admin pela tela
+// de Cadastro dava erro "não encontramos seu cadastro" (ela só sabe checar
+// as tabelas empresarios/motoboys, nunca o e-mail de admin).
+function LoginAdmin() {
+  const navigate = useNavigate()
+  const [email, setEmail] = useState("")
+  const [senha, setSenha] = useState("")
+  const [erro, setErro] = useState("")
+  const [carregando, setCarregando] = useState(false)
+
+  async function entrar() {
+    if (!email || !senha) { setErro("Preencha email e senha."); return; }
+    setCarregando(true)
+    setErro("")
+    const { error } = await supabase.auth.signInWithPassword({ email, password: senha })
+    if (error) {
+      setErro("Email ou senha incorretos.")
+    }
+    setCarregando(false)
+  }
+
+  return (
+    <div style={{minHeight:"100vh",background:"#0a0f1a",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter','Segoe UI',sans-serif",padding:20}}>
+      <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:16,width:"100%",maxWidth:380,padding:32}}>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <div style={{color:"#34d399",fontWeight:900,fontSize:28,letterSpacing:-1}}>⚡ MotoFast</div>
+          <div style={{color:"#6b7280",fontSize:13,marginTop:6}}>Painel Administrativo</div>
+        </div>
+
+        {erro && (
+          <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:16,color:"#f87171",fontSize:13}}>
+            {erro}
+          </div>
+        )}
+
+        <div style={{marginBottom:14}}>
+          <div style={{color:"#9ca3af",fontSize:12,marginBottom:6,fontWeight:600}}>Email</div>
+          <input
+            type="email"
+            value={email}
+            onChange={e=>setEmail(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&entrar()}
+            placeholder="seu@email.com"
+            style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"11px 14px",width:"100%",fontSize:14,outline:"none",boxSizing:"border-box"}}
+          />
+        </div>
+
+        <div style={{marginBottom:24}}>
+          <div style={{color:"#9ca3af",fontSize:12,marginBottom:6,fontWeight:600}}>Senha</div>
+          <input
+            type="password"
+            value={senha}
+            onChange={e=>setSenha(e.target.value)}
+            onKeyDown={e=>e.key==="Enter"&&entrar()}
+            placeholder="••••••••"
+            style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"11px 14px",width:"100%",fontSize:14,outline:"none",boxSizing:"border-box"}}
+          />
+        </div>
+
+        <button
+          onClick={entrar}
+          disabled={carregando}
+          style={{width:"100%",padding:"13px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:800,fontSize:15,cursor:carregando?"not-allowed":"pointer",opacity:carregando?0.6:1}}
+        >
+          {carregando ? "Entrando..." : "🔐 Entrar no Admin"}
+        </button>
+
+        <div style={{textAlign:"center",marginTop:16}}>
+          <span onClick={()=>navigate("/")} style={{color:"#4b5563",fontSize:12,textDecoration:"none",cursor:"pointer"}}>← Voltar para o início</span>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 // ─── PROTEÇÃO DE ROTA DO ADMIN ────────────────────────────────────────────────
 function RotaAdmin() {
@@ -27,7 +106,7 @@ function RotaAdmin() {
   }, [])
 
   if (estado === "verificando") return <Verificando />
-  if (estado === "negado") return <Navigate to="/" replace />
+  if (estado === "negado") return <LoginAdmin />
   return <Admin />
 }
 

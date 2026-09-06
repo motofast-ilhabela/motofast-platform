@@ -3423,15 +3423,20 @@ export default function Admin() {
 
   return (
     <div style={{minHeight:"100vh",background:"#0a0f1a",fontFamily:"'Inter','Segoe UI',sans-serif",color:"#f9fafb"}}>
-      <div style={{background:"#111827",borderBottom:"1px solid #1f2937",padding:"0 20px",position:"sticky",top:0,zIndex:100}}>
-        <div style={{maxWidth:1200,margin:"0 auto",display:"flex",alignItems:"center",flexWrap:"wrap"}}>
-          <div style={{padding:"12px 20px 12px 0",borderRight:"1px solid #1f2937",marginRight:16,flexShrink:0}}>
+      <div style={{background:"#111827",borderBottom:"1px solid #1f2937",padding:"10px 0",position:"sticky",top:0,zIndex:100}}>
+        <div style={{maxWidth:1200,margin:"0 auto",display:"flex",flexDirection:"column",gap:10,padding:"0 16px"}}>
+          {/* Fileira 1: logo */}
+          <div>
             <div style={{color:"#34d399",fontWeight:900,fontSize:18,letterSpacing:-0.5}}>⚡ MotoFast</div>
             <div style={{color:"#4b5563",fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:1}}>Painel Admin</div>
           </div>
-          <nav style={{display:"flex",flexWrap:"wrap",flex:1}}>
+
+          {/* Fileira 2: abas — 10 no total, não cabem visíveis ao mesmo tempo
+              num celular, então essa fileira rola horizontalmente (arrasta
+              pro lado) em vez de quebrar em várias linhas desorganizadas. */}
+          <nav style={{display:"flex",gap:6,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
             {ABAS.map(a=>(
-              <button key={a.id} onClick={()=>setAba(a.id)} style={{background:aba===a.id?"#0d3d2e":"transparent",color:aba===a.id?"#34d399":"#6b7280",border:"none",borderBottom:aba===a.id?"2px solid #34d399":"2px solid transparent",padding:"13px 12px",cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap",position:"relative"}}>
+              <button key={a.id} onClick={()=>setAba(a.id)} style={{flexShrink:0,background:aba===a.id?"#0d3d2e":"transparent",color:aba===a.id?"#34d399":"#6b7280",border:"none",borderBottom:aba===a.id?"2px solid #34d399":"2px solid transparent",padding:"10px 12px",cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap",position:"relative"}}>
                 {a.label}
                 {a.id==="pendentes" && totalPendentes>0 && (
                   <span style={{position:"absolute",top:6,right:2,background:"#ef4444",color:"#fff",borderRadius:"50%",width:16,height:16,fontSize:10,fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center"}}>{totalPendentes}</span>
@@ -3439,16 +3444,20 @@ export default function Admin() {
               </button>
             ))}
           </nav>
-          <div style={{display:"flex",gap:8,padding:"8px 0",flexShrink:0}}>
-            {+saldo>0 && <button onClick={()=>setAba("repasse")} style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#34d399",fontWeight:700,cursor:"pointer"}}>💰 Lucro da semana: R${saldo}</button>}
-            {+pagoMotoboysSemanaDash>0 && <button onClick={()=>setAba("repasse")} style={{background:"#1e3a5f",border:"1px solid #60a5fa",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#60a5fa",fontWeight:700,cursor:"pointer"}}>🏍️ Motoboys ganharam: R${pagoMotoboysSemanaDash}</button>}
-            {bloqueados>0 && <button onClick={()=>{setAba("estabelecimentos");setFocoBloqueadosEstab(x=>x+1);}} style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#f87171",fontWeight:700,cursor:"pointer"}}>⛔ {bloqueados} bloqueado(s)</button>}
-            {banidos>0 && <button onClick={()=>{setAba("motoboys");setFocoBanidosMb(x=>x+1);}} style={{background:"#1f2937",border:"1px solid #6b7280",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#9ca3af",fontWeight:700,cursor:"pointer"}}>⛔ {banidos} banido(s)</button>}
+
+          {/* Fileira 3: botões secundários (badges de alerta + sair/atualizar),
+              mesma lógica de rolagem horizontal — a quantidade varia conforme
+              o que estiver acontecendo (bloqueios, banidos, etc). */}
+          <div style={{display:"flex",gap:8,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+            {+saldo>0 && <button onClick={()=>setAba("repasse")} style={{flexShrink:0,background:"#0d3d2e",border:"1px solid #34d399",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#34d399",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>💰 Lucro da semana: R${saldo}</button>}
+            {+pagoMotoboysSemanaDash>0 && <button onClick={()=>setAba("repasse")} style={{flexShrink:0,background:"#1e3a5f",border:"1px solid #60a5fa",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#60a5fa",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>🏍️ Motoboys ganharam: R${pagoMotoboysSemanaDash}</button>}
+            {bloqueados>0 && <button onClick={()=>{setAba("estabelecimentos");setFocoBloqueadosEstab(x=>x+1);}} style={{flexShrink:0,background:"#3d1010",border:"1px solid #ef4444",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#f87171",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>⛔ {bloqueados} bloqueado(s)</button>}
+            {banidos>0 && <button onClick={()=>{setAba("motoboys");setFocoBanidosMb(x=>x+1);}} style={{flexShrink:0,background:"#1f2937",border:"1px solid #6b7280",borderRadius:20,padding:"5px 12px",fontSize:12,color:"#9ca3af",fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>⛔ {banidos} banido(s)</button>}
             <button onClick={async()=>{ await supabase.auth.signOut(); navigate("/"); }}
-              style={{background:"transparent",border:"1px solid #374151",color:"#9ca3af",padding:"6px 12px",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700}}>
+              style={{flexShrink:0,background:"transparent",border:"1px solid #374151",color:"#9ca3af",padding:"6px 12px",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>
               🚪 Sair
             </button>
-            <button onClick={carregarTudo} style={{background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",padding:"6px 12px",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700}}>
+            <button onClick={carregarTudo} style={{flexShrink:0,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",padding:"6px 12px",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:700}}>
               🔄
             </button>
           </div>
