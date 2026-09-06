@@ -1152,7 +1152,15 @@ export default function AppMotoboy() {
           const recusadoEm = recusadosRef.current[p.id];
           if (recusadoEm && (agora - recusadoEm < TEMPO_COOLDOWN_RECUSA_MS)) return false;
           if (p.prioridade_ate && new Date(p.prioridade_ate).getTime() > agora) {
-            if (!meusTurnos.has(p.turno_prioridade)) return false;
+            // Prioridade por horário específico (criada em 06/09/2026) manda
+            // mais que o Turno Fixo — se o pedido tem um motoboy_id
+            // específico de prioridade, só ELE vê nessa janela, mesmo que eu
+            // esteja registrado num Turno Fixo qualquer.
+            if (p.prioridade_motoboy_id) {
+              if (p.prioridade_motoboy_id !== motoboyId) return false;
+            } else if (!meusTurnos.has(p.turno_prioridade)) {
+              return false;
+            }
           }
           return true;
         });
