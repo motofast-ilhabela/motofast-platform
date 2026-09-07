@@ -1204,6 +1204,23 @@ export default function AppMotoboy() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "pedidos" }, () => {
         buscarPedidoReal();
       })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pedidos" }, (payload) => {
+        // Adicionado em 07/09/2026, junto com a função de reatribuir corrida
+        // no Admin: se um pedido que eu tinha na minha corrida foi passado
+        // pro Admin pra outro motoboy (motoboy_id mudou pra outra pessoa),
+        // tira ele da minha tela na hora — sem isso, ficava preso aparecendo
+        // pra mim até eu dar refresh manual, mesmo não sendo mais meu.
+        const atualizado = payload.new;
+        if (atualizado && atualizado.motoboy_id !== motoboyId) {
+          setCorridaAtiva(prev => {
+            if (!prev) return prev;
+            const aindaTenho = prev.pedidos.some(p => p.id === atualizado.id);
+            if (!aindaTenho) return prev;
+            const restantes = prev.pedidos.filter(p => p.id !== atualizado.id);
+            return restantes.length === 0 ? null : { ...prev, pedidos: restantes };
+          });
+        }
+      })
       .subscribe();
 
     const intervalo = setInterval(buscarPedidoReal, 2000);
