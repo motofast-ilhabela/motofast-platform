@@ -2380,12 +2380,46 @@ export default function AppEmpresario() {
                   motoboyTel: pedidoConhecido?.motoboyTel || "",
                 });
               }
+              // Adicionado em 07/09/2026: atualiza a tela DIRETO com o dado que
+              // já veio nesse evento, sem esperar o recarregarPedidos() (que
+              // depende de rede/join e, se falhar silenciosamente por qualquer
+              // motivo, deixava a tela presa mostrando "aguardando" mesmo
+              // depois do motoboy já ter aceitado/saído/entregado de verdade.
+              if (p) {
+                setPedidos(prev => {
+                  const existente = prev.find(x => x.id === p.id);
+                  const mapeado = {
+                    id: p.id,
+                    clienteNome: p.cliente_nome, clienteTel: p.cliente_telefone,
+                    rua: p.rua, num: p.numero, bairro: p.bairro, ref: p.referencia, obs: p.observacao,
+                    pagamento: p.forma_pagamento, taxa: p.taxa, taxaMotoboy: p.taxa_motoboy || 0,
+                    valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
+                    status: (p.status==="aceito"||p.status==="saiu_estabelecimento") ? "em_rota" : p.status,
+                    criadoEm: new Date(p.criado_em).getTime(),
+                    motoboyId: p.motoboy_id,
+                    motoboyNome: existente?.motoboyNome || null,
+                    motoboyTel: existente?.motoboyTel || null,
+                    corridaId: p.corrida_id,
+                    saiuEstabelecimentoEm: p.saiu_estabelecimento_em || null,
+                    entregueEm: p.entregue_em || null,
+                    distanciaKm: p.distancia_km || null,
+                    metodoCalculoKm: p.metodo_calculo_km || null,
+                  };
+                  if (!existente) {
+                    // Se já entregou/cancelou antes mesmo de aparecer aqui, não
+                    // precisa inserir na lista de ativos à toa.
+                    if (mapeado.status === "entregue" || mapeado.status === "cancelado") return prev;
+                    return [...prev, mapeado];
+                  }
+                  return prev.map(x => x.id === p.id ? { ...x, ...mapeado } : x);
+                });
+              }
               carregarPedidos(emp.id);
             })
             .subscribe();
 
           // Rede de segurança — atualiza a cada 8s, caso o Realtime não esteja ativo no banco
-          const intervalo = setInterval(()=>carregarPedidos(emp.id), 8000);
+          const intervalo = setInterval(()=>carregarPedidos(emp.id), 4000);
           window.__motofastIntervalo = intervalo;
 
           // Atualiza as CONFIGURAÇÕES do estabelecimento (modelo de taxa, plano,
@@ -2699,6 +2733,29 @@ export default function AppEmpresario() {
         "🏍️ Novo Pedido MotoFast!",
         `Entrega em ${pedido.bairro} — R$${pedido.taxaMotoboy || pedido.taxa}`
       );
+    }
+
+    // Trava extra, contra qualquer bug de tela: adiciona o pedido recém-criado
+    // DIRETO na lista local agora mesmo, sem depender do recarregarPedidos()
+    // (banco, rede, realtime) pra aparecer. Garantia de que ela vê o pedido
+    // dela na hora, mesmo que qualquer outra parte do carregamento falhe.
+    if (pedidoDB) {
+      setPedidos(prev => [...prev, {
+        id: pedidoDB.id,
+        clienteNome: pedidoDB.cliente_nome,
+        clienteTel: pedidoDB.cliente_telefone,
+        rua: pedidoDB.rua, num: pedidoDB.numero,
+        bairro: pedidoDB.bairro, ref: pedidoDB.referencia, obs: pedidoDB.observacao,
+        pagamento: pedidoDB.forma_pagamento, taxa: pedidoDB.taxa,
+        taxaMotoboy: pedidoDB.taxa_motoboy || 0,
+        valorPedido: pedidoDB.valor_pedido, valorReceber: pedidoDB.valor_receber, troco: pedidoDB.valor_troco,
+        status: "aguardando",
+        criadoEm: new Date(pedidoDB.criado_em).getTime(),
+        motoboyId: null, motoboyNome: null, motoboyTel: null,
+        corridaId: pedidoDB.corrida_id,
+        saiuEstabelecimentoEm: null, entregueEm: null,
+        distanciaKm: pedidoDB.distancia_km, metodoCalculoKm: pedidoDB.metodo_calculo_km,
+      }]);
     }
 
     // Recarrega a lista do banco, garantindo consistência total
