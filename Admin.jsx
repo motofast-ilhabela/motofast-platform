@@ -3330,7 +3330,7 @@ export default function App() {
 
       const { data: ativosDB } = await supabase
         .from("pedidos")
-        .select("*, motoboys(nome_completo, telefone), empresarios(nome)")
+        .select("*, motoboys!motoboy_id(nome_completo, telefone), empresarios(nome)")
         .in("status", ["aguardando","aceito","saiu_estabelecimento"])
         .order("criado_em", { ascending: true });
 

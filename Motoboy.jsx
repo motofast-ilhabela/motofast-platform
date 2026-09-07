@@ -1040,7 +1040,7 @@ export default function AppMotoboy() {
           const inicioMes = new Date(anoAtualRank, mesAtualRank-1, 1).toISOString();
           const { data: pedidosMes } = await supabase
             .from("pedidos")
-            .select("motoboy_id, taxa, motoboys(nome_completo)")
+            .select("motoboy_id, taxa, motoboys!motoboy_id(nome_completo)")
             .eq("status", "entregue")
             .gte("criado_em", inicioMes);
 
