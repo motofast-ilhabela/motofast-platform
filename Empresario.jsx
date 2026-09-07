@@ -2509,37 +2509,66 @@ export default function AppEmpresario() {
     // histórico (entregue/cancelado) é buscado separado, sob demanda, por mês.
     // Isso mantém essa busca sempre leve e rápida, não importa quantas entregas
     // já foram feitas no total — ela nunca cresce com o tempo.
+    //
+    // CORRIGIDO em 07/09/2026: antes essa busca vinha com um JOIN direto pro
+    // nome/telefone do motoboy (select("*, motoboys(...)")). Descobrimos que,
+    // assim que um pedido ganhava motoboy_id (virava "aceito"), a tela do
+    // estabelecimento simplesmente parava de atualizar — o pedido sumia da
+    // aba Pedidos Ativos mesmo continuando ativo no banco. Suspeita forte:
+    // esse JOIN embutido falhando silenciosamente (possível restrição de
+    // permissão ao ler a tabela motoboys a partir da sessão do empresário)
+    // derrubava a busca inteira. Agora são DUAS buscas separadas — se a
+    // segunda (nome do motoboy) falhar por qualquer motivo, a primeira (os
+    // pedidos em si, o que realmente importa pra tela não travar) continua
+    // funcionando normalmente.
     const { data: pedidosDB, error } = await supabase
       .from("pedidos")
-      .select("*, motoboys(nome_completo, telefone)")
+      .select("*")
       .eq("empresario_id", empresaId)
       .in("status", ["aguardando","aceito","saiu_estabelecimento"])
       .order("criado_em", { ascending: true });
 
     if (error) { console.error("Erro ao carregar pedidos:", error); return; }
+    if (!pedidosDB) return;
 
-    if (pedidosDB) {
-      setPedidos(pedidosDB.map(p=>({
-        id: p.id,
-        clienteNome: p.cliente_nome,
-        clienteTel: p.cliente_telefone,
-        rua: p.rua, num: p.numero,
-        bairro: p.bairro, ref: p.referencia, obs: p.observacao,
-        pagamento: p.forma_pagamento, taxa: p.taxa,
-        taxaMotoboy: p.taxa_motoboy || 0,
-        valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
-        status: p.status==="aceito"||p.status==="saiu_estabelecimento" ? "em_rota" : p.status,
-        criadoEm: new Date(p.criado_em).getTime(),
-        motoboyId: p.motoboy_id,
-        motoboyNome: p.motoboys?.nome_completo || null,
-        motoboyTel: p.motoboys?.telefone || null,
-        corridaId: p.corrida_id,
-        saiuEstabelecimentoEm: p.saiu_estabelecimento_em || null,
-        entregueEm: p.entregue_em || null,
-        distanciaKm: p.distancia_km || null,
-        metodoCalculoKm: p.metodo_calculo_km || null,
-      })));
+    let mapaMotoboys = {};
+    const idsMotoboys = [...new Set(pedidosDB.map(p=>p.motoboy_id).filter(Boolean))];
+    if (idsMotoboys.length > 0) {
+      try {
+        const { data: motoboysDB, error: erroMotoboys } = await supabase
+          .from("motoboys")
+          .select("id, nome_completo, telefone")
+          .in("id", idsMotoboys);
+        if (erroMotoboys) {
+          console.error("Erro ao carregar nomes dos motoboys (não bloqueia a lista de pedidos):", erroMotoboys);
+        } else {
+          (motoboysDB || []).forEach(m => { mapaMotoboys[m.id] = m; });
+        }
+      } catch (e) {
+        console.error("Erro inesperado ao carregar nomes dos motoboys (não bloqueia a lista de pedidos):", e);
+      }
     }
+
+    setPedidos(pedidosDB.map(p=>({
+      id: p.id,
+      clienteNome: p.cliente_nome,
+      clienteTel: p.cliente_telefone,
+      rua: p.rua, num: p.numero,
+      bairro: p.bairro, ref: p.referencia, obs: p.observacao,
+      pagamento: p.forma_pagamento, taxa: p.taxa,
+      taxaMotoboy: p.taxa_motoboy || 0,
+      valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
+      status: p.status==="aceito"||p.status==="saiu_estabelecimento" ? "em_rota" : p.status,
+      criadoEm: new Date(p.criado_em).getTime(),
+      motoboyId: p.motoboy_id,
+      motoboyNome: mapaMotoboys[p.motoboy_id]?.nome_completo || null,
+      motoboyTel: mapaMotoboys[p.motoboy_id]?.telefone || null,
+      corridaId: p.corrida_id,
+      saiuEstabelecimentoEm: p.saiu_estabelecimento_em || null,
+      entregueEm: p.entregue_em || null,
+      distanciaKm: p.distancia_km || null,
+      metodoCalculoKm: p.metodo_calculo_km || null,
+    })));
   }
 
   // Gera a chave (AAAA-MM) do mês atual e dos últimos meses, pro seletor de mês do histórico
@@ -2564,9 +2593,13 @@ export default function AppEmpresario() {
   async function carregarHistorico(mesChave) {
     if (!empresa?.id) return;
     setCarregandoHistorico(true);
+    // CORRIGIDO em 07/09/2026 — mesmo problema do carregarPedidos: o JOIN
+    // embutido com motoboys estava derrubando a busca inteira assim que um
+    // pedido do histórico tinha motoboy_id preenchido, fazendo o Histórico
+    // inteiro (e os valores devidos, que dependem dele) sumir da tela.
     let query = supabase
       .from("pedidos")
-      .select("*, motoboys(nome_completo, telefone)")
+      .select("*")
       .eq("empresario_id", empresa.id)
       .in("status", ["entregue","cancelado"])
       .order("criado_em", { ascending: false });
@@ -2583,11 +2616,29 @@ export default function AppEmpresario() {
     const { data, error } = await query;
     if (error) { console.error("Erro ao carregar histórico:", error); setCarregandoHistorico(false); return; }
 
+    let mapaMotoboys = {};
+    const idsMotoboys = [...new Set((data||[]).map(p=>p.motoboy_id).filter(Boolean))];
+    if (idsMotoboys.length > 0) {
+      try {
+        const { data: motoboysDB, error: erroMotoboys } = await supabase
+          .from("motoboys")
+          .select("id, nome_completo, telefone")
+          .in("id", idsMotoboys);
+        if (erroMotoboys) {
+          console.error("Erro ao carregar nomes dos motoboys no histórico (não bloqueia o histórico):", erroMotoboys);
+        } else {
+          (motoboysDB || []).forEach(m => { mapaMotoboys[m.id] = m; });
+        }
+      } catch (e) {
+        console.error("Erro inesperado ao carregar nomes dos motoboys no histórico (não bloqueia o histórico):", e);
+      }
+    }
+
     setHistoricoData((data||[]).map(p=>({
       id: p.id, clienteNome: p.cliente_nome, bairro: p.bairro,
       pagamento: p.forma_pagamento, taxa: p.taxa,
       status: p.status==="entregue" ? "Entregue" : "Cancelada",
-      motoboyNome: p.motoboys?.nome_completo || "—",
+      motoboyNome: mapaMotoboys[p.motoboy_id]?.nome_completo || "—",
       data: new Date(p.criado_em).toLocaleDateString("pt-BR"),
       dataISO: dataLocalISO(new Date(p.criado_em)),
       hora: new Date(p.criado_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
