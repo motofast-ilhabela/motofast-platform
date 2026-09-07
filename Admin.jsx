@@ -2581,6 +2581,8 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
   const [reenviando, setReenviando] = useState(null); // id do pedido sendo processado
   const [atribuindoId, setAtribuindoId] = useState(null); // pedido cujo dropdown está aberto
   const [motoboySelecionado, setMotoboySelecionado] = useState({});
+  const [motoboySelecionadoTroca, setMotoboySelecionadoTroca] = useState({}); // reatribuição de corrida já aceita
+  const [trocandoId, setTrocandoId] = useState(null); // id do pedido sendo reatribuído agora
   useEffect(()=>{
     const t = setInterval(()=>setTick(x=>x+1), 1000);
     return ()=>clearInterval(t);
@@ -2627,6 +2629,47 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
 
     if (error) { alert("❌ Erro ao atribuir: " + error.message); return; }
     setAtribuindoId(null);
+    if (onRecarregar) await onRecarregar();
+  }
+
+  // Adicionado em 07/09/2026 — diferente do "devolver pra fila" (que joga o
+  // pedido de volta pra qualquer motoboy aceitar), isso REATRIBUI uma corrida
+  // que JÁ foi aceita (por você ou por qualquer motoboy) direto pra um
+  // motoboy específico que você escolhe. Uso típico: você (ou uma conta de
+  // monitoramento) aceitou a corrida porque não tinha ninguém específico no
+  // momento, e agora quer passar ela pra um motoboy certo, sem abrir pra
+  // qualquer um pegar. O motoboy novo entra igual se tivesse aceitado ele
+  // mesmo — some da corrida de quem tinha antes.
+  async function reatribuirParaOutroMotoboy(pedidoId, novoMotoboyId) {
+    if (!novoMotoboyId) return;
+    const { data: pedidoAtivoDele } = await supabase
+      .from("pedidos")
+      .select("corrida_id")
+      .eq("motoboy_id", novoMotoboyId)
+      .in("status", ["aceito", "saiu_estabelecimento"])
+      .limit(1)
+      .maybeSingle();
+
+    let corridaIdParaUsar = pedidoAtivoDele?.corrida_id;
+    if (!corridaIdParaUsar) {
+      const { data: corridaDB } = await supabase
+        .from("corridas")
+        .insert({ motoboy_id: novoMotoboyId, status: "ativa" })
+        .select()
+        .single();
+      corridaIdParaUsar = corridaDB?.id;
+    }
+
+    const { error } = await supabase.from("pedidos").update({
+      motoboy_id: novoMotoboyId,
+      corrida_id: corridaIdParaUsar,
+      status: "aceito",
+      aceito_em: new Date().toISOString(),
+      saiu_estabelecimento_em: null,
+    }).eq("id", pedidoId).in("status", ["aceito", "saiu_estabelecimento"]);
+
+    if (error) { alert("❌ Erro ao reatribuir: " + error.message); return; }
+    setTrocandoId(null);
     if (onRecarregar) await onRecarregar();
   }
 
@@ -2748,6 +2791,19 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
                       style={{marginTop:8,width:"100%",padding:"7px",borderRadius:6,background:"#1a1a2e",border:"1px dashed #4b5563",color:"#6b7280",fontWeight:700,fontSize:11,cursor:reenviando===p.id?"not-allowed":"pointer",opacity:reenviando===p.id?0.5:1}}>
                       {reenviando===p.id ? "Reenviando..." : "🔄 Motoboy pediu pra trocar — devolver pra fila"}
                     </button>
+                    {/* Diferente do botão acima: isso passa a corrida direto pra um
+                        motoboy ESPECÍFICO escolhido agora, sem abrir pra fila geral. */}
+                    <div style={{marginTop:6,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                      <select value={motoboySelecionadoTroca[p.id] || ""} onChange={e=>setMotoboySelecionadoTroca(prev=>({...prev,[p.id]:e.target.value}))}
+                        style={{flex:1,minWidth:140,background:"#0f172a",border:"1px solid #374151",borderRadius:6,color:"#f9fafb",padding:"6px 8px",fontSize:12}}>
+                        <option value="">👤 Atribuir a um motoboy específico...</option>
+                        {(motoboys||[]).filter(m=>!m.banido && m.id!==p.motoboyId).map(m => <option key={m.id} value={m.id}>{m.nomeCompleto}{m.online?" 🟢":" ⚫"}</option>)}
+                      </select>
+                      <Btn small cor="azul" disabled={!motoboySelecionadoTroca[p.id] || trocandoId===p.id}
+                        onClick={()=>{setTrocandoId(p.id); reatribuirParaOutroMotoboy(p.id, motoboySelecionadoTroca[p.id]);}}>
+                        {trocandoId===p.id ? "..." : "Atribuir"}
+                      </Btn>
+                    </div>
                   </div>
                 ))}
                 {primeiro.motoboyTel && (
