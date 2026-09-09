@@ -48,6 +48,15 @@ const BAIRROS_TAXA_FIXA_KM = {
 
 
 const SUPORTE_TEL = "5512991213656";
+
+// Contas de monitoramento do Alessandro (mesmas do Motoboy.jsx) — usadas
+// aqui só pra receberem uma notificação informativa de todo pedido novo,
+// mesmo quando não são a prioridade da vez. Não dá acesso pra aceitar antes
+// da hora — isso continua controlado só pelo Motoboy.jsx.
+const CONTAS_MONITORAMENTO_IDS = [
+  "c98107a7-1fd1-4429-9502-d8496501347d",
+  "a8cc6740-ca4d-4bb1-9292-0b81ce8f18be",
+];
 const SUPORTE_HORARIO = "Seg-Sex 9h-22h • Sáb 9h-19h • Dom/feriados: fechado";
 
 // Limite mensal de entregas grátis pra quem ainda não está em nenhum plano pago.
@@ -2778,6 +2787,22 @@ export default function AppEmpresario() {
           }),
         }).catch(e => console.log("Erro ao notificar motoboy do turno fixo:", e));
       });
+      // Adicionado em 07/09/2026 a pedido do Alessandro: mesmo com alguém
+      // tendo prioridade, as contas de monitoramento dele recebem um aviso
+      // também — só pra acompanhamento/gestão. NÃO dá prioridade nem acesso
+      // antecipado pra aceitar; se alguma delas já for a própria prioridade
+      // da vez, não manda de novo (evita notificação duplicada).
+      CONTAS_MONITORAMENTO_IDS.filter(id => !idsParaNotificar.includes(id)).forEach(motoboyId => {
+        fetch("/api/notificar-motoboy-especifico", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            motoboyId,
+            titulo: "🏍️ Novo Pedido (aviso — não é sua prioridade)",
+            corpo: `Entrega em ${pedido.bairro} — R$${pedido.taxaMotoboy || pedido.taxa}`,
+          }),
+        }).catch(e => console.log("Erro ao notificar conta de monitoramento:", e));
+      });
     } else {
       // Ninguém do turno fixo online agora — publica normal, pra todo mundo
       notificarMotoboysPush(
@@ -2983,6 +3008,17 @@ export default function AppEmpresario() {
                         corpo: `Entrega em ${avisoSemMotoboy.bairro} — R$${avisoSemMotoboy.taxaMotoboy || avisoSemMotoboy.taxa}`,
                       }),
                     }).catch(e => console.log("Erro ao notificar motoboy do turno fixo:", e));
+                  });
+                  CONTAS_MONITORAMENTO_IDS.filter(id => !idsParaNotificarReenvio.includes(id)).forEach(motoboyId => {
+                    fetch("/api/notificar-motoboy-especifico", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        motoboyId,
+                        titulo: "🏍️ Novo Pedido (aviso — não é sua prioridade)",
+                        corpo: `Entrega em ${avisoSemMotoboy.bairro} — R$${avisoSemMotoboy.taxaMotoboy || avisoSemMotoboy.taxa}`,
+                      }),
+                    }).catch(e => console.log("Erro ao notificar conta de monitoramento:", e));
                   });
                 } else {
                   notificarMotoboysPush(
