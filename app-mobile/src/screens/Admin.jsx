@@ -655,20 +655,62 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
 
   async function bloquear(id) {
     const mb = motoboys.find(m=>m.id===id);
-    await supabase.from("motoboys").update({bloqueado: mb.ativo}).eq("id", id);
-    setMotoboys(p=>p.map(m=>m.id===id?{...m,ativo:!m.ativo}:m));
+    const acao = mb.ativo ? "bloquear" : "desbloquear";
+    try {
+      const resp = await fetch(`${WEB_APP_URL}/api/bloquear-motoboy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, acao }),
+      });
+      const result = await resp.json();
+      if (!resp.ok || !result.success) {
+        alert("⚠️ Não consegui " + acao + " o motoboy: " + (result.error || "erro desconhecido") + "\n\nTente de novo — se persistir, avise o suporte técnico.");
+        return;
+      }
+      // Só atualiza a tela DEPOIS de confirmar que o banco realmente mudou —
+      // evita o bug de 03/09/2026 em que a tela mudava mas o banco não.
+      setMotoboys(p=>p.map(m=>m.id===id?{...m,ativo:!result.motoboy.bloqueado,online:result.motoboy.online}:m));
+    } catch (err) {
+      alert("⚠️ Erro de conexão ao tentar " + acao + " o motoboy. Tente de novo.");
+    }
   }
 
   async function banir(id) {
     if (!motivo.trim()) return;
-    await supabase.from("motoboys").update({banido:true, bloqueado:true, motivo_banimento:motivo, data_banimento:dataLocalISO()}).eq("id", id);
-    setMotoboys(p=>p.map(m=>m.id===id?{...m,banido:true,ativo:false,online:false,motivoBanimento:motivo,dataBanimento:dataLocalISO()}:m));
-    setModalBanir(null); setMotivo(""); setDetalhe(null);
+    try {
+      const resp = await fetch(`${WEB_APP_URL}/api/bloquear-motoboy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, acao: "banir", motivo }),
+      });
+      const result = await resp.json();
+      if (!resp.ok || !result.success) {
+        alert("⚠️ Não consegui banir o motoboy: " + (result.error || "erro desconhecido") + "\n\nTente de novo — se persistir, avise o suporte técnico.");
+        return;
+      }
+      setMotoboys(p=>p.map(m=>m.id===id?{...m,banido:true,ativo:false,online:false,motivoBanimento:motivo,dataBanimento:result.motoboy.data_banimento}:m));
+      setModalBanir(null); setMotivo(""); setDetalhe(null);
+    } catch (err) {
+      alert("⚠️ Erro de conexão ao tentar banir o motoboy. Tente de novo.");
+    }
   }
 
   async function desbanir(id) {
-    await supabase.from("motoboys").update({banido:false, bloqueado:false, motivo_banimento:null, data_banimento:null}).eq("id", id);
-    setMotoboys(p=>p.map(m=>m.id===id?{...m,banido:false,ativo:true,motivoBanimento:null,dataBanimento:null}:m));
+    try {
+      const resp = await fetch(`${WEB_APP_URL}/api/bloquear-motoboy`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, acao: "desbanir" }),
+      });
+      const result = await resp.json();
+      if (!resp.ok || !result.success) {
+        alert("⚠️ Não consegui desbanir o motoboy: " + (result.error || "erro desconhecido"));
+        return;
+      }
+      setMotoboys(p=>p.map(m=>m.id===id?{...m,banido:false,ativo:true,motivoBanimento:null,dataBanimento:null}:m));
+    } catch (err) {
+      alert("⚠️ Erro de conexão ao tentar desbanir o motoboy. Tente de novo.");
+    }
   }
 
   const mesAtual = new Date().getMonth()+1;
@@ -2264,6 +2306,7 @@ function Historico({ historico, motoboys, empresarios }) {
               <span style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⚠️ Mostrando as 100 entregas mais recentes de {lista.length} no total. Escolha um mês ou motoboy no filtro acima pra ver o período completo, sem cortar nada.</span>
             </div>
           )}
+          <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead>
               <tr style={{background:"#0f172a",borderBottom:"1px solid #1f2937"}}>
@@ -2283,25 +2326,34 @@ function Historico({ historico, motoboys, empresarios }) {
                     <td style={{padding:"8px 12px",color:"#9ca3af",whiteSpace:"nowrap"}}>{e.data.split("-").reverse().join("/")}</td>
                     <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700,whiteSpace:"nowrap"}}>🏍️ {e.horaSaida||"—"}</td>
                     <td style={{padding:"8px 12px",color:"#34d399",fontWeight:700,whiteSpace:"nowrap"}}>✅ {e.horaEntrega||"—"}</td>
-                    <td style={{padding:"8px 12px",color:"#f9fafb",fontWeight:600}}>{e.clienteNome}</td>
-                    <td style={{padding:"8px 12px",color:"#34d399"}}>{e.bairro}</td>
-                    <td style={{padding:"8px 12px",color:"#a78bfa"}} title={e.metodoCalculoKm||"Sem registro do método de cálculo"}>{e.distanciaKm?`${e.distanciaKm}km`:"—"}</td>
-                    <td style={{padding:"8px 12px",color:"#d1d5db"}}>{mb?.nomeCompleto||"—"}</td>
-                    <td style={{padding:"8px 12px",color:"#d1d5db",fontSize:11}}>{emp?.nome?.split(" ").slice(0,2).join(" ")||"—"}</td>
-                    <td style={{padding:"8px 12px"}}><span style={{color:pg.cor,fontWeight:700}}>{pg.icon}</span></td>
-                    <td style={{padding:"8px 12px",color:"#60a5fa",fontWeight:700}}>R${e.taxaEmpresario}</td>
-                    <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700}}>R${e.taxaMotoboy}</td>
-                    <td style={{padding:"8px 12px",color:"#a78bfa",fontWeight:700}}>R${e.lucro}</td>
-                    <td style={{padding:"8px 12px"}}>
+                    <td style={{padding:"8px 12px",color:"#f9fafb",fontWeight:600,whiteSpace:"nowrap"}}>{e.clienteNome}</td>
+                    <td style={{padding:"8px 12px",color:"#34d399",whiteSpace:"nowrap"}}>{e.bairro}</td>
+                    <td style={{padding:"8px 12px",color:"#a78bfa",whiteSpace:"nowrap"}} title={e.metodoCalculoKm||"Sem registro do método de cálculo"}>{e.distanciaKm?`${e.distanciaKm}km`:"—"}</td>
+                    <td style={{padding:"8px 12px",color:"#d1d5db",whiteSpace:"nowrap"}}>{mb?.nomeCompleto||"—"}</td>
+                    <td style={{padding:"8px 12px",color:"#d1d5db",fontSize:11,whiteSpace:"nowrap"}}>{emp?.nome?.split(" ").slice(0,2).join(" ")||"—"}</td>
+                    <td style={{padding:"8px 12px",whiteSpace:"nowrap"}}><span style={{color:pg.cor,fontWeight:700}}>{pg.icon}</span></td>
+                    <td style={{padding:"8px 12px",color:"#60a5fa",fontWeight:700,whiteSpace:"nowrap"}}>R${e.taxaEmpresario}</td>
+                    <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700,whiteSpace:"nowrap"}}>R${e.taxaMotoboy}</td>
+                    <td style={{padding:"8px 12px",color:"#a78bfa",fontWeight:700,whiteSpace:"nowrap"}}>R${e.lucro}</td>
+                    <td style={{padding:"8px 12px",whiteSpace:"nowrap"}}>
                       <span style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>
                         {entregue?"✅":"❌"} {e.status}
                       </span>
+                      {!entregue && (
+                        <div style={{marginTop:3,fontSize:10,fontWeight:700,color:e.canceladoPorMotoboy?"#f59e0b":"#6b7280"}}>
+                          {e.canceladoPorMotoboy ? "🏍️ pelo motoboy" : "🏪 pelo estabelecimento"}
+                        </div>
+                      )}
+                      {!entregue && e.motivoCancelamento && (
+                        <div style={{color:"#6b7280",fontSize:10,marginTop:2}}>{e.motivoCancelamento}</div>
+                      )}
                     </td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
+          </div>
           {lista.length===0 && <div style={{textAlign:"center",padding:30,color:"#4b5563"}}>Nenhum registro encontrado.</div>}
         </Card>
       )}
@@ -2543,6 +2595,8 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
   const [reenviando, setReenviando] = useState(null); // id do pedido sendo processado
   const [atribuindoId, setAtribuindoId] = useState(null); // pedido cujo dropdown está aberto
   const [motoboySelecionado, setMotoboySelecionado] = useState({});
+  const [motoboySelecionadoTroca, setMotoboySelecionadoTroca] = useState({}); // reatribuição de corrida já aceita
+  const [trocandoId, setTrocandoId] = useState(null); // id do pedido sendo reatribuído agora
   useEffect(()=>{
     const t = setInterval(()=>setTick(x=>x+1), 1000);
     return ()=>clearInterval(t);
@@ -2589,6 +2643,47 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
 
     if (error) { alert("❌ Erro ao atribuir: " + error.message); return; }
     setAtribuindoId(null);
+    if (onRecarregar) await onRecarregar();
+  }
+
+  // Adicionado em 07/09/2026 — diferente do "devolver pra fila" (que joga o
+  // pedido de volta pra qualquer motoboy aceitar), isso REATRIBUI uma corrida
+  // que JÁ foi aceita (por você ou por qualquer motoboy) direto pra um
+  // motoboy específico que você escolhe. Uso típico: você (ou uma conta de
+  // monitoramento) aceitou a corrida porque não tinha ninguém específico no
+  // momento, e agora quer passar ela pra um motoboy certo, sem abrir pra
+  // qualquer um pegar. O motoboy novo entra igual se tivesse aceitado ele
+  // mesmo — some da corrida de quem tinha antes.
+  async function reatribuirParaOutroMotoboy(pedidoId, novoMotoboyId) {
+    if (!novoMotoboyId) return;
+    const { data: pedidoAtivoDele } = await supabase
+      .from("pedidos")
+      .select("corrida_id")
+      .eq("motoboy_id", novoMotoboyId)
+      .in("status", ["aceito", "saiu_estabelecimento"])
+      .limit(1)
+      .maybeSingle();
+
+    let corridaIdParaUsar = pedidoAtivoDele?.corrida_id;
+    if (!corridaIdParaUsar) {
+      const { data: corridaDB } = await supabase
+        .from("corridas")
+        .insert({ motoboy_id: novoMotoboyId, status: "ativa" })
+        .select()
+        .single();
+      corridaIdParaUsar = corridaDB?.id;
+    }
+
+    const { error } = await supabase.from("pedidos").update({
+      motoboy_id: novoMotoboyId,
+      corrida_id: corridaIdParaUsar,
+      status: "aceito",
+      aceito_em: new Date().toISOString(),
+      saiu_estabelecimento_em: null,
+    }).eq("id", pedidoId).in("status", ["aceito", "saiu_estabelecimento"]);
+
+    if (error) { alert("❌ Erro ao reatribuir: " + error.message); return; }
+    setTrocandoId(null);
     if (onRecarregar) await onRecarregar();
   }
 
@@ -2710,6 +2805,19 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
                       style={{marginTop:8,width:"100%",padding:"7px",borderRadius:6,background:"#1a1a2e",border:"1px dashed #4b5563",color:"#6b7280",fontWeight:700,fontSize:11,cursor:reenviando===p.id?"not-allowed":"pointer",opacity:reenviando===p.id?0.5:1}}>
                       {reenviando===p.id ? "Reenviando..." : "🔄 Motoboy pediu pra trocar — devolver pra fila"}
                     </button>
+                    {/* Diferente do botão acima: isso passa a corrida direto pra um
+                        motoboy ESPECÍFICO escolhido agora, sem abrir pra fila geral. */}
+                    <div style={{marginTop:6,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                      <select value={motoboySelecionadoTroca[p.id] || ""} onChange={e=>setMotoboySelecionadoTroca(prev=>({...prev,[p.id]:e.target.value}))}
+                        style={{flex:1,minWidth:140,background:"#0f172a",border:"1px solid #374151",borderRadius:6,color:"#f9fafb",padding:"6px 8px",fontSize:12}}>
+                        <option value="">👤 Atribuir a um motoboy específico...</option>
+                        {(motoboys||[]).filter(m=>!m.banido && m.id!==p.motoboyId).map(m => <option key={m.id} value={m.id}>{m.nomeCompleto}{m.online?" 🟢":" ⚫"}</option>)}
+                      </select>
+                      <Btn small cor="azul" disabled={!motoboySelecionadoTroca[p.id] || trocandoId===p.id}
+                        onClick={()=>{setTrocandoId(p.id); reatribuirParaOutroMotoboy(p.id, motoboySelecionadoTroca[p.id]);}}>
+                        {trocandoId===p.id ? "..." : "Atribuir"}
+                      </Btn>
+                    </div>
                   </div>
                 ))}
                 {primeiro.motoboyTel && (
@@ -3246,6 +3354,8 @@ export default function Admin() {
             taxaMotoboy: taxaMb,
             lucro: lucroEntrega,
             status: p.status === "entregue" ? "Entregue" : "Cancelada",
+            canceladoPorMotoboy: p.cancelado_por_motoboy || false,
+            motivoCancelamento: p.motivo_cancelamento || null,
             data: dataStr,
             horaSaida,
             horaEntrega,
@@ -3289,11 +3399,13 @@ export default function Admin() {
 
       const empsComMeta = emps.map(e => ({...e, entregasMes: contagemEntregas[e.id] || 0}));
 
-      const { data: ativosDB } = await supabase
+      const { data: ativosDB, error: ativosErr } = await supabase
         .from("pedidos")
-        .select("*, motoboys(nome_completo, telefone), empresarios(nome)")
+        .select("*, motoboys!pedidos_motoboy_id_fkey(nome_completo, telefone), empresarios(nome)")
         .in("status", ["aguardando","aceito","saiu_estabelecimento"])
         .order("criado_em", { ascending: true });
+
+      if (ativosErr) console.error("Erro ao carregar corridas ativas:", ativosErr);
 
       const ativosMapeados = (ativosDB || []).map(p => ({
         id: p.id,
