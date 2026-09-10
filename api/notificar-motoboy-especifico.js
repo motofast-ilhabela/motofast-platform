@@ -9,6 +9,17 @@
 // real na tabela motoboys). Precisa confirmar isso no Motoboy.jsx antes de
 // usar isso em produção.
 export default async function handler(req, res) {
+  // CORS — adicionado em 07/09/2026 pra permitir chamadas vindas do app
+  // nativo (Capacitor/WebView), que faz preflight OPTIONS antes do POST de
+  // verdade. Sem isso, o navegador do app bloqueava a chamada com 405 antes
+  // mesmo dela chegar aqui. Não muda nada do comportamento pro site.
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método não permitido" });
   }

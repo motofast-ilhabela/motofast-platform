@@ -44,6 +44,16 @@ const CONTAS_MONITORAMENTO = [
 ];
 
 export default async function handler(req, res) {
+  // CORS — adicionado em 07/09/2026 pra permitir chamadas vindas do app
+  // nativo (Capacitor/WebView). Fica ANTES até do log de debug de propósito,
+  // pra um preflight OPTIONS nunca tocar no banco.
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
   // Grava no banco que a função foi chamada, e guarda o resultado dessa
   // gravação numa variável — vamos devolver isso DIRETO na resposta da API,
   // pra ver o erro exato sem precisar de SQL nem dos logs da Vercel.
