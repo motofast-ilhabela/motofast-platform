@@ -18,15 +18,19 @@ function getAudioCtxEmpresario() {
 function tocarSomCancelamento() {
   try {
     const ctx = getAudioCtxEmpresario();
-    // Três toques graves e curtos, tipo alarme — bem diferente do toque
-    // (mais agudo) usado pra "pedido novo chegou" no app do motoboy.
-    [0, 0.3, 0.6].forEach(d => {
-      const o = ctx.createOscillator(), g = ctx.createGain();
-      o.connect(g); g.connect(ctx.destination);
-      o.frequency.value = 220; o.type = "sawtooth";
-      g.gain.setValueAtTime(0.9, ctx.currentTime + d);
-      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + d + 0.25);
-      o.start(ctx.currentTime + d); o.stop(ctx.currentTime + d + 0.25);
+    // Aumentado a pedido do Alessandro em 07/09/2026 — dois osciladores
+    // tocando juntos por toque (mais "cheio"/mais alto na prática, já que é
+    // som sintetizado) e ganho no limite que o navegador aceita sem cortar o
+    // áudio (acima de ~1.0 alguns navegadores distorcem).
+    [0, 0.3, 0.6, 0.9].forEach(d => {
+      [220, 440].forEach(freq => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.frequency.value = freq; o.type = "sawtooth";
+        g.gain.setValueAtTime(1.0, ctx.currentTime + d);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + d + 0.25);
+        o.start(ctx.currentTime + d); o.stop(ctx.currentTime + d + 0.25);
+      });
     });
   } catch (e) { console.log("Som de cancelamento bloqueado:", e); }
 }
