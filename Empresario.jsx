@@ -1,6 +1,36 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient.js";
 
+// Som de alerta pra cancelamento de motoboy — adicionado em 07/09/2026 a
+// pedido do Alessandro. Estabelecimentos não ficam olhando a tela o tempo
+// todo, então um aviso só visual passava despercebido: o motoboy cancelava
+// no meio da corrida e ninguém percebia até o cliente reclamar do atraso.
+// Som próprio (diferente de qualquer som do motoboy), grave e insistente,
+// repete sozinho enquanto o aviso não for fechado.
+let _audioCtxEmpresario = null;
+function getAudioCtxEmpresario() {
+  if (!_audioCtxEmpresario) {
+    _audioCtxEmpresario = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (_audioCtxEmpresario.state === "suspended") _audioCtxEmpresario.resume();
+  return _audioCtxEmpresario;
+}
+function tocarSomCancelamento() {
+  try {
+    const ctx = getAudioCtxEmpresario();
+    // Três toques graves e curtos, tipo alarme — bem diferente do toque
+    // (mais agudo) usado pra "pedido novo chegou" no app do motoboy.
+    [0, 0.3, 0.6].forEach(d => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = 220; o.type = "sawtooth";
+      g.gain.setValueAtTime(0.9, ctx.currentTime + d);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + d + 0.25);
+      o.start(ctx.currentTime + d); o.stop(ctx.currentTime + d + 0.25);
+    });
+  } catch (e) { console.log("Som de cancelamento bloqueado:", e); }
+}
+
 // ─── DADOS DO ESTABELECIMENTO (viriam do login) ───────────────────────────────
 const EMPRESA = {
   id: null,
@@ -2262,6 +2292,17 @@ export default function AppEmpresario() {
   const [avisoSemMotoboy, setAvisoSemMotoboy] = useState(null);
   const [avisoCancelamentoMotoboy, setAvisoCancelamentoMotoboy] = useState(null);
   const notificadosCancelamento = useRef(new Set());
+
+  // Toca o som de cancelamento assim que o aviso aparece, e repete a cada 4s
+  // enquanto o estabelecimento não fechar o aviso — pensado pra quem não fica
+  // com o olho grudado na tela o dia inteiro.
+  useEffect(() => {
+    if (!avisoCancelamentoMotoboy) return;
+    tocarSomCancelamento();
+    const intervalo = setInterval(tocarSomCancelamento, 4000);
+    return () => clearInterval(intervalo);
+  }, [avisoCancelamentoMotoboy]);
+
   const [empresa, setEmpresa] = useState({...EMPRESA, id:null}); // começa SEM id até carregar o real do Supabase
   const [carregando, setCarregando] = useState(true);
   // Valor exato pendente quando a conta está bloqueada — pra mostrar na tela de
