@@ -2698,14 +2698,20 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
   }
 
   const aguardando = corridasAtivas.filter(p=>p.status==="aguardando");
-  const emRota = corridasAtivas.filter(p=>p.status==="aceito"||p.status==="saiu_estabelecimento");
+  // Ajustado em 07/09/2026: inclui também os já "entregue" que ainda
+  // pertencem a uma corrida com pelo menos um pedido não finalizado, pra dar
+  // pra ver "✅ Finalizado" item por item em vez do card sumir só quando
+  // TUDO terminar.
+  const emRota = corridasAtivas.filter(p=>p.status==="aceito"||p.status==="saiu_estabelecimento"||p.status==="entregue");
 
   const porCorrida = {};
   emRota.forEach(p=>{
     if (!porCorrida[p.corridaId]) porCorrida[p.corridaId] = [];
     porCorrida[p.corridaId].push(p);
   });
-  const corridas = Object.values(porCorrida).map(lista=>lista.slice().sort((a,b)=>a.criadoEm-b.criadoEm));
+  const corridas = Object.values(porCorrida)
+    .filter(lista => lista.some(p => p.status !== "entregue"))
+    .map(lista=>lista.slice().sort((a,b)=>a.criadoEm-b.criadoEm));
 
   return (
     <div>
@@ -2776,14 +2782,17 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
                   </div>
                 </div>
                 {pedidosDaCorrida.map((p,i)=>(
-                  <div key={p.id} style={{background:"#0f172a",borderRadius:8,padding:"9px 12px",marginBottom:6}}>
+                  <div key={p.id} style={{background:"#0f172a",borderRadius:8,padding:"9px 12px",marginBottom:6,opacity:p.status==="entregue"?0.6:1}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
                       <div>
                         <span style={{color:"#60a5fa",fontSize:11,fontWeight:700}}>#{i+1} — {p.clienteNome}</span>
                         <div style={{color:"#6b7280",fontSize:11,marginTop:1}}>🏪 {p.empresaNome} · 📍 {p.bairro}{p.distanciaKm ? ` · 🛣️ ${p.distanciaKm}km` : ""}</div>
                       </div>
-                      <Tag label={p.status==="saiu_estabelecimento"?"🚀 A caminho do cliente":"📦 Buscando no estabelecimento"} cor={p.status==="saiu_estabelecimento"?"#34d399":"#60a5fa"}/>
+                      {p.status==="entregue"
+                        ? <Tag label="✅ Finalizado" cor="#34d399"/>
+                        : <Tag label={p.status==="saiu_estabelecimento"?"🚀 A caminho do cliente":"📦 Buscando no estabelecimento"} cor={p.status==="saiu_estabelecimento"?"#34d399":"#60a5fa"}/>}
                     </div>
+                    {p.status!=="entregue" && (<>
                     {/* Uso raro — só quando o motoboy pediu pra trocar (ex: aceitou
                         por engano). Fica discreto de propósito, dentro de cada
                         pedido individual, pra não ser confundido com uma ação comum. */}
@@ -2804,6 +2813,7 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
                         {trocandoId===p.id ? "..." : "Atribuir"}
                       </Btn>
                     </div>
+                    </>)}
                   </div>
                 ))}
                 {primeiro.motoboyTel && (
@@ -3390,7 +3400,24 @@ export default function App() {
         .in("status", ["aguardando","aceito","saiu_estabelecimento"])
         .order("criado_em", { ascending: true });
 
-      const ativosMapeados = (ativosDB || []).map(p => ({
+      // Adicionado em 07/09/2026: dentro de uma corrida com vários pedidos, o
+      // motoboy agora grava cada entrega individualmente assim que confirma
+      // (não espera terminar todas). Pra continuar mostrando a corrida
+      // inteira até o motoboy finalizar todas — só que já marcando quais já
+      // foram entregues — busca também os pedidos "entregue" que pertencem
+      // a uma corrida que ainda tem pelo menos um pedido ativo.
+      const corridaIdsAtivas = [...new Set((ativosDB || []).map(p => p.corrida_id).filter(Boolean))];
+      let entreguesDaCorridaAtiva = [];
+      if (corridaIdsAtivas.length > 0) {
+        const { data } = await supabase
+          .from("pedidos")
+          .select("*, motoboys!motoboy_id(nome_completo, telefone), empresarios(nome)")
+          .eq("status", "entregue")
+          .in("corrida_id", corridaIdsAtivas);
+        entreguesDaCorridaAtiva = data || [];
+      }
+
+      const ativosMapeados = ([...(ativosDB || []), ...entreguesDaCorridaAtiva]).map(p => ({
         id: p.id,
         corridaId: p.corrida_id || p.id,
         status: p.status,

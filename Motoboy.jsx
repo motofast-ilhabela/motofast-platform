@@ -314,7 +314,7 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
   );
 }
 
-function CorridaAtiva({ corrida, onEntregar, onCancelar, onCancelarItem }) {
+function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCancelarItem }) {
   const [pedidosEntregues, setPedidosEntregues] = useState([]);
   const [saiuEstab, setSaiuEstab] = useState({});
   const [modalCancelar, setModalCancelar] = useState(false);
@@ -334,6 +334,13 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar, onCancelarItem }) {
   function marcarEntregue(pedidoId) {
     const novos = [...pedidosEntregues, pedidoId];
     setPedidosEntregues(novos);
+    // Corrigido em 07/09/2026 a pedido do Alessandro: antes, o banco só era
+    // atualizado quando TODOS os pedidos da corrida terminavam juntos — até
+    // lá, mesmo o que já tinha sido entregue continuava marcado como "a
+    // caminho" pro Admin, sem jeito de saber qual já foi de fato entregue
+    // quando o motoboy está com várias corridas ao mesmo tempo. Agora cada
+    // uma grava sozinha, na hora, assim que confirmada.
+    onEntregarItem(pedidoId);
     const todos = corrida.pedidos.map(p=>p.id);
     if (todos.every(id=>novos.includes(id))) {
       setTimeout(()=>onEntregar(), 800);
@@ -1480,14 +1487,18 @@ export default function AppMotoboy() {
     setPedidoDisponivel(null); pedidoRef.current = null; ofertaAtivaRef.current = null; tentativas.current = 0;
   }
 
+  async function entregarItemIndividual(pedidoId) {
+    await supabase.from("pedidos").update({
+      status: "entregue",
+      entregue_em: new Date().toISOString(),
+    }).eq("id", pedidoId);
+  }
+
   async function finalizarCorrida() {
     if (!corridaAtiva) return;
-    for (const p of corridaAtiva.pedidos) {
-      await supabase.from("pedidos").update({
-        status: "entregue",
-        entregue_em: new Date().toISOString(),
-      }).eq("id", p.id);
-    }
+    // Cada pedido já foi gravado como "entregue" individualmente, assim que
+    // confirmado (ver entregarItemIndividual) — aqui só falta o encerramento
+    // local: some da tela e joga pro histórico local do motoboy.
     const novos = corridaAtiva.pedidos.map(p=>({
       id:Date.now()+Math.random(),
       clienteNome:p.clienteNome, empresaNome:p.empresaNome,
@@ -1751,7 +1762,7 @@ export default function AppMotoboy() {
 
         {aba==="corrida" && (
           corridaAtiva
-            ? <CorridaAtiva corrida={corridaAtiva} onEntregar={finalizarCorrida} onCancelar={cancelarCorrida} onCancelarItem={cancelarPedidoIndividual}/>
+            ? <CorridaAtiva corrida={corridaAtiva} onEntregar={finalizarCorrida} onEntregarItem={entregarItemIndividual} onCancelar={cancelarCorrida} onCancelarItem={cancelarPedidoIndividual}/>
             : <Card style={{textAlign:"center",padding:40}}>
                 <div style={{fontSize:48,marginBottom:12}}>🏍️</div>
                 <div style={{color:"#6b7280",fontSize:15}}>Nenhuma corrida ativa</div>
