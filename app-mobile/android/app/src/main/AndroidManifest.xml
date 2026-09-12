@@ -32,4 +32,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Obrigatória a partir do Android 13 (API 33) pra mostrar notificação
+         push — sem ela, PushNotifications.requestPermissions() não funciona.
+         targetSdkVersion deste projeto já é 36. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { Capacitor } from "@capacitor/core";
+import { PushNotifications } from "@capacitor/push-notifications";
 import { supabase } from "../supabaseClient.js";
 
 // Cópia adaptada de Motoboy.jsx da plataforma web (ver CLAUDE.md — mudanças de
@@ -1087,6 +1089,62 @@ export default function Motoboy() {
       })
       .subscribe();
     return () => { supabase.removeChannel(canalStatus); };
+  },[motoboyId]);
+
+  // Push notification nativo (FCM) — só faz sentido dentro do app instalado
+  // (Capacitor.isNativePlatform() é false no `npm run dev`/navegador comum,
+  // onde o plugin não tem implementação e só daria erro sem fazer nada).
+  // Pede permissão, registra o aparelho no FCM e salva o token retornado em
+  // "motoboy_push_tokens" — tabela nova, dedicada só a isso, pra não mexer
+  // em nada que a tabela motoboys já usa (ver CLAUDE.md). O disparo de
+  // verdade da notificação continua pendente de um pedaço no servidor
+  // (Firebase Admin SDK), que ainda não existe.
+  useEffect(()=>{
+    if (!motoboyId || !Capacitor.isNativePlatform()) return;
+
+    async function configurarPush() {
+      try {
+        let permissao = await PushNotifications.checkPermissions();
+        if (permissao.receive === "prompt" || permissao.receive === "prompt-with-rationale") {
+          permissao = await PushNotifications.requestPermissions();
+        }
+        if (permissao.receive !== "granted") return;
+        await PushNotifications.register();
+      } catch(e) { console.error("Erro ao configurar push notification:", e); }
+    }
+    configurarPush();
+
+    const listeners = [];
+
+    PushNotifications.addListener("registration", async (token) => {
+      const { error } = await supabase.from("motoboy_push_tokens").upsert({
+        motoboy_id: motoboyId,
+        token: token.value,
+        plataforma: Capacitor.getPlatform(),
+        atualizado_em: new Date().toISOString(),
+      }, { onConflict: "motoboy_id" });
+      if (error) console.error("Erro ao salvar token de push:", error);
+    }).then(l => listeners.push(l));
+
+    PushNotifications.addListener("registrationError", (err) => {
+      console.error("Erro ao registrar push notification:", err);
+    }).then(l => listeners.push(l));
+
+    // App em primeiro plano quando a notificação chega — não dispara alerta
+    // sonoro aqui de propósito, pra não duplicar o alerta que o polling/
+    // tempo real já mostra na tela (ver buscarPedidoReal). Só serve de
+    // registro pra debug por enquanto.
+    PushNotifications.addListener("pushNotificationReceived", (notification) => {
+      console.log("Push recebido em primeiro plano:", notification);
+    }).then(l => listeners.push(l));
+
+    // Usuário tocou na notificação com o app em segundo plano/fechado —
+    // traz ele de volta pra tela inicial.
+    PushNotifications.addListener("pushNotificationActionPerformed", (acao) => {
+      setAba("home");
+    }).then(l => listeners.push(l));
+
+    return () => { listeners.forEach(l => l.remove()); };
   },[motoboyId]);
 
   useEffect(()=>{
