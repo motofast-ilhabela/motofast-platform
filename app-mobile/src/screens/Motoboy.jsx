@@ -1,8 +1,34 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
-import { PushNotifications } from "@capacitor/push-notifications";
+// Versão travada em 5.4.1 (sem ^) de propósito — a partir da 5.5.0 o pacote
+// publicado no npm vem com dist/index.cjs vazio (bug de publicação da própria
+// OneSignal, confirmado baixando os tarballs 5.5.5/5.5.6/5.5.7 direto do
+// registro). Isso fazia o import virar undefined e travar a tela do Motoboy
+// inteira em preto. NÃO atualizar sem antes conferir se a OneSignal corrigiu
+// o publish (dist/index.cjs com conteúdo de verdade, não 0 bytes).
+//
+// Não importamos o objeto OneSignal diretamente — o pacote é publicado como
+// "type: module" com "main" apontando pra um .cjs, uma combinação incomum
+// que o Rollup (dentro do Vite) empacota de forma inconsistente (já vimos o
+// export default virar undefined, e depois virar um "OneSignal.default"
+// embrulhado a mais, testando isso de verdade no dispositivo). Em vez de
+// depender de como o empacotador decide interpretar o export, importamos só
+// pelo efeito colateral (o próprio módulo sempre define window.plugins.
+// OneSignal ao carregar — documentado no dist/index.d.ts do pacote) e
+// acessamos o objeto real por ali, que não depende de nenhuma interpretação
+// de import/export.
+import "onesignal-cordova-plugin";
 import { supabase } from "../supabaseClient.js";
+
+function getOneSignal() {
+  return typeof window !== "undefined" ? window.plugins?.OneSignal : undefined;
+}
+
+// Mesmo app OneSignal que o site já usa (ver api/notificar-motoboys.js e
+// api/notificar-motoboy-especifico.js) — o ID em si não é segredo, só
+// identifica pra qual app OneSignal o dispositivo se conecta.
+const ONESIGNAL_APP_ID = "df32f4f0-4280-4127-9d84-ec8a0a05328c";
 
 // Cópia adaptada de Motoboy.jsx da plataforma web (ver CLAUDE.md — mudanças de
 // regra de negócio precisam ser replicadas manualmente entre as duas versões).
@@ -907,13 +933,11 @@ export default function Motoboy() {
 
   const ehContaMonitoramento = motoboyId ? CONTAS_MONITORAMENTO_IDS.includes(motoboyId) : false;
 
-  function ativarNotificacoesAgora() {
+  async function ativarNotificacoesAgora() {
     try {
-      if (window.OneSignalDeferred) {
-        window.OneSignalDeferred.push(async function(OneSignal) {
-          await OneSignal.Notifications.requestPermission();
-          try { setPermissaoNotificacao(Notification.permission); } catch(e) {}
-        });
+      if (Capacitor.isNativePlatform()) {
+        const concedida = await getOneSignal()?.Notifications.requestPermission(true);
+        setPermissaoNotificacao(concedida ? "granted" : "denied");
       } else if ("Notification" in window) {
         Notification.requestPermission().then(p=>setPermissaoNotificacao(p));
       }
@@ -936,13 +960,22 @@ export default function Motoboy() {
         if (mb) {
           setMotoboyId(mb.id);
           try {
-            if (window.OneSignalDeferred) {
-              window.OneSignalDeferred.push(async function(OneSignal) {
-                await OneSignal.login(String(mb.id));
-                await OneSignal.Notifications.requestPermission();
-              });
-            } else if ("Notification" in window && Notification.permission === "default") {
-              await Notification.requestPermission();
+            // Mesmo OneSignal que o site já usa (api/notificar-motoboys.js e
+            // api/notificar-motoboy-especifico.js) — mas aqui via SDK nativo
+            // do Capacitor, não o SDK Web (que depende de um <script> que
+            // este app não carrega). login(mb.id) associa esse aparelho ao
+            // external_id que o servidor usa pra mandar notificação só pra
+            // ele (include_aliases).
+            if (Capacitor.isNativePlatform()) {
+              const os = getOneSignal();
+              os.initialize(ONESIGNAL_APP_ID);
+              os.login(String(mb.id));
+              // false = só pede a permissão normal, sem redirecionar sozinho
+              // pras configurações do Android se já tiver sido negada antes
+              // (isso fica só pro botão "Ativar Notificações Agora", uma
+              // ação explícita do motoboy — não em todo login).
+              const concedida = await os.Notifications.requestPermission(false);
+              setPermissaoNotificacao(concedida ? "granted" : "denied");
             }
           } catch(e) { console.log("OneSignal login/permissão:", e); }
           setMotoboy({
@@ -1057,6 +1090,36 @@ export default function Motoboy() {
     carregar();
   },[]);
 
+  // Notificação chegando com o app aberto — não precisa fazer nada especial,
+  // o polling/tempo real já mostra o pedido na tela, então só loga pra
+  // debug. Notificação com o app fechado/minimizado é o OneSignal quem
+  // mostra sozinho, sem precisar de nenhum JS rodando pra isso.
+  useEffect(()=>{
+    if (!Capacitor.isNativePlatform()) return;
+    const aoReceberEmPrimeiroPlano = (evento) => {
+      console.log("Push recebido em primeiro plano:", evento.getNotification());
+    };
+    const aoTocarNaNotificacao = () => {
+      setAba("home");
+    };
+    // Nunca deixar um problema no plugin do OneSignal (ex: publish quebrado
+    // da própria lib, já aconteceu — ver comentário no import lá em cima)
+    // travar a tela inteira do Motoboy em preto. Só notificação deixa de
+    // funcionar, o resto do app continua de pé.
+    try {
+      const os = getOneSignal();
+      os.Notifications.addEventListener("foregroundWillDisplay", aoReceberEmPrimeiroPlano);
+      os.Notifications.addEventListener("click", aoTocarNaNotificacao);
+    } catch(e) { console.error("Erro ao registrar listeners do OneSignal:", e); }
+    return () => {
+      try {
+        const os = getOneSignal();
+        os.Notifications.removeEventListener("foregroundWillDisplay", aoReceberEmPrimeiroPlano);
+        os.Notifications.removeEventListener("click", aoTocarNaNotificacao);
+      } catch(e) {}
+    };
+  },[]);
+
   // Força o motoboy offline NA HORA se o Admin bloquear/banir a conta enquanto
   // o app já está aberto e rodando — sem isso, as travas de bloqueio (login,
   // aceitar, ficar online) só pegam a mudança na próxima vez que algo dispara
@@ -1089,62 +1152,6 @@ export default function Motoboy() {
       })
       .subscribe();
     return () => { supabase.removeChannel(canalStatus); };
-  },[motoboyId]);
-
-  // Push notification nativo (FCM) — só faz sentido dentro do app instalado
-  // (Capacitor.isNativePlatform() é false no `npm run dev`/navegador comum,
-  // onde o plugin não tem implementação e só daria erro sem fazer nada).
-  // Pede permissão, registra o aparelho no FCM e salva o token retornado em
-  // "motoboy_push_tokens" — tabela nova, dedicada só a isso, pra não mexer
-  // em nada que a tabela motoboys já usa (ver CLAUDE.md). O disparo de
-  // verdade da notificação continua pendente de um pedaço no servidor
-  // (Firebase Admin SDK), que ainda não existe.
-  useEffect(()=>{
-    if (!motoboyId || !Capacitor.isNativePlatform()) return;
-
-    async function configurarPush() {
-      try {
-        let permissao = await PushNotifications.checkPermissions();
-        if (permissao.receive === "prompt" || permissao.receive === "prompt-with-rationale") {
-          permissao = await PushNotifications.requestPermissions();
-        }
-        if (permissao.receive !== "granted") return;
-        await PushNotifications.register();
-      } catch(e) { console.error("Erro ao configurar push notification:", e); }
-    }
-    configurarPush();
-
-    const listeners = [];
-
-    PushNotifications.addListener("registration", async (token) => {
-      const { error } = await supabase.from("motoboy_push_tokens").upsert({
-        motoboy_id: motoboyId,
-        token: token.value,
-        plataforma: Capacitor.getPlatform(),
-        atualizado_em: new Date().toISOString(),
-      }, { onConflict: "motoboy_id" });
-      if (error) console.error("Erro ao salvar token de push:", error);
-    }).then(l => listeners.push(l));
-
-    PushNotifications.addListener("registrationError", (err) => {
-      console.error("Erro ao registrar push notification:", err);
-    }).then(l => listeners.push(l));
-
-    // App em primeiro plano quando a notificação chega — não dispara alerta
-    // sonoro aqui de propósito, pra não duplicar o alerta que o polling/
-    // tempo real já mostra na tela (ver buscarPedidoReal). Só serve de
-    // registro pra debug por enquanto.
-    PushNotifications.addListener("pushNotificationReceived", (notification) => {
-      console.log("Push recebido em primeiro plano:", notification);
-    }).then(l => listeners.push(l));
-
-    // Usuário tocou na notificação com o app em segundo plano/fechado —
-    // traz ele de volta pra tela inicial.
-    PushNotifications.addListener("pushNotificationActionPerformed", (acao) => {
-      setAba("home");
-    }).then(l => listeners.push(l));
-
-    return () => { listeners.forEach(l => l.remove()); };
   },[motoboyId]);
 
   useEffect(()=>{
@@ -1647,14 +1654,29 @@ export default function Motoboy() {
                   </div>
                 </div>
                 <div style={{background:"#111827",borderRadius:8,padding:"12px 14px",fontSize:12,color:"#d1d5db",lineHeight:1.7}}>
-                  <strong style={{color:"#fbbf24"}}>Como liberar no Android (Chrome):</strong>
-                  <ol style={{margin:"6px 0 0 18px",padding:0}}>
-                    <li>Toque nos <strong>3 pontinhos</strong> no canto superior direito do navegador</li>
-                    <li>Toque em <strong>"Configurações do site"</strong> (ou no cadeado/ícone ao lado do endereço)</li>
-                    <li>Toque em <strong>"Notificações"</strong></li>
-                    <li>Mude de "Bloqueado" para <strong>"Permitir"</strong></li>
-                    <li>Feche e abra o app de novo</li>
-                  </ol>
+                  {Capacitor.isNativePlatform() ? (
+                    <>
+                      <strong style={{color:"#fbbf24"}}>Como liberar nas configurações do celular:</strong>
+                      <ol style={{margin:"6px 0 0 18px",padding:0}}>
+                        <li>Toque e segure o ícone do <strong>MotoFast</strong> na tela do celular</li>
+                        <li>Toque em <strong>"Informações do app"</strong> (ícone de "i")</li>
+                        <li>Toque em <strong>"Notificações"</strong></li>
+                        <li>Ative a chave de notificações</li>
+                        <li>Volte pro app</li>
+                      </ol>
+                    </>
+                  ) : (
+                    <>
+                      <strong style={{color:"#fbbf24"}}>Como liberar no Android (Chrome):</strong>
+                      <ol style={{margin:"6px 0 0 18px",padding:0}}>
+                        <li>Toque nos <strong>3 pontinhos</strong> no canto superior direito do navegador</li>
+                        <li>Toque em <strong>"Configurações do site"</strong> (ou no cadeado/ícone ao lado do endereço)</li>
+                        <li>Toque em <strong>"Notificações"</strong></li>
+                        <li>Mude de "Bloqueado" para <strong>"Permitir"</strong></li>
+                        <li>Feche e abra o app de novo</li>
+                      </ol>
+                    </>
+                  )}
                 </div>
               </Card>
             )}

@@ -15,8 +15,8 @@
     "@capacitor/core": "^8.5.1",
     "@capacitor/ios": "^8.5.1",
     "@capacitor/preferences": "^8.0.1",
-    "@capacitor/push-notifications": "^8.1.2",
     "@supabase/supabase-js": "^2.114.0",
+    "onesignal-cordova-plugin": "5.4.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.3"
