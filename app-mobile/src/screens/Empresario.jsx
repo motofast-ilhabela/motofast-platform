@@ -2426,7 +2426,7 @@ export default function Empresario() {
     // já foram feitas no total — ela nunca cresce com o tempo.
     const { data: pedidosDB, error } = await supabase
       .from("pedidos")
-      .select("*, motoboys(nome_completo, telefone)")
+      .select("*, motoboys!pedidos_motoboy_id_fkey(nome_completo, telefone)")
       .eq("empresario_id", empresaId)
       .in("status", ["aguardando","aceito","saiu_estabelecimento"])
       .order("criado_em", { ascending: true });
@@ -2481,7 +2481,7 @@ export default function Empresario() {
     setCarregandoHistorico(true);
     let query = supabase
       .from("pedidos")
-      .select("*, motoboys(nome_completo, telefone)")
+      .select("*, motoboys!pedidos_motoboy_id_fkey(nome_completo, telefone)")
       .eq("empresario_id", empresa.id)
       .in("status", ["entregue","cancelado"])
       .order("criado_em", { ascending: false });

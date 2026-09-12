@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "965399869234",
+    "project_id": "motofast-entregas",
+    "storage_bucket": "motofast-entregas.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:965399869234:android:564b6904a85f50f367092b",
+        "android_client_info": {
+          "package_name": "com.motofast.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDG-6SulOyJ6vftFcspLRVkOzTcKvvo6wk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

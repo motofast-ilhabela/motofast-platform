@@ -949,8 +949,17 @@ export default function Motoboy() {
             tel: mb.telefone,
             pix: mb.pix,
             bairroBase: mb.bairro_base,
+            bloqueado: mb.bloqueado || false,
+            banido: mb.banido || false,
           });
-          setOnline(mb.online || false);
+          // Motoboy bloqueado/banido nunca fica online, mesmo que o banco
+          // ainda tenha online:true de antes do bloqueio (corrige bug em que
+          // bloquear/banir no Admin não impedia o motoboy de continuar
+          // recebendo pedido novo — 03/09/2026).
+          setOnline(mb.bloqueado || mb.banido ? false : (mb.online || false));
+          if ((mb.bloqueado || mb.banido) && mb.online) {
+            await supabase.from("motoboys").update({ online: false }).eq("id", mb.id);
+          }
 
           const { data: pedidosDB } = await supabase
             .from("pedidos")
@@ -1010,11 +1019,13 @@ export default function Motoboy() {
           const mesAtualRank = new Date().getMonth()+1;
           const anoAtualRank = new Date().getFullYear();
           const inicioMes = new Date(anoAtualRank, mesAtualRank-1, 1).toISOString();
-          const { data: pedidosMes } = await supabase
+          const { data: pedidosMes, error: pedidosMesErr } = await supabase
             .from("pedidos")
-            .select("motoboy_id, taxa, motoboys(nome_completo)")
+            .select("motoboy_id, taxa, motoboys!pedidos_motoboy_id_fkey(nome_completo)")
             .eq("status", "entregue")
             .gte("criado_em", inicioMes);
+
+          if (pedidosMesErr) console.error("Erro ao carregar ranking:", pedidosMesErr);
 
           if (pedidosMes) {
             const contagem = {};
@@ -1044,6 +1055,40 @@ export default function Motoboy() {
     carregar();
   },[]);
 
+  // Força o motoboy offline NA HORA se o Admin bloquear/banir a conta enquanto
+  // o app já está aberto e rodando — sem isso, as travas de bloqueio (login,
+  // aceitar, ficar online) só pegam a mudança na próxima vez que algo dispara
+  // uma consulta ao banco, deixando quem já está online/trabalhando livre pra
+  // continuar aceitando corrida até fechar o app por conta própria. Mesmo
+  // padrão de tempo real usado na reatribuição de corrida no Admin.
+  useEffect(()=>{
+    if (!motoboyId) return;
+    const canalStatus = supabase
+      .channel("motoboy-proprio-status")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "motoboys", filter: `id=eq.${motoboyId}` }, (payload) => {
+        const atualizado = payload.new;
+        if (!atualizado) return;
+        if (atualizado.bloqueado || atualizado.banido) {
+          setMotoboy(prev => ({ ...prev, bloqueado: atualizado.bloqueado || false, banido: atualizado.banido || false }));
+          setOnline(false);
+          setPedidoDisponivel(null);
+          pedidoRef.current = null;
+          ofertaAtivaRef.current = null;
+          tentativas.current = 0;
+        } else {
+          // Simétrico ao bloqueio acima: se o Admin desbloqueia/desbane com o
+          // app já aberto, libera a conta na hora — sem isso, o motoboy
+          // ficava preso vendo "conta bloqueada" até sair e entrar de novo,
+          // mesmo já liberado no banco. Não força online automaticamente —
+          // só destrava o botão, a decisão de ficar online continua sendo
+          // do motoboy.
+          setMotoboy(prev => ({ ...prev, bloqueado: false, banido: false }));
+        }
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(canalStatus); };
+  },[motoboyId]);
+
   useEffect(()=>{
     // Adicionado em 30/08/2026: as duas contas de monitoramento (Alessandro/
     // Alencar) continuam vendo pedido novo MESMO já estando numa corrida —
@@ -1051,6 +1096,7 @@ export default function Motoboy() {
     // motoboy. Motoboys comuns continuam bloqueados durante corrida, como
     // sempre foi (não sobrecarrega ninguém sem querer).
     if (!online || !motoboyId) return;
+    if (motoboy?.bloqueado || motoboy?.banido) return;
     if (corridaAtiva && !ehContaMonitoramento) return;
     if (pedidoRef.current) return;
 
@@ -1167,6 +1213,23 @@ export default function Motoboy() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "pedidos" }, () => {
         buscarPedidoReal();
       })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pedidos" }, (payload) => {
+        // Adicionado em 07/09/2026, junto com a função de reatribuir corrida
+        // no Admin: se um pedido que eu tinha na minha corrida foi passado
+        // pro Admin pra outro motoboy (motoboy_id mudou pra outra pessoa),
+        // tira ele da minha tela na hora — sem isso, ficava preso aparecendo
+        // pra mim até eu dar refresh manual, mesmo não sendo mais meu.
+        const atualizado = payload.new;
+        if (atualizado && atualizado.motoboy_id !== motoboyId) {
+          setCorridaAtiva(prev => {
+            if (!prev) return prev;
+            const aindaTenho = prev.pedidos.some(p => p.id === atualizado.id);
+            if (!aindaTenho) return prev;
+            const restantes = prev.pedidos.filter(p => p.id !== atualizado.id);
+            return restantes.length === 0 ? null : { ...prev, pedidos: restantes };
+          });
+        }
+      })
       .subscribe();
 
     const intervalo = setInterval(buscarPedidoReal, 2000);
@@ -1268,6 +1331,25 @@ export default function Motoboy() {
 
   async function aceitar() {
     if (!pedidoDisponivel || !motoboyId) return;
+
+    // Trava de segurança adicionada em 03/09/2026: confere bloqueado/banido
+    // direto no banco (não confia no estado local, que só é carregado no
+    // login) bem no instante de aceitar — impede que um motoboy bloqueado
+    // pelo Admin enquanto já está online/logado continue pegando pedido.
+    const { data: statusAtual } = await supabase
+      .from("motoboys")
+      .select("bloqueado, banido")
+      .eq("id", motoboyId)
+      .maybeSingle();
+    if (statusAtual?.bloqueado || statusAtual?.banido) {
+      setOnline(false);
+      await supabase.from("motoboys").update({ online: false }).eq("id", motoboyId);
+      setPedidoDisponivel(null);
+      pedidoRef.current = null;
+      ofertaAtivaRef.current = null;
+      tentativas.current = 0;
+      return;
+    }
 
     // ATUALIZADO em 30/08/2026: se já existe uma corrida em andamento
     // (relevante pras contas de monitoramento, que agora podem aceitar
@@ -1372,12 +1454,17 @@ export default function Motoboy() {
         entregue_em: new Date().toISOString(),
       }).eq("id", p.id);
     }
+    const agora = new Date();
     const novos = corridaAtiva.pedidos.map(p=>({
-      id:Date.now()+Math.random(),
+      id:p.id,
       clienteNome:p.clienteNome, empresaNome:p.empresaNome,
       bairro:p.bairro, pagamento:p.pagamento, taxa:p.taxa,
-      status:"Entregue", data:"Hoje", hora:"agora",
-      semana:3, mes:6, repasePago:false,
+      status:"Entregue",
+      data: agora.toLocaleDateString("pt-BR"),
+      dataISO: dataLocalISO(agora),
+      hora: agora.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
+      semana: segundaFeiraDaSemana(agora), mes: agora.getMonth()+1,
+      repasePago:false,
     }));
     setHistorico(prev=>[...prev,...novos]);
     setCorridaAtiva(null);
@@ -1447,6 +1534,10 @@ export default function Motoboy() {
           <div style={{display:"flex",gap:8}}>
             <button onClick={async()=>{
               const novoStatus = !online;
+              if (novoStatus && (motoboy?.bloqueado || motoboy?.banido)) {
+                alert("Sua conta está bloqueada. Fale com o suporte do MotoFast.");
+                return;
+              }
               setOnline(novoStatus);
               if (motoboyId) {
                 await supabase.from("motoboys").update({online: novoStatus}).eq("id", motoboyId);
@@ -1522,6 +1613,10 @@ export default function Motoboy() {
                 </div>
                 <button onClick={async()=>{
                   const novoStatus = !online;
+                  if (novoStatus && (motoboy?.bloqueado || motoboy?.banido)) {
+                    alert("Sua conta está bloqueada. Fale com o suporte do MotoFast.");
+                    return;
+                  }
                   setOnline(novoStatus);
                   if (motoboyId) {
                     await supabase.from("motoboys").update({online: novoStatus}).eq("id", motoboyId);

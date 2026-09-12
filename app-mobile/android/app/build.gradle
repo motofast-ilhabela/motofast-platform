@@ -40,6 +40,13 @@ dependencies {
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
     implementation project(':capacitor-cordova-android-plugins')
+
+    // Firebase Cloud Messaging — push notification nativo do Motoboy (ver
+    // aviso "PENDENTE" em Motoboy.jsx). BoM controla a versão de todas as
+    // libs do Firebase juntas, então as dependências abaixo não declaram
+    // versão própria.
+    implementation platform('com.google.firebase:firebase-bom:34.19.0')
+    implementation 'com.google.firebase:firebase-messaging'
 }
 
 apply from: 'capacitor.build.gradle'
