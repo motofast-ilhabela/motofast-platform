@@ -166,6 +166,44 @@ function RotaMotoboy() {
   return <Motoboy />
 }
 
+// ─── ROTA INICIAL ("/") — RESTAURA SESSÃO JÁ LOGADA ──────────────────────────
+// Adicionado pra corrigir bug crítico: no Android, o sistema mata o processo
+// do app com frequência ao minimizar ou apagar a tela (gerenciamento de
+// bateria) — quando o usuário volta, o WebView recarrega do zero e cai
+// sempre na rota "/", nunca na tela em que estava. O token de login salvo no
+// @capacitor/preferences continua intacto, mas a tela de Cadastro nunca
+// verificava se já existia uma sessão válida antes de mostrar os botões
+// "Sou Empresário/Motoboy" — por isso parecia estar deslogado, mesmo com a
+// sessão ainda válida. Essa checagem não existe no site porque um navegador
+// raramente recarrega uma aba em segundo plano do mesmo jeito.
+function RotaInicial() {
+  const navigate = useNavigate()
+  const [pronto, setPronto] = useState(false)
+
+  useEffect(() => {
+    async function verificarSessaoExistente() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) { setPronto(true); return }
+
+      if (user.email === ADMIN_EMAIL) { navigate("/admin", { replace: true }); return }
+
+      const { data: mb } = await supabase.from("motoboys").select("id").eq("user_id", user.id).maybeSingle()
+      if (mb) { navigate("/motoboy", { replace: true }); return }
+
+      const { data: emp } = await supabase.from("empresarios").select("id").eq("user_id", user.id).maybeSingle()
+      if (emp) { navigate("/empresario", { replace: true }); return }
+
+      // Sessão existe mas não corresponde a nenhum cadastro conhecido —
+      // mostra a tela de Cadastro normalmente.
+      setPronto(true)
+    }
+    verificarSessaoExistente()
+  }, [])
+
+  if (!pronto) return <Verificando />
+  return <Cadastro />
+}
+
 function Verificando() {
   return (
     <div style={{minHeight:"100vh",background:"#0a0f1a",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Inter','Segoe UI',sans-serif"}}>
@@ -200,7 +238,7 @@ export default function App() {
   return (
     <HashRouter>
       <Routes>
-        <Route path="/" element={<Cadastro />} />
+        <Route path="/" element={<RotaInicial />} />
         <Route path="/empresario" element={<RotaEmpresario />} />
         <Route path="/motoboy" element={<RotaMotoboy />} />
         <Route path="/admin" element={<RotaAdmin />} />
