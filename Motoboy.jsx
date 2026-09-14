@@ -1516,6 +1516,7 @@ export default function AppMotoboy() {
       status: "cancelado",
       motivo_cancelamento: motivo,
       cancelado_por_motoboy: true,
+      cancelado_em: new Date().toISOString(),
     }).eq("id", pedidoId);
     setCorridaAtiva(prev => {
       if (!prev) return prev;
@@ -1534,6 +1535,7 @@ export default function AppMotoboy() {
           status: "cancelado",
           motivo_cancelamento: motivo,
           cancelado_por_motoboy: true,
+          cancelado_em: new Date().toISOString(),
         }).eq("id", p.id);
       }
     }

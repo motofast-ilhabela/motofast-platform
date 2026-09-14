@@ -2326,7 +2326,7 @@ function Historico({ historico, motoboys, empresarios }) {
                     <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700}}>R${e.taxaMotoboy}</td>
                     <td style={{padding:"8px 12px",color:"#a78bfa",fontWeight:700}}>R${e.lucro}</td>
                     <td style={{padding:"8px 12px"}}>
-                      <span style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}} title={e.motivoCancelamento||""}>
+                      <span style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}} title={e.horaCancelamento ? `${e.motivoCancelamento||""} (às ${e.horaCancelamento})` : (e.motivoCancelamento||"")}>
                         {entregue?"✅":"❌"} {e.status}
                       </span>
                       {!entregue && (
@@ -3351,6 +3351,7 @@ export default function App() {
             status: p.status === "entregue" ? "Entregue" : "Cancelada",
             canceladoPorMotoboy: p.cancelado_por_motoboy || false,
             motivoCancelamento: p.motivo_cancelamento || null,
+            horaCancelamento: p.cancelado_em ? new Date(p.cancelado_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
             data: dataStr,
             horaSaida,
             horaEntrega,

@@ -1246,6 +1246,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
     await supabase.from("pedidos").update({
       status: "cancelado",
       motivo_cancelamento: "Cancelado pelo empresário",
+      cancelado_em: new Date().toISOString(),
     }).eq("id", id);
     await onRecarregar();
   }
@@ -1468,6 +1469,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                     await supabase.from("pedidos").update({
                       status: "cancelado",
                       motivo_cancelamento: "Cancelado pelo estabelecimento",
+                      cancelado_em: new Date().toISOString(),
                     }).eq("id", p.id);
                     await onRecarregar();
                   }} style={{marginTop:8,width:"100%",padding:"9px",borderRadius:8,background:"#3d1010",border:"1px solid #ef444466",color:"#f87171",fontWeight:700,fontSize:12,cursor:"pointer"}}>
@@ -1486,6 +1488,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                   await supabase.from("pedidos").update({
                     status: "cancelado",
                     motivo_cancelamento: "Cancelado pelo estabelecimento",
+                    cancelado_em: new Date().toISOString(),
                   }).eq("id", p.id);
                 }
                 await onRecarregar();
@@ -2741,7 +2744,7 @@ export default function AppEmpresario() {
       const restante = Math.max(1000, 10*60*1000 - decorrido); // mínimo 1s para não cancelar na hora
       return setTimeout(async ()=>{
         await supabase.from("pedidos")
-          .update({ status: "cancelado", motivo_cancelamento: "Nenhum motoboy aceitou em 10 minutos" })
+          .update({ status: "cancelado", motivo_cancelamento: "Nenhum motoboy aceitou em 10 minutos", cancelado_em: new Date().toISOString() })
           .eq("id", pedidoAlvo.id)
           .eq("status","aguardando");
         setAvisoSemMotoboy(pedidoAlvo);
