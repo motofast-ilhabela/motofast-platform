@@ -54,7 +54,7 @@ export default async function handler(req, res) {
         // Garante que a notificação aparece na tela bloqueada.
         android_visibility: 1,
         // Força som e vibração padrão do sistema mesmo em segundo plano.
-        android_channel_id: "8e23b066-a49d-43e3-bdb8-e1757171c187",
+        android_channel_id: "21ab798f-74a5-45ee-9f18-7958bc765933",
         ios_sound: "default",
       }),
     });
