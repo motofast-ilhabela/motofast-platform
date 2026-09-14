@@ -1343,7 +1343,24 @@ export default function Motoboy() {
       }
     }
 
-    buscarPedidoReal();
+    // Confere se existe pedido de verdade assim que essa checagem entra em
+    // ação (app abrindo, ou ficando online) — e se NÃO existir, garante que
+    // o alarme nativo não fica tocando sozinho. Adicionado em 14/09/2026:
+    // um push atrasado/reentregue pelo FCM pode ligar o RideAlertService
+    // (via RideAlertNotificationExtension, nativo, sem passar pelo JS) por
+    // causa de um pedido que já não existe mais como "aguardando" (já foi
+    // cancelado/expirado há tempos) — e como o aviso rideAlertReceived só
+    // dispara quando o app abre especificamente pela notificação do
+    // alarme (não abrindo normal pelo ícone), o temporizador de segurança
+    // de 20s podia nunca ser armado, deixando o alarme tocando até o teto
+    // de 9 minutos sem nenhum pedido pra mostrar. Rodar aqui, isolado da
+    // origem do push, cobre isso de forma confiável.
+    (async () => {
+      await buscarPedidoReal();
+      if (Capacitor.isNativePlatform() && !pedidoRef.current) {
+        RideAlert.stopAlert();
+      }
+    })();
 
     const canal = supabase
       .channel("pedidos-motoboy")
