@@ -2295,6 +2295,7 @@ export default function AppEmpresario() {
   });
   const [avisoSemMotoboy, setAvisoSemMotoboy] = useState(null);
   const [avisoCancelamentoMotoboy, setAvisoCancelamentoMotoboy] = useState(null);
+  const [publicandoNovoAposCancelamento, setPublicandoNovoAposCancelamento] = useState(false);
   const notificadosCancelamento = useRef(new Set());
 
   // Toca o som de cancelamento assim que o aviso aparece, e repete a cada 4s
@@ -2432,6 +2433,14 @@ export default function AppEmpresario() {
                   motivo: p.motivo_cancelamento || "Não informado",
                   motoboyNome: pedidoConhecido?.motoboyNome || "Motoboy",
                   motoboyTel: pedidoConhecido?.motoboyTel || "",
+                  // Adicionado em 07/09/2026 — guarda os dados completos do
+                  // pedido pra dar pra republicar com 1 clique, sem precisar
+                  // digitar tudo de novo (forma de pagamento, endereço, etc.)
+                  clienteTel: p.cliente_telefone,
+                  rua: p.rua, num: p.numero, ref: p.referencia, obs: p.observacao,
+                  pagamento: p.forma_pagamento, taxa: p.taxa, taxaMotoboy: p.taxa_motoboy || 0,
+                  valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
+                  distanciaKm: p.distancia_km, metodoCalculoKm: p.metodo_calculo_km,
                 });
               }
               // Adicionado em 07/09/2026: atualiza a tela DIRETO com o dado que
@@ -3112,6 +3121,20 @@ export default function AppEmpresario() {
                 </a>
               </div>
             )}
+            {/* Adicionado em 07/09/2026 a pedido do Alessandro: republica o
+                mesmo pedido com 1 clique, sem precisar digitar tudo de novo
+                (endereço, forma de pagamento, etc.) — reaproveita a mesma
+                publicarPedido() usada na tela de Nova Entrega. */}
+            <button onClick={async()=>{
+                setPublicandoNovoAposCancelamento(true);
+                await publicarPedido(avisoCancelamentoMotoboy);
+                setPublicandoNovoAposCancelamento(false);
+                setAvisoCancelamentoMotoboy(null);
+              }}
+              disabled={publicandoNovoAposCancelamento}
+              style={{width:"100%",padding:"14px",borderRadius:10,background:"#f59e0b",border:"none",color:"#000",fontWeight:900,fontSize:15,cursor:publicandoNovoAposCancelamento?"not-allowed":"pointer",marginBottom:10,opacity:publicandoNovoAposCancelamento?0.6:1}}>
+              {publicandoNovoAposCancelamento ? "Chamando..." : "🏍️ Chamar novo motoboy agora"}
+            </button>
             <button onClick={()=>setAvisoCancelamentoMotoboy(null)}
               style={{width:"100%",padding:"12px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:14,cursor:"pointer"}}>
               Fechar
