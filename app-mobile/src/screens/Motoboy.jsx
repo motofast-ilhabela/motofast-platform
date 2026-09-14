@@ -1,6 +1,15 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { Capacitor } from "@capacitor/core";
+import { Capacitor, registerPlugin } from "@capacitor/core";
+
+// Plugin nativo próprio (não é um pacote — vive em
+// android/app/src/main/java/com/motofast/app/RideAlertPlugin.java), ponte
+// pro RideAlertService: toca o alarme de corrida nova em loop e abre a tela
+// por cima do bloqueio até o motoboy aceitar/recusar (ver
+// RideAlertNotificationExtension.java pra entender o começo do fluxo, do
+// lado do push). Não existe implementação web — só roda dentro do app
+// instalado, sempre atrás de Capacitor.isNativePlatform().
+const RideAlert = registerPlugin("RideAlert");
 // Versão travada em 5.4.1 (sem ^) de propósito — a partir da 5.5.0 o pacote
 // publicado no npm vem com dist/index.cjs vazio (bug de publicação da própria
 // OneSignal, confirmado baixando os tarballs 5.5.5/5.5.6/5.5.7 direto do
@@ -234,6 +243,12 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
 
   const ultimoToqueRef = useRef(-1);
   useEffect(()=>{
+    // No app nativo, o alarme em loop já é o RideAlertService (som nativo,
+    // toca mesmo com a tela apagada/app em segundo plano) — repetir o som
+    // daqui também (Web Audio, só funciona com a aba/WebView em primeiro
+    // plano) duplicaria o alarme. Esse loop por JS fica só pro navegador
+    // comum (teste local via `npm run dev`).
+    if (Capacitor.isNativePlatform()) return;
     const intervalo = setInterval(()=>{
       const decorrido = Math.floor((Date.now()-pedido.criadoEm)/1000);
       const toqueAtual = Math.floor(decorrido / INTERVALO_SOM);
@@ -1090,10 +1105,13 @@ export default function Motoboy() {
     carregar();
   },[]);
 
-  // Notificação chegando com o app aberto — não precisa fazer nada especial,
-  // o polling/tempo real já mostra o pedido na tela, então só loga pra
-  // debug. Notificação com o app fechado/minimizado é o OneSignal quem
-  // mostra sozinho, sem precisar de nenhum JS rodando pra isso.
+  // Esses dois listeners hoje não disparam mais na prática — desde que o
+  // RideAlertNotificationExtension (nativo) passou a interceptar TODO push e
+  // chamar preventDefault(), o OneSignal nunca chega a exibir nada sozinho
+  // nem a rastrear clique nele. Deixados registrados de propósito: se um dia
+  // existir um tipo de push que NÃO passe pelo alarme em loop (ver
+  // RideAlertNotificationExtension.java), volta a fazer sentido sem
+  // precisar reescrever essa parte.
   useEffect(()=>{
     if (!Capacitor.isNativePlatform()) return;
     const aoReceberEmPrimeiroPlano = (evento) => {
@@ -1119,6 +1137,46 @@ export default function Motoboy() {
       } catch(e) {}
     };
   },[]);
+
+  // O RideAlertService já começou a tocar o alarme em loop e trouxe o app
+  // pra frente (via full-screen intent) antes desse evento chegar — a busca
+  // do pedido de verdade continua vindo do jeito de sempre (Supabase
+  // realtime/polling, ver useEffect de buscarPedidoReal logo abaixo, que já
+  // roda de novo assim que o app monta). Esse listener serve só de rede de
+  // segurança: se por algum motivo (corrida já pega por outro motoboy bem
+  // antes do app acordar, por exemplo) nenhum pedido aparecer em 20s, para o
+  // alarme sozinho — sem isso, ficaria tocando pra sempre sem ninguém pra
+  // aceitar/recusar.
+  useEffect(()=>{
+    if (!Capacitor.isNativePlatform()) return;
+    const listenerPromise = RideAlert.addListener("rideAlertReceived", () => {
+      setTimeout(()=>{
+        if (!pedidoRef.current) RideAlert.stopAlert();
+      }, 20000);
+    });
+    return () => { listenerPromise.then(l=>l.remove()); };
+  },[]);
+
+  // Limpa qualquer oferta de pedido ainda pendente (e o alarme nativo, se
+  // estiver tocando) toda vez que a conta fica OFFLINE — por qualquer
+  // motivo (botão "Sair", cancelar uma corrida, bloqueio pelo Admin, etc.).
+  // Adicionado em 14/09/2026: contas de monitoramento (ver
+  // CONTAS_MONITORAMENTO_IDS) continuam recebendo pedido novo mesmo com uma
+  // corrida já aceita — então dá pra cancelar a corrida ativa (que fica
+  // offline sozinha) enquanto existe uma SEGUNDA oferta de pedido separada
+  // ainda pendente, com o próprio ciclo de 30s dela. Sem isso, esse ciclo
+  // nunca sabia que a conta tinha ficado offline e continuava chamando
+  // RideAlert.startAlert() de novo a cada 30s, com o alarme tocando sozinho
+  // mesmo offline.
+  useEffect(()=>{
+    if (online) return;
+    if (!pedidoRef.current && !pedidoDisponivel) return;
+    if (Capacitor.isNativePlatform()) RideAlert.stopAlert();
+    setPedidoDisponivel(null);
+    pedidoRef.current = null;
+    ofertaAtivaRef.current = null;
+    tentativas.current = 0;
+  },[online]);
 
   // Força o motoboy offline NA HORA se o Admin bloquear/banir a conta enquanto
   // o app já está aberto e rodando — sem isso, as travas de bloqueio (login,
@@ -1177,6 +1235,7 @@ export default function Motoboy() {
             setPedidoCancelado(true);
             setTimeout(() => setPedidoCancelado(false), 4000);
           }
+          if (Capacitor.isNativePlatform()) RideAlert.stopAlert();
           setPedidoDisponivel(null);
           pedidoRef.current = null;
           ofertaAtivaRef.current = null;
@@ -1268,6 +1327,19 @@ export default function Motoboy() {
           "🏍️ Novo Pedido MotoFast!",
           `Entrega para ${novoPedido.clienteNome} em ${novoPedido.bairro} — R$${novoPedido.taxa}. Você tem 30 segundos para aceitar!`
         );
+        // Liga o alarme nativo toda vez que um pedido é OFERECIDO ao
+        // motoboy — não só quando um push chega. Adicionado em 14/09/2026:
+        // um pedido recusado volta a aparecer depois do tempo de espera
+        // (TEMPO_COOLDOWN_RECUSA_MS) através dessa mesma reavaliação local,
+        // sem nenhum push novo do servidor — sem chamar isso aqui, o alarme
+        // ficava mudo nesse retorno, um risco real de passar despercebido
+        // com o celular no bolso/bag.
+        if (Capacitor.isNativePlatform()) {
+          RideAlert.startAlert({
+            titulo: `🏍️ Nova corrida — ${novoPedido.bairro}`,
+            corpo: `Entrega para ${novoPedido.clienteNome} em ${novoPedido.bairro} — R$${novoPedido.taxa}`,
+          });
+        }
       }
     }
 
@@ -1307,12 +1379,25 @@ export default function Motoboy() {
     const t = setTimeout(()=>{
       tentativas.current += 1;
       if (tentativas.current >= MAX_TENTATIVAS) {
+        if (Capacitor.isNativePlatform()) RideAlert.stopAlert();
         setPedidoDisponivel(null);
         pedidoRef.current = null;
         ofertaAtivaRef.current = null;
         tentativas.current = 0;
       } else {
         setPedidoDisponivel(p=>p ? {...p, criadoEm:Date.now()} : null);
+        // Renova o alarme nativo a cada ciclo de 30s que o mesmo pedido
+        // continua sendo oferecido — o teto de segurança do RideAlertService
+        // é de 90s (bem menor que os até 5 minutos que esse ciclo pode
+        // durar no total), então sem isso o alarme silenciaria sozinho
+        // ainda com o pedido ativo na tela, exatamente o que não pode
+        // acontecer.
+        if (Capacitor.isNativePlatform() && pedidoRef.current) {
+          RideAlert.startAlert({
+            titulo: `🏍️ Nova corrida — ${pedidoRef.current.bairro}`,
+            corpo: `Entrega para ${pedidoRef.current.clienteNome} em ${pedidoRef.current.bairro} — R$${pedidoRef.current.taxa}`,
+          });
+        }
       }
     }, TEMPO_PEDIDO * 1000);
     return ()=>clearTimeout(t);
@@ -1396,6 +1481,7 @@ export default function Motoboy() {
 
   async function aceitar() {
     if (!pedidoDisponivel || !motoboyId) return;
+    if (Capacitor.isNativePlatform()) RideAlert.stopAlert();
 
     // Trava de segurança adicionada em 03/09/2026: confere bloqueado/banido
     // direto no banco (não confia no estado local, que só é carregado no
@@ -1487,6 +1573,7 @@ export default function Motoboy() {
   }
 
   function recusar() {
+    if (Capacitor.isNativePlatform()) RideAlert.stopAlert();
     if (pedidoDisponivel && motoboyId) {
       supabase.from("acoes_motoboy").insert({
         motoboy_id: motoboyId, pedido_id: pedidoDisponivel.id, acao: "recusado",

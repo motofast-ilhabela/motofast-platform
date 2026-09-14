@@ -2671,7 +2671,7 @@ export default function Empresario() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             motoboyId,
-            titulo: "🏍️ Novo Pedido MotoFast!",
+            titulo: `🏍️ Nova corrida — ${pedido.bairro}`,
             corpo: `Entrega em ${pedido.bairro} — R$${pedido.taxaMotoboy || pedido.taxa}`,
           }),
         }).catch(e => console.log("Erro ao notificar motoboy do turno fixo:", e));
@@ -2679,7 +2679,7 @@ export default function Empresario() {
     } else {
       // Ninguém do turno fixo online agora — publica normal, pra todo mundo
       notificarMotoboysPush(
-        "🏍️ Novo Pedido MotoFast!",
+        `🏍️ Nova corrida — ${pedido.bairro}`,
         `Entrega em ${pedido.bairro} — R$${pedido.taxaMotoboy || pedido.taxa}`
       );
     }
@@ -2889,14 +2889,14 @@ export default function Empresario() {
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({
                         motoboyId,
-                        titulo: "🏍️ Novo Pedido MotoFast!",
+                        titulo: `🏍️ Nova corrida — ${avisoSemMotoboy.bairro}`,
                         corpo: `Entrega em ${avisoSemMotoboy.bairro} — R$${avisoSemMotoboy.taxaMotoboy || avisoSemMotoboy.taxa}`,
                       }),
                     }).catch(e => console.log("Erro ao notificar motoboy do turno fixo:", e));
                   });
                 } else {
                   notificarMotoboysPush(
-                    "🏍️ Novo Pedido MotoFast!",
+                    `🏍️ Nova corrida — ${avisoSemMotoboy.bairro}`,
                     `Entrega em ${avisoSemMotoboy.bairro} — R$${avisoSemMotoboy.taxaMotoboy || avisoSemMotoboy.taxa}`
                   );
                 }

@@ -7,6 +7,17 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
+
+        <!-- Registra nossa classe como o "extensor" de notificação do OneSignal
+             (chave de meta-data confirmada decompilando o SDK — não é
+             documentação, é o valor que o próprio código do OneSignal lê via
+             getManifestMeta). A partir daqui, TODO push que chega passa
+             primeiro pela nossa RideAlertNotificationExtension antes do
+             OneSignal decidir mostrar algo sozinho. -->
+        <meta-data
+            android:name="com.onesignal.NotificationServiceExtension"
+            android:value="com.motofast.app.RideAlertNotificationExtension" />
+
         <activity
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
             android:name=".MainActivity"
@@ -27,6 +38,15 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Serviço em primeiro plano que toca o alarme_buzina em loop
+             enquanto a tela de "corrida nova" não é respondida. Precisa
+             declarar o tipo (mediaPlayback) a partir do Android 14. -->
+        <service
+            android:name=".RideAlertService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
     </application>
 
     <!-- Permissions -->
@@ -36,4 +56,13 @@
          push — sem ela, PushNotifications.requestPermissions() não funciona.
          targetSdkVersion deste projeto já é 36. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- As duas a seguir são pro alerta de corrida nova em loop
+         (RideAlertService): FOREGROUND_SERVICE(_MEDIA_PLAYBACK) pra tocar o
+         som mesmo com o app em segundo plano, WAKE_LOCK pra manter o som
+         tocando mesmo com a tela apagada. Não usamos mais
+         USE_FULL_SCREEN_INTENT — por decisão de segurança de 14/09/2026, o
+         app não abre mais sozinho por cima da tela bloqueada. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 </manifest>
