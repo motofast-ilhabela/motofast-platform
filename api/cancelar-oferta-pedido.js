@@ -1,8 +1,8 @@
-// Função de servidor — avisa (via push SILENCIOSO, sem notificação visível
-// pra ninguém) que um pedido específico não está mais disponível, pra
-// qualquer celular do app nativo que ainda estiver com o alarme de "corrida
-// nova" tocando pra esse mesmo pedido parar na hora, mesmo com o app
-// fechado ou a tela bloqueada.
+// Função de servidor — avisa (via push que o app nativo intercepta e
+// esconde da tela sozinho) que um pedido específico não está mais
+// disponível, pra qualquer celular do app nativo que ainda estiver com o
+// alarme de "corrida nova" tocando pra esse mesmo pedido parar na hora,
+// mesmo com o app fechado ou a tela bloqueada.
 //
 // Usado pelo app nativo (app-mobile/src/screens/Motoboy.jsx) assim que um
 // motoboy aceita uma corrida — sem isso, outro motoboy que ainda estivesse
@@ -116,10 +116,17 @@ export default async function handler(req, res) {
         // Só pros elegíveis desse pedido específico, nunca "todo mundo".
         include_aliases: { external_id: idsElegiveis.map(String) },
         target_channel: "push",
-        // Silencioso de verdade: sem headings/contents, só content_available
-        // — o app recebe em segundo plano e decide o que fazer com o "data",
-        // sem aparecer nada na tela de ninguém.
-        content_available: true,
+        // Vai com heading/contents preenchidos (não é mais silencioso) —
+        // ajustado em 14/09/2026: o app nativo já intercepta e esconde
+        // qualquer notificação antes de mostrar na tela, então não
+        // precisava do content_available pra ter discrição, e esse formato
+        // estava causando ~10s de atraso real na entrega (Android trata
+        // "data messages" puras com mais restrição em segundo plano,
+        // principalmente em aparelhos Samsung). Como o público já é
+        // corretamente restrito aos elegíveis (não é mais "todo mundo"),
+        // isso é seguro.
+        headings: { en: "Corrida encerrada" },
+        contents: { en: "Essa corrida já foi aceita por outro motoboy." },
         data: { tipo: "cancelar_oferta", pedidoId: String(pedidoId) },
         priority: 10,
       }),
