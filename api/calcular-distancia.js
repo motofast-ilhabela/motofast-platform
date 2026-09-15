@@ -1,14 +1,17 @@
 // Calcula a distância real de rota entre dois endereços usando o Google Maps
-// (Distance Matrix API). Roda no SERVIDOR — a chave de API nunca fica exposta
-// no navegador do empresário, só aqui, protegida como variável de ambiente.
+// (Routes API, modo TWO_WHEELER — rota de moto de verdade, não de carro).
+// Roda no SERVIDOR — a chave de API nunca fica exposta no navegador do
+// empresário, só aqui, protegida como variável de ambiente.
 //
-// REVERTIDO em 15/09/2026: tentamos migrar pra Routes API (modo TWO_WHEELER,
-// rota de moto de verdade) porque a Distance Matrix só calcula como carro.
-// A migração ficou pronta e a API foi ativada no Google Cloud, mas a chave
-// continuou recusando as chamadas ("are blocked") mesmo depois de liberada
-// nas restrições — precisa investigar com calma por que a permissão não
-// está propagando. Até resolver isso direito, voltamos pro que já
-// funcionava, pra não deixar ninguém sem conseguir calcular taxa.
+// MIGRADO em 15/09/2026: antes usava a Distance Matrix API com mode=driving
+// (rota de carro). Um estabelecimento reclamou de divergência de km e,
+// investigando, veio à tona que a Distance Matrix API não tem modo de moto
+// — só carro, a pé, bicicleta e ônibus. Como a MotoFast entrega de moto, e
+// o Google tem sim rota específica pra moto no Brasil (TWO_WHEELER) através
+// da Routes API (mais nova), migramos pra ela — dá distância mais justa e
+// mais barata pro cliente em ruas onde moto passa por atalho que carro não
+// passa. Usa a MESMA variável de ambiente GOOGLE_MAPS_API_KEY de sempre.
+// (Reaplicado depois de confirmar billing + cota + restrição da chave OK.)
 export default async function handler(req, res) {
   // CORS — adicionado em 07/09/2026 pra permitir chamadas vindas do app
   // nativo (Capacitor/WebView), que faz preflight OPTIONS antes do POST de
@@ -36,40 +39,52 @@ export default async function handler(req, res) {
     return res.status(500).json({ ok: false, erro: "Chave do Google Maps não configurada no servidor" });
   }
 
-  console.log(`[calcular-distancia] Origem: "${origem}" | Destino: "${destino}"`);
+  console.log(`[calcular-distancia] Origem: "${origem}" | Destino: "${destino}" | modo: TWO_WHEELER`);
 
   try {
-    const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(origem)}&destinations=${encodeURIComponent(destino)}&mode=driving&units=metric&region=br&key=${apiKey}`;
-    const resposta = await fetch(url);
+    const resposta = await fetch("https://routes.googleapis.com/directions/v2:computeRoutes", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        // FieldMask é obrigatório na Routes API — sem isso o Google recusa
+        // a chamada inteira. Só pedimos o que realmente usamos.
+        "X-Goog-FieldMask": "routes.distanceMeters,routes.duration",
+      },
+      body: JSON.stringify({
+        origin: { address: origem },
+        destination: { address: destino },
+        travelMode: "TWO_WHEELER",
+        routingPreference: "TRAFFIC_UNAWARE",
+        units: "METRIC",
+        regionCode: "BR",
+      }),
+    });
     const data = await resposta.json();
 
     // LOG COMPLETO da resposta do Google — isso é o que precisamos ver na tela
     // de Logs do Vercel pra saber exatamente o que está acontecendo.
-    console.log(`[calcular-distancia] Status geral do Google: ${data.status}`);
-    if (data.error_message) {
-      console.error(`[calcular-distancia] Mensagem de erro do Google: ${data.error_message}`);
+    console.log(`[calcular-distancia] Resposta completa do Google:`, JSON.stringify(data));
+
+    if (!resposta.ok) {
+      console.error(`[calcular-distancia] FALHOU: status HTTP ${resposta.status}`, data.error?.message || "");
+      return res.status(200).json({ ok: false, erro: `Google respondeu: ${data.error?.message || resposta.status}` });
     }
 
-    if (data.status !== "OK") {
-      console.error(`[calcular-distancia] FALHOU no status geral: ${data.status}`);
-      return res.status(200).json({ ok: false, erro: `Google respondeu: ${data.status}${data.error_message ? " — " + data.error_message : ""}` });
+    const rota = data.routes?.[0];
+    if (!rota || rota.distanceMeters == null) {
+      console.error("[calcular-distancia] FALHOU: nenhuma rota de moto encontrada entre esses endereços");
+      return res.status(200).json({ ok: false, erro: "Não foi possível calcular a rota de moto entre esses endereços" });
     }
 
-    const elemento = data.rows?.[0]?.elements?.[0];
-    console.log(`[calcular-distancia] Status do elemento: ${elemento?.status}`);
-    if (!elemento || elemento.status !== "OK") {
-      console.error(`[calcular-distancia] FALHOU no elemento: ${elemento?.status || "sem elemento"}`);
-      return res.status(200).json({ ok: false, erro: `Endereço não encontrado: ${elemento?.status || "desconhecido"}` });
-    }
-
-    const metros = elemento.distance.value;
-    const km = metros / 1000;
-    console.log(`[calcular-distancia] SUCESSO: ${km}km`);
+    const km = rota.distanceMeters / 1000;
+    console.log(`[calcular-distancia] SUCESSO: ${km}km (moto)`);
     return res.status(200).json({ ok: true, km });
   } catch (e) {
     console.error("[calcular-distancia] Erro de conexão/exceção:", e.message);
     return res.status(200).json({ ok: false, erro: "Erro de conexão com o Google Maps" });
   }
 }
+
 
 
