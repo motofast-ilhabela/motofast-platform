@@ -1,8 +1,15 @@
 // Função de servidor — dispara notificação push SÓ PRA UM motoboy específico,
 // via OneSignal. Diferente de /api/notificar-motoboys.js (que manda pra todo
 // mundo de uma vez, usado no sistema antigo de "quem pegar, pegou"), esse
-// arquivo usa "include_aliases" com o external_id do motoboy, pra atingir
+// arquivo usa "include_external_user_ids" com o ID do motoboy, pra atingir
 // apenas o destinatário exato — peça central do sistema de rodízio.
+//
+// CORRIGIDO em 15/09/2026: usava "include_aliases" (sistema mais novo de
+// alias unificado do OneSignal), mas descobrimos que uma fatia real de
+// motoboys em produção (3 de 7 testados, contas normais) dava erro
+// "invalid_aliases" — o app deles deve registrar o dispositivo pelo sistema
+// antigo de external_user_id, não pelo unificado. Trocado pra
+// "include_external_user_ids", que é o que bate com esse registro.
 //
 // IMPORTANTE: isso só funciona se o app do motoboy chamar
 // OneSignal.login(motoboyId) ao entrar (associando o external_id dele ao ID
@@ -46,7 +53,8 @@ export default async function handler(req, res) {
         // do "included_segments" usado no notificar-motoboys.js, que manda
         // pra todo mundo. Precisa que o app do motoboy tenha rodado
         // OneSignal.login(motoboyId) pra esse alias existir.
-        include_aliases: { external_id: [String(motoboyId)] },
+        include_external_user_ids: [String(motoboyId)],
+        channel_for_external_user_ids: "push",
         target_channel: "push",
         headings: { en: titulo },
         contents: { en: corpo },

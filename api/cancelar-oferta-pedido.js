@@ -114,7 +114,8 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         app_id: APP_ID,
         // Só pros elegíveis desse pedido específico, nunca "todo mundo".
-        include_aliases: { external_id: idsElegiveis.map(String) },
+        include_external_user_ids: idsElegiveis.map(String),
+        channel_for_external_user_ids: "push",
         target_channel: "push",
         // Vai com heading/contents preenchidos (não é mais silencioso) —
         // ajustado em 14/09/2026: o app nativo já intercepta e esconde
