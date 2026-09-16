@@ -1,7 +1,16 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- DESLIGADO em 15/09/2026: o backup automático do Android estava
+         restaurando sozinho o estado antigo do OneSignal (o player_id de
+         uma assinatura de push já apagada) toda vez que o app era
+         reinstalado, impedindo qualquer registro novo de verdade — causa
+         raiz de dias de teste do alarme de corrida não funcionando. Efeito
+         colateral bom: esse mesmo backup também guardava a sessão de login
+         (token de acesso) sem necessidade, o que não faz sentido pra um
+         app cujo estado real vive todo no Supabase — nada aqui precisa
+         sobreviver a uma reinstalação. -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"

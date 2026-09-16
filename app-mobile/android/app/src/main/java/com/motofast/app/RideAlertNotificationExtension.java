@@ -7,7 +7,9 @@ import androidx.core.content.ContextCompat;
 import com.onesignal.notifications.INotificationReceivedEvent;
 import com.onesignal.notifications.INotificationServiceExtension;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Set;
+import org.json.JSONObject;
 
 // Ponto de entrada que intercepta TODO push do OneSignal antes dele decidir
 // mostrar uma notificação comum sozinho. Registrado via meta-data no
@@ -16,13 +18,23 @@ import java.util.Set;
 // (com.onesignal:core), não por documentação, porque a versão da lib
 // disponível não deixava claro no material público.
 //
-// Hoje o servidor só manda um tipo de push (corrida nova — ver
-// api/notificar-motoboys.js e api/notificar-motoboy-especifico.js), então
-// tratamos QUALQUER push como corrida nova. Se um dia existir um segundo
-// tipo de push, o servidor vai precisar mandar um campo extra nos "dados" da
-// notificação pra essa classe conseguir diferenciar (hoje não dá, o payload
-// só tem título/corpo).
+// O servidor manda dois tipos de push, diferenciados pelo campo "tipo" nos
+// dados extras (additionalData) da notificação:
+// - Sem "tipo" (ou "tipo" != "cancelar_oferta"): corrida nova — ver
+//   api/notificar-motoboys.js e api/notificar-motoboy-especifico.js. Liga o
+//   alarme em loop.
+// - "tipo": "cancelar_oferta" (ver api/cancelar-oferta-pedido.js, adicionado
+//   em 14/09/2026): outro motoboy já aceitou essa corrida — manda PARAR o
+//   alarme, mas só se o pedido tocando agora NESTE celular for o mesmo
+//   pedidoId (ver RideAlertService.salvarPedidoAtual/lerPedidoAtual). Sem
+//   isso, um motoboy com a tela bloqueada continuava com o alarme tocando
+//   até desbloquear e abrir o app manualmente, mesmo já tendo perdido a
+//   corrida pra outra pessoa — bug real reportado em produção.
+// Em ambos os casos, event.preventDefault() garante que nenhuma notificação
+// visível "crua" do OneSignal aparece sozinha — só o que RideAlertService
+// decide mostrar (a notificação do alarme tocando) é exibido de verdade.
 public class RideAlertNotificationExtension implements INotificationServiceExtension {
+    private static final String TAG = "RideAlertExtension";
     private static final String PREFS_NAME = "ride_alert_notifications";
     private static final String KEY_IDS_VISTOS = "ids_vistos";
 
@@ -32,6 +44,7 @@ public class RideAlertNotificationExtension implements INotificationServiceExten
 
         Context context = event.getContext();
         String notificationId = event.getNotification().getNotificationId();
+        android.util.Log.d(TAG, "Push recebido, notificationId=" + notificationId);
 
         // CRÍTICO, confirmado por log real em 14/09/2026: o OneSignal tem um
         // mecanismo próprio (NotificationRestoreWorkManager) que reprocessa
@@ -47,11 +60,40 @@ public class RideAlertNotificationExtension implements INotificationServiceExten
         // notificação já tratada e ignora qualquer repetição. Mais robusto,
         // de quebra: cobre qualquer outro motivo de reentrega duplicada do
         // FCM, não só esse.
-        if (jaFoiTratada(context, notificationId)) return;
+        if (jaFoiTratada(context, notificationId)) {
+            android.util.Log.d(TAG, "Ignorado: notificationId já tratado antes (provável restauração/reentrega): " + notificationId);
+            return;
+        }
         marcarComoTratada(context, notificationId);
+
+        JSONObject dados = event.getNotification().getAdditionalData();
+        String tipo = dados != null ? dados.optString("tipo", null) : null;
+
+        if ("cancelar_oferta".equals(tipo)) {
+            String pedidoIdCancelado = dados.optString("pedidoId", null);
+            String pedidoIdTocandoAgora = RideAlertService.lerPedidoAtual(context);
+            boolean bateu = pedidoIdCancelado != null && Objects.equals(pedidoIdCancelado, pedidoIdTocandoAgora);
+            android.util.Log.d(TAG, "tipo=cancelar_oferta pedidoIdCancelado=" + pedidoIdCancelado
+                + " pedidoIdTocandoAgora=" + pedidoIdTocandoAgora + " bateu=" + bateu);
+            // Só para o alarme se for o MESMO pedido — uma conta de
+            // monitoramento pode legitimamente ter uma oferta diferente
+            // tocando ao mesmo tempo, que não pode ser derrubada por engano.
+            if (bateu) {
+                Intent intent = new Intent(context, RideAlertService.class);
+                intent.setAction(RideAlertService.ACTION_STOP);
+                // CRÍTICO (mesma regra do RideAlertPlugin.stopAlert): usar
+                // startService() puro aqui, nunca startForegroundService(),
+                // senão o Android mata o app por não chamar startForeground()
+                // a tempo pra um comando que é justamente de PARAR.
+                context.startService(intent);
+                android.util.Log.d(TAG, "ACTION_STOP disparado nativamente (sem passar pelo JS).");
+            }
+            return;
+        }
 
         String titulo = event.getNotification().getTitle();
         String corpo = event.getNotification().getBody();
+        android.util.Log.d(TAG, "tipo=nova_corrida (ou sem tipo) — ligando alarme. titulo=" + titulo);
 
         Intent intent = new Intent(context, RideAlertService.class);
         intent.setAction(RideAlertService.ACTION_START);

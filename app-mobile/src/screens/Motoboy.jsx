@@ -232,6 +232,24 @@ async function dispararNotificacaoPush(titulo, corpo) {
   } catch(e) { console.log("Push bloqueado:", e); }
 }
 
+// Avisa o servidor que ESSE pedido já foi fechado (aceito por mim), pra ele
+// mandar um push silencioso pros outros celulares que ainda podem estar com
+// o alarme nativo tocando pra essa mesma corrida — sem isso, quem estivesse
+// com a tela bloqueada só descobria que perdeu a corrida ao desbloquear e
+// abrir o app manualmente (bug real reportado em produção em 14/09/2026,
+// onde outro motoboy pegou a corrida primeiro e o alarme ficou tocando).
+// Só faz sentido no app nativo — o alarme em loop não existe na versão web.
+async function avisarCancelamentoOferta(pedidoId) {
+  if (!Capacitor.isNativePlatform() || !pedidoId) return;
+  try {
+    await fetch(`${WEB_APP_URL}/api/cancelar-oferta-pedido`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pedidoId }),
+    });
+  } catch(e) { console.log("Erro ao avisar cancelamento de oferta:", e); }
+}
+
 function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
   const [tick, setTick] = useState(0);
   const [pulsando, setPulsando] = useState(true);
@@ -1338,6 +1356,7 @@ export default function Motoboy() {
           RideAlert.startAlert({
             titulo: `🏍️ Nova corrida — ${novoPedido.bairro}`,
             corpo: `Entrega para ${novoPedido.clienteNome} em ${novoPedido.bairro} — R$${novoPedido.taxa}`,
+            pedidoId: String(novoPedido.id),
           });
         }
       }
@@ -1413,6 +1432,7 @@ export default function Motoboy() {
           RideAlert.startAlert({
             titulo: `🏍️ Nova corrida — ${pedidoRef.current.bairro}`,
             corpo: `Entrega para ${pedidoRef.current.clienteNome} em ${pedidoRef.current.bairro} — R$${pedidoRef.current.taxa}`,
+            pedidoId: String(pedidoRef.current.id),
           });
         }
       }
@@ -1548,6 +1568,8 @@ export default function Motoboy() {
       tentativas.current = 0;
       return;
     }
+
+    avisarCancelamentoOferta(pedidoDisponivel.id);
 
     // REATIVADO em 28/08/2026: marca a oferta como aceita e soma +1 no
     // contador do rodízio de hoje (exclusivo pra fila, nunca mexe no

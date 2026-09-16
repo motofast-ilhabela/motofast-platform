@@ -31,6 +31,11 @@ public class RideAlertPlugin extends Plugin {
         intent.setAction(RideAlertService.ACTION_START);
         intent.putExtra(RideAlertService.EXTRA_TITLE, call.getString("titulo"));
         intent.putExtra(RideAlertService.EXTRA_BODY, call.getString("corpo"));
+        // pedidoId é o que permite o RideAlertNotificationExtension saber,
+        // quando chega um aviso de "outro motoboy aceitou", se é ESSE alarme
+        // que precisa calar ou se é de um pedido diferente (ver
+        // RideAlertService.salvarPedidoAtual).
+        intent.putExtra(RideAlertService.EXTRA_PEDIDO_ID, call.getString("pedidoId"));
         ContextCompat.startForegroundService(getContext(), intent);
         call.resolve();
     }

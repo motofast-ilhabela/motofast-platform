@@ -5,7 +5,9 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
 import android.os.Build;
@@ -32,7 +34,10 @@ public class RideAlertService extends Service {
     public static final String ACTION_STOP = "com.motofast.app.action.STOP_RIDE_ALERT";
     public static final String EXTRA_TITLE = "titulo";
     public static final String EXTRA_BODY = "corpo";
+    public static final String EXTRA_PEDIDO_ID = "pedidoId";
 
+    private static final String PREFS_NAME = "ride_alert_state";
+    private static final String KEY_PEDIDO_ATUAL = "pedido_atual";
     private static final String CHANNEL_ID = "corrida_alerta";
     private static final int NOTIFICATION_ID = 991177;
     // Teto de segurança: se nada mais parar o alarme (app travou, React não
@@ -70,6 +75,14 @@ public class RideAlertService extends Service {
             ? intent.getStringExtra(EXTRA_TITLE) : "Nova corrida disponível!";
         String corpo = intent.getStringExtra(EXTRA_BODY) != null
             ? intent.getStringExtra(EXTRA_BODY) : "Toque para ver os detalhes e aceitar.";
+
+        // Guarda qual pedido está tocando AGORA nesse celular — usado pelo
+        // RideAlertNotificationExtension para saber, quando chega um aviso
+        // "cancelar_oferta" (outro motoboy aceitou essa mesma corrida), se é
+        // este alarme específico que precisa parar ou se é de um pedido
+        // diferente (cenário de conta de monitoramento com duas ofertas ao
+        // mesmo tempo) e deve continuar tocando.
+        salvarPedidoAtual(intent.getStringExtra(EXTRA_PEDIDO_ID));
 
         criarCanalNotificacao();
         startForeground(NOTIFICATION_ID, construirNotificacao(titulo, corpo));
@@ -156,10 +169,30 @@ public class RideAlertService extends Service {
     private void pararAlerta() {
         handler.removeCallbacks(pararPorTimeout);
         pararSomSeEstiverTocando();
+        salvarPedidoAtual(null);
         NotificationManager manager = getSystemService(NotificationManager.class);
         if (manager != null) manager.cancel(NOTIFICATION_ID);
         stopForeground(true);
         stopSelf();
+    }
+
+    private void salvarPedidoAtual(String pedidoId) {
+        SharedPreferences prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        if (pedidoId == null) {
+            prefs.edit().remove(KEY_PEDIDO_ATUAL).apply();
+        } else {
+            prefs.edit().putString(KEY_PEDIDO_ATUAL, pedidoId).apply();
+        }
+    }
+
+    // Chamado pelo RideAlertNotificationExtension (processo/classe separada,
+    // por isso via SharedPreferences e não campo estático — precisa
+    // sobreviver mesmo se o app foi reaberto do zero) para saber se o
+    // alarme tocando agora é do mesmo pedido que acabou de ser fechado por
+    // outra pessoa.
+    static String lerPedidoAtual(Context context) {
+        return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(KEY_PEDIDO_ATUAL, null);
     }
 
     @Override
