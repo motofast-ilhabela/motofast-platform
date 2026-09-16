@@ -969,7 +969,12 @@ export default function Motoboy() {
   async function ativarNotificacoesAgora() {
     try {
       if (Capacitor.isNativePlatform()) {
-        const concedida = await getOneSignal()?.Notifications.requestPermission(true);
+        const os = getOneSignal();
+        const concedida = await os?.Notifications.requestPermission(true);
+        // Mesmo motivo do login (ver carregar()) — reativar manualmente
+        // também precisa reabrir a assinatura do lado do OneSignal, não só
+        // a permissão do Android.
+        os?.User.pushSubscription.optIn();
         setPermissaoNotificacao(concedida ? "granted" : "denied");
       } else if ("Notification" in window) {
         Notification.requestPermission().then(p=>setPermissaoNotificacao(p));
@@ -1003,6 +1008,18 @@ export default function Motoboy() {
               const os = getOneSignal();
               os.initialize(ONESIGNAL_APP_ID);
               os.login(String(mb.id));
+              // CRÍTICO, achado em 16/09/2026: reconceder a permissão de
+              // notificação do Android (nas Configurações, ou negando e
+              // aceitando de novo o pop-up) NÃO reativa sozinho a
+              // assinatura de push do lado do OneSignal — ela é um estado
+              // separado, que uma vez marcado como cancelado
+              // ("unsubscribed"), fica assim até alguém chamar optIn()
+              // explicitamente. Sem isso, o motoboy podia reativar a
+              // permissão, o app abrir normal, e mesmo assim nenhuma
+              // notificação direcionada (turno fixo, cancelamento de
+              // oferta) chegar — confirmado testando direto pela API do
+              // OneSignal.
+              os.User.pushSubscription.optIn();
               // false = só pede a permissão normal, sem redirecionar sozinho
               // pras configurações do Android se já tiver sido negada antes
               // (isso fica só pro botão "Ativar Notificações Agora", uma
