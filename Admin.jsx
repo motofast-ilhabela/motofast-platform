@@ -995,33 +995,36 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   //   até 1,5km: m=6.50 · 1,51-2,5km: m=8.20 · 2,51-3,5km: m=11.00 · 3,51-4,5km: m=12.80
   //   4,51-5,5km: m=14.60 · 5,51-6,5km: m=17.70 · 6,51-7,5km: m=17.00 · 7,51-8,5km: m=21.50
   //   8,51-9,5km: m=20.00 · 9,51-10km: m=25.30 · acima de 10km: m = 6.30 + 1.90*kmArred
-  function calcularTaxaPorKmReg(km, bairro) {
-    const overrideBairro = BAIRROS_TAXA_FIXA_KM[normalizarTexto(bairro || "")];
-    if (overrideBairro) return {e: overrideBairro.e, m: overrideBairro.m};
+  // Precificação PROGRESSIVA por distância — reformulada em 15/09/2026.
+  // Antes era uma tabela de faixas fixas (irregular, chegava a ficar mais
+  // barato em faixa mais longe que uma mais curta — bug real encontrado).
+  // Agora é uma FÓRMULA de verdade, calibrada com dado real da plataforma
+  // (Casa Cardoso, 7,2km = R$20 pro cliente, confirmado com o Alessandro):
+  //   - Até 1km: R$8,00 fixo
+  //   - De 1km a 12km: +R$1,00 a cada meio km (R$2,00/km cheio)
+  //   - De 12km a 20km: +R$2,00 a cada meio km (R$4,00/km cheio)
+  //   - Acima de 20km: +R$4,00 a cada meio km (R$8,00/km cheio), sem teto —
+  //     funciona pra qualquer distância, em qualquer cidade que a
+  //     plataforma expandir.
+  // Motoboy sempre recebe 80% (Alessandro fica com 20%), nunca menos que o
+  // piso de R$7,00. Sem mais exceção fixa por bairro (Siriúba/Pacuiba
+  // removidos de propósito — a distância real sempre manda, em qualquer
+  // lugar, pra funcionar igual em qualquer cidade futura).
+  function calcularTaxaPorKmReg(km) {
+    const PISO_MOTOBOY = 7.00;
+    const MARGEM_ADMIN_PCT = 0.20;
 
-    const PISO_MOTOBOY = 7.00; // atualizado 14/08/2026, era 6.50
-    const MARGEM_ADMIN_PCT = 0.20; // atualizado 22/08/2026, era 0.21
+    // Arredonda pra baixo, pro degrau de meio em meio km — só sobe de
+    // valor quando bate ou passa o próximo meio km cheio.
+    const kmAjustado = km <= 1 ? 1 : Math.floor(km * 2) / 2;
+
     let e;
-    if (km <= 1.5) e = 8;
-    else if (km <= 2.5) e = 11;
-    else if (km <= 3.5) e = 13;
-    else if (km <= 4.5) e = 15;
-    else if (km <= 5.5) e = 17;
-    else if (km <= 6.5) e = 20;
-    else if (km <= 7.5) e = 20;
-    else if (km <= 8.5) e = 24;
-    else if (km <= 9.5) e = 23;
-    else if (km <= 10) e = 28;
-    else {
-      const kmArred = Math.ceil(km);
-      e = 8 + 2*kmArred;
-    }
-    // Mesmo ajuste do Empresario.jsx: faixa 1,51-2,5km recebe R$9,00 fixo pro
-    // motoboy, em vez dos 20% padrão (atualizado 22/08/2026 — valor do cliente
-    // subiu de R$10 pra R$11, motoboy segue com R$9,00 fixo).
-    const m = (e === 11)
-      ? 9.00
-      : Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
+    if (kmAjustado <= 1) e = 8;
+    else if (kmAjustado <= 12) e = 8 + (kmAjustado - 1) * 2;
+    else if (kmAjustado <= 20) e = 30 + (kmAjustado - 12) * 4;
+    else e = 62 + (kmAjustado - 20) * 8;
+
+    const m = Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
     return {e: +e.toFixed(2), m: +m.toFixed(2)};
   }
 
@@ -1054,7 +1057,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
         const data = await resp.json();
         if (!cancelado && data.ok) {
           setDistanciaKmReg(data.km.toFixed(1));
-          setTaxaKmReg(calcularTaxaPorKmReg(data.km, bairro));
+          setTaxaKmReg(calcularTaxaPorKmReg(data.km));
         } else if (!cancelado) {
           const resp2 = await fetch("/api/calcular-distancia", {
             method: "POST", headers: {"Content-Type":"application/json"},
@@ -1063,7 +1066,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
           const data2 = await resp2.json();
           if (!cancelado && data2.ok) {
             setDistanciaKmReg(data2.km.toFixed(1));
-            setTaxaKmReg(calcularTaxaPorKmReg(data2.km, bairro));
+            setTaxaKmReg(calcularTaxaPorKmReg(data2.km));
           } else if (!cancelado) {
             setDistanciaKmReg(null); setErroCalculoReg(true);
           }

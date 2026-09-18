@@ -324,41 +324,37 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   //   até 1,5km: m=6.50 · 1,51-2,5km: m=8.20 · 2,51-3,5km: m=11.00 · 3,51-4,5km: m=12.80
   //   4,51-5,5km: m=14.60 · 5,51-6,5km: m=17.70 · 6,51-7,5km: m=17.00 · 7,51-8,5km: m=21.50
   //   8,51-9,5km: m=20.00 · 9,51-10km: m=25.30 · acima de 10km: m = 6.30 + 1.90*kmArred
-  function calcularTaxaPorKm(km, bairro) {
-    // Bairro com preço fixo especial (ver BAIRROS_TAXA_FIXA_KM lá em cima) — se
-    // bater, ignora toda a fórmula por km e usa o valor fixo direto.
-    const overrideBairro = BAIRROS_TAXA_FIXA_KM[normalizarTexto(bairro || "")];
-    if (overrideBairro) return {e: overrideBairro.e, m: overrideBairro.m};
+  // Precificação PROGRESSIVA por distância — reformulada em 15/09/2026.
+  // Antes era uma tabela de faixas fixas (irregular, chegava a ficar mais
+  // barato em faixa mais longe que uma mais curta — bug real encontrado:
+  // 8,5km custava R$24 e 9,5km custava só R$23). Agora é uma FÓRMULA de
+  // verdade, calibrada com dado real da plataforma (Casa Cardoso, 7,2km =
+  // R$20 pro cliente, confirmado com o Alessandro):
+  //   - Até 1km: R$8,00 fixo
+  //   - De 1km a 12km: +R$1,00 a cada meio km (R$2,00/km cheio)
+  //   - De 12km a 20km: +R$2,00 a cada meio km (R$4,00/km cheio)
+  //   - Acima de 20km: +R$4,00 a cada meio km (R$8,00/km cheio), sem teto —
+  //     funciona pra qualquer distância, em qualquer cidade que a
+  //     plataforma expandir (pensado já pra São Sebastião/Caraguatatuba).
+  // Motoboy sempre recebe 80% (Alessandro fica com 20%), nunca menos que o
+  // piso de R$7,00. Removida de propósito a exceção fixa por bairro
+  // (Siriúba/Pacuiba) — a distância real sempre manda, sem exceção, pra
+  // funcionar igual em qualquer lugar futuro sem precisar recadastrar nada.
+  function calcularTaxaPorKm(km) {
+    const PISO_MOTOBOY = 7.00;
+    const MARGEM_ADMIN_PCT = 0.20;
 
-    const PISO_MOTOBOY = 7.00; // motoboy nunca recebe menos que isso, não importa a % (atualizado 14/08/2026, era 6.50)
-    const MARGEM_ADMIN_PCT = 0.20; // atualizado 22/08/2026, era 0.21 (20% fica com a MotoFast)
+    // Arredonda pra baixo, pro degrau de meio em meio km — só sobe de
+    // valor quando bate ou passa o próximo meio km cheio.
+    const kmAjustado = km <= 1 ? 1 : Math.floor(km * 2) / 2;
+
     let e;
-    if (km <= 1.5) e = 8;
-    else if (km <= 2.5) e = 11;
-    else if (km <= 3.5) e = 13;
-    else if (km <= 4.5) e = 15;
-    else if (km <= 5.5) e = 17;
-    else if (km <= 6.5) e = 20;
-    else if (km <= 7.5) e = 20;
-    else if (km <= 8.5) e = 24;
-    else if (km <= 9.5) e = 23;
-    else if (km <= 10) e = 28;
-    else {
-      // Acima de 10km: mesma fórmula de sempre pro valor do cliente, arredondando
-      // pro km cheio pra cima.
-      const kmArred = Math.ceil(km);
-      e = 8 + 2*kmArred;
-    }
-    // Ajuste específico pedido em 14/08/2026: na faixa 1,51-2,5km, R$7,70 pro
-    // motoboy (padrão) estava pouco pra rodar de um bairro pro outro — nessa
-    // faixa específica, ele recebe valor fixo em vez da margem padrão (20%).
-    // Atualizado em 22/08/2026: R$8,50 subiu pra R$9,00 (motoboy ainda não
-    // estava aceitando essa faixa) E o valor do cliente subiu de R$10 pra R$11
-    // (era e===10, agora e===11) — margem da MotoFast passa de R$1 pra R$2
-    // nessa faixa, teste pra ver se resolve o problema de aceite.
-    const m = (e === 11)
-      ? 9.00
-      : Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
+    if (kmAjustado <= 1) e = 8;
+    else if (kmAjustado <= 12) e = 8 + (kmAjustado - 1) * 2;
+    else if (kmAjustado <= 20) e = 30 + (kmAjustado - 12) * 4;
+    else e = 62 + (kmAjustado - 20) * 8;
+
+    const m = Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
     return {e: +e.toFixed(2), m: +m.toFixed(2)};
   }
 
@@ -412,7 +408,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
 
         if (!cancelado && data.ok) {
           setDistanciaKm(data.km.toFixed(1));
-          setTaxaKm(calcularTaxaPorKm(data.km, bairro));
+          setTaxaKm(calcularTaxaPorKm(data.km));
           setMetodoCalculoKm("Google Maps — endereço completo");
           return;
         }
@@ -429,7 +425,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
           const data2 = await resp2.json();
           if (!cancelado && data2.ok) {
             setDistanciaKm(data2.km.toFixed(1));
-            setTaxaKm(calcularTaxaPorKm(data2.km, bairro));
+            setTaxaKm(calcularTaxaPorKm(data2.km));
             setMetodoCalculoKm("Google Maps — bairro (endereço específico não encontrado)");
           } else if (!cancelado) {
             setDistanciaKm(null);
@@ -823,36 +819,22 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   // estranho, sem precisar pedir print de mapa pro empresário de novo.
   const [metodoCalculoKm, setMetodoCalculoKm] = useState(null);
 
-  // Mesma fórmula por porcentagem da tela de Nova Entrega (ver comentário completo
-  // lá) — 20% de margem, motoboy nunca abaixo do piso de R$7,00.
-  function calcularTaxaPorKm(km, bairro) {
-    const overrideBairro = BAIRROS_TAXA_FIXA_KM[normalizarTexto(bairro || "")];
-    if (overrideBairro) return {e: overrideBairro.e, m: overrideBairro.m};
+  // Mesma fórmula progressiva da tela de Nova Entrega (ver comentário
+  // completo lá) — reformulada em 15/09/2026: fórmula sem teto, calibrada
+  // no dado real (7,2km = R$20), sem mais exceção fixa por bairro.
+  function calcularTaxaPorKm(km) {
+    const PISO_MOTOBOY = 7.00;
+    const MARGEM_ADMIN_PCT = 0.20;
 
-    const PISO_MOTOBOY = 7.00; // atualizado 14/08/2026, era 6.50
-    const MARGEM_ADMIN_PCT = 0.20; // atualizado 22/08/2026, era 0.21
+    const kmAjustado = km <= 1 ? 1 : Math.floor(km * 2) / 2;
+
     let e;
-    if (km <= 1.5) e = 8;
-    else if (km <= 2.5) e = 11;
-    else if (km <= 3.5) e = 13;
-    else if (km <= 4.5) e = 15;
-    else if (km <= 5.5) e = 17;
-    else if (km <= 6.5) e = 20;
-    else if (km <= 7.5) e = 20;
-    else if (km <= 8.5) e = 24;
-    else if (km <= 9.5) e = 23;
-    else if (km <= 10) e = 28;
-    else {
-      const kmArred = Math.ceil(km);
-      e = 8 + 2*kmArred;
-    }
-    // Mesmo ajuste da tela de Nova Entrega: faixa 1,51-2,5km recebe R$9,00
-    // fixo pro motoboy, em vez dos 20% padrão (atualizado 22/08/2026 — valor
-    // do cliente subiu de R$10 pra R$11, motoboy segue com R$9,00 fixo,
-    // margem da MotoFast passa de R$1 pra R$2 nessa faixa).
-    const m = (e === 11)
-      ? 9.00
-      : Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
+    if (kmAjustado <= 1) e = 8;
+    else if (kmAjustado <= 12) e = 8 + (kmAjustado - 1) * 2;
+    else if (kmAjustado <= 20) e = 30 + (kmAjustado - 12) * 4;
+    else e = 62 + (kmAjustado - 20) * 8;
+
+    const m = Math.max(PISO_MOTOBOY, +(e * (1 - MARGEM_ADMIN_PCT)).toFixed(2));
     return {e: +e.toFixed(2), m: +m.toFixed(2)};
   }
 
@@ -894,7 +876,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
 
         if (!cancelado && data.ok) {
           setDistanciaKm(data.km.toFixed(1));
-          setTaxaKm(calcularTaxaPorKm(data.km, bairro));
+          setTaxaKm(calcularTaxaPorKm(data.km));
           setMetodoCalculoKm("Google Maps — endereço completo");
           return;
         }
@@ -909,7 +891,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
           const data2 = await resp2.json();
           if (!cancelado && data2.ok) {
             setDistanciaKm(data2.km.toFixed(1));
-            setTaxaKm(calcularTaxaPorKm(data2.km, bairro));
+            setTaxaKm(calcularTaxaPorKm(data2.km));
             setMetodoCalculoKm("Google Maps — bairro (endereço específico não encontrado)");
           } else if (!cancelado) {
             setDistanciaKm(null);
