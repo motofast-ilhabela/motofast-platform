@@ -30,7 +30,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método não permitido" });
   }
-  const { motoboyId, titulo, corpo } = req.body || {};
+  const { motoboyId, titulo, corpo, pedidoId } = req.body || {};
   if (!motoboyId || !titulo || !corpo) {
     return res.status(400).json({ error: "motoboyId, titulo e corpo são obrigatórios" });
   }
@@ -59,6 +59,9 @@ export default async function handler(req, res) {
         headings: { en: titulo },
         contents: { en: corpo },
         url: "https://motofast-platform.vercel.app/motoboy",
+        // Adicionado em 18/09/2026: manda o ID do pedido junto, opcional —
+        // não quebra quem já chama sem mandar isso.
+        data: pedidoId ? { pedidoId: String(pedidoId) } : undefined,
         priority: 10,
         android_visibility: 1,
         android_channel_id: "21ab798f-74a5-45ee-9f18-7958bc765933",

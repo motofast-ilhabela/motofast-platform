@@ -16,7 +16,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Método não permitido" });
   }
-  const { titulo, corpo } = req.body || {};
+  const { titulo, corpo, pedidoId } = req.body || {};
   if (!titulo || !corpo) {
     return res.status(400).json({ error: "titulo e corpo são obrigatórios" });
   }
@@ -46,6 +46,9 @@ export default async function handler(req, res) {
         headings: { en: titulo },
         contents: { en: corpo },
         url: "https://motofast-platform.vercel.app/motoboy",
+        // Adicionado em 18/09/2026: manda o ID do pedido junto, opcional —
+        // não quebra quem já chama sem mandar isso.
+        data: pedidoId ? { pedidoId: String(pedidoId) } : undefined,
         // Prioridade máxima no Android (FCM) — força a entrega mesmo
         // com o celular em modo de economia de energia (Doze Mode).
         // Sem isso o sistema pode atrasar ou segurar a notificação
