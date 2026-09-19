@@ -288,12 +288,24 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
   const pct = (restantes/TEMPO_PEDIDO)*100;
   const corTimer = pct>50?"#34d399":pct>25?"#fbbf24":"#ef4444";
 
+  // Adicionado em 07/09/2026 no site: conta de monitoramento vendo um
+  // pedido que ainda é prioridade de outro motoboy — toca e mostra igual
+  // normal, só que sem poder aceitar até a janela de prioridade passar.
+  // `tick` (acima) já força rerender a cada segundo, então esse cálculo
+  // atualiza sozinho.
+  const segundosBloqueado = pedido.bloqueadoAtePrioridade
+    ? Math.max(0, Math.ceil((new Date(pedido.bloqueadoAtePrioridade).getTime() - Date.now())/1000))
+    : 0;
+  const aindaBloqueado = segundosBloqueado > 0;
+
   return (
     <Overlay maxW={460} borderColor={pulsando?"#34d399":"#1a5c3a"}>
       <div style={{textAlign:"center",marginBottom:16}}>
         <div style={{fontSize:52,marginBottom:8}}>🏍️</div>
         <div style={{color:"#34d399",fontWeight:900,fontSize:24}}>Novo Pedido!</div>
-        <div style={{color:"#6b7280",fontSize:13,marginTop:4}}>Aceite rápido — primeiro a aceitar fica com a entrega</div>
+        <div style={{color:"#6b7280",fontSize:13,marginTop:4}}>
+          {aindaBloqueado ? "Prioridade de outro motoboy agora — só acompanhando" : "Aceite rápido — primeiro a aceitar fica com a entrega"}
+        </div>
       </div>
 
       <div style={{marginBottom:16}}>
@@ -369,9 +381,15 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
         <button onClick={onRecusar} style={{flex:1,padding:"14px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:15,cursor:"pointer"}}>
           ❌ Recusar
         </button>
-        <button onClick={onAceitar} style={{flex:2,padding:"14px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:900,fontSize:20,cursor:"pointer"}}>
-          ✅ ACEITAR
-        </button>
+        {aindaBloqueado ? (
+          <button disabled style={{flex:2,padding:"14px",borderRadius:10,background:"#1f2937",border:"1px solid #f59e0b66",color:"#fbbf24",fontWeight:800,fontSize:15,cursor:"not-allowed"}}>
+            ⏳ Aguarde {segundosBloqueado}s — prioridade de outro
+          </button>
+        ) : (
+          <button onClick={onAceitar} style={{flex:2,padding:"14px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:900,fontSize:20,cursor:"pointer"}}>
+            ✅ ACEITAR
+          </button>
+        )}
       </div>
     </Overlay>
   );
@@ -1328,7 +1346,20 @@ export default function Motoboy() {
           const recusadoEm = recusadosRef.current[p.id];
           if (recusadoEm && (agora - recusadoEm < TEMPO_COOLDOWN_RECUSA_MS)) return false;
           if (p.prioridade_ate && new Date(p.prioridade_ate).getTime() > agora) {
-            if (!meusTurnos.has(p.turno_prioridade)) return false;
+            // Prioridade por horário específico (adicionada em 06/09/2026 no
+            // site) manda mais que o Turno Fixo — se o pedido tem um
+            // motoboy_id específico de prioridade, só ELE vê nessa janela,
+            // mesmo que eu esteja registrado num Turno Fixo qualquer.
+            //
+            // Contas de monitoramento (gestão do Alessandro) PASSAM a ver o
+            // pedido mesmo sem ser a prioridade da vez — toca e aparece na
+            // tela, só que sem poder aceitar até a janela de prioridade
+            // passar (ver "_bloqueadoAtePrioridade" logo abaixo). É só pra
+            // acompanhamento, nunca fura a fila.
+            const temPrioridadeEspecifica = p.prioridade_motoboy_id
+              ? p.prioridade_motoboy_id === motoboyId
+              : meusTurnos.has(p.turno_prioridade);
+            if (!temPrioridadeEspecifica && !ehContaMonitoramento) return false;
           }
           return true;
         });
@@ -1340,6 +1371,16 @@ export default function Motoboy() {
         });
         candidato = candidatosValidos[0];
         if (!candidato) return;
+
+        // Calcula se EU (quem está vendo agora) posso realmente aceitar esse
+        // pedido agora, ou se só estou vendo por ser conta de monitoramento
+        // enquanto a prioridade ainda é de outro motoboy.
+        if (candidato.prioridade_ate && new Date(candidato.prioridade_ate).getTime() > agora) {
+          const souEuAPrioridade = candidato.prioridade_motoboy_id
+            ? candidato.prioridade_motoboy_id === motoboyId
+            : meusTurnos.has(candidato.turno_prioridade);
+          candidato._bloqueadoAtePrioridade = souEuAPrioridade ? null : candidato.prioridade_ate;
+        }
       }
 
       if (candidato && !pedidoRef.current) {
@@ -1355,6 +1396,7 @@ export default function Motoboy() {
           pagamento: candidato.forma_pagamento, taxa: candidato.taxa_motoboy || candidato.taxa, obs: candidato.observacao,
           valorPedido: candidato.valor_pedido, valorReceber: candidato.valor_receber, troco: candidato.valor_troco,
           criadoEm: new Date(candidato.criado_em).getTime(),
+          bloqueadoAtePrioridade: candidato._bloqueadoAtePrioridade || null,
         };
         pedidoRef.current = novoPedido;
         setPedidoDisponivel(novoPedido);

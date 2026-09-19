@@ -17,6 +17,15 @@ import android.os.Looper;
 import android.os.PowerManager;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import org.json.JSONArray;
+import org.json.JSONObject;
 
 // Serviço em primeiro plano responsável por tocar o alarme em LOOP e mostrar
 // uma notificação chamativa de "corrida nova" — mesma ideia de app de
@@ -50,9 +59,32 @@ public class RideAlertService extends Service {
     // levar sozinho, sem cortar o alarme de um pedido ainda ativo.
     private static final long DURACAO_MAXIMA_MS = 9 * 60_000;
 
+    // CRIADO em 18/09/2026, a pedido do Alessandro: o alarme só parava por
+    // aviso do servidor (push "cancelar_oferta", ver
+    // RideAlertNotificationExtension). Isso falha silenciosamente se a
+    // assinatura de push daquele celular específico estiver com problema no
+    // OneSignal — confirmado em produção: um motoboy real (não só o celular
+    // de teste) ficou com o alarme tocando sem parar porque o push de
+    // cancelamento nunca chegou, mesmo a corrida já tendo sido aceita por
+    // outra pessoa há minutos. Essa checagem é uma segunda camada,
+    // totalmente independente do OneSignal/push: enquanto o alarme está
+    // tocando, o próprio serviço confere direto no banco, de tempos em
+    // tempos, se o pedido ainda está "aguardando" — se não estiver mais
+    // (aceito, cancelado, etc.), para sozinho, não importa se algum push
+    // chegou ou não.
+    private static final String SUPABASE_URL = "https://eynpjqhjkwwdpemsospy.supabase.co";
+    private static final String SUPABASE_ANON_KEY = "sb_publishable_MMbUB_k9rDmEJU1j9wAKig_ZpoOTwVW";
+    // 3s a pedido do Alessandro (18/09/2026) — a causa real do atraso longo
+    // era o pedidoId nunca chegar a esse serviço (ver correção no push, com
+    // "data.pedidoId"), não a velocidade do intervalo. Mesmo assim, com o
+    // pedidoId chegando certo agora, não custa deixar essa rede de segurança
+    // mais rápida também.
+    private static final long INTERVALO_CHECAGEM_MS = 3_000;
+
     private MediaPlayer mediaPlayer;
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Runnable pararPorTimeout = this::pararAlerta;
+    private ScheduledExecutorService checagemExecutor;
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -87,10 +119,65 @@ public class RideAlertService extends Service {
         criarCanalNotificacao();
         startForeground(NOTIFICATION_ID, construirNotificacao(titulo, corpo));
         tocarAlarmeEmLoop();
+        iniciarChecagemPeriodica();
 
         handler.removeCallbacks(pararPorTimeout);
         handler.postDelayed(pararPorTimeout, DURACAO_MAXIMA_MS);
         return START_NOT_STICKY;
+    }
+
+    // Liga (se ainda não estiver ligada) a checagem periódica de segurança —
+    // idempotente, chamada em todo re-arme do alarme (cada oferta nova ou
+    // renovação do ciclo de 30s), mas só cria a thread de verdade uma vez.
+    private void iniciarChecagemPeriodica() {
+        if (checagemExecutor != null && !checagemExecutor.isShutdown()) return;
+        checagemExecutor = Executors.newSingleThreadScheduledExecutor();
+        checagemExecutor.scheduleWithFixedDelay(
+            this::checarSeAindaAguardando, INTERVALO_CHECAGEM_MS, INTERVALO_CHECAGEM_MS, TimeUnit.MILLISECONDS);
+    }
+
+    private void pararChecagemPeriodica() {
+        if (checagemExecutor == null) return;
+        checagemExecutor.shutdownNow();
+        checagemExecutor = null;
+    }
+
+    // Roda numa thread de fundo (nunca na main thread — é rede de verdade).
+    // Confere o pedido que está tocando AGORA (lido de novo a cada ciclo,
+    // nunca guardado localmente) direto no Supabase, sem passar pelo
+    // OneSignal/push de forma nenhuma.
+    private void checarSeAindaAguardando() {
+        String pedidoId = lerPedidoAtual(this);
+        if (pedidoId == null) return;
+        HttpURLConnection conn = null;
+        try {
+            URL url = new URL(SUPABASE_URL + "/rest/v1/pedidos?id=eq." + pedidoId + "&select=status");
+            conn = (HttpURLConnection) url.openConnection();
+            conn.setRequestProperty("apikey", SUPABASE_ANON_KEY);
+            conn.setRequestProperty("Authorization", "Bearer " + SUPABASE_ANON_KEY);
+            conn.setConnectTimeout(8000);
+            conn.setReadTimeout(8000);
+            if (conn.getResponseCode() != 200) return;
+            StringBuilder resposta = new StringBuilder();
+            try (BufferedReader leitor = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+                String linha;
+                while ((linha = leitor.readLine()) != null) resposta.append(linha);
+            }
+            JSONArray lista = new JSONArray(resposta.toString());
+            String statusAtual = lista.length() > 0 ? lista.getJSONObject(0).optString("status", null) : null;
+            // Pedido sumiu (id trocou, corrida antiga) ou não está mais
+            // "aguardando" (foi aceito por outra pessoa, cancelado, etc.) —
+            // nos dois casos, não faz mais sentido esse alarme continuar.
+            if (!"aguardando".equals(statusAtual)) {
+                handler.post(this::pararAlerta);
+            }
+        } catch (Exception e) {
+            // Falha de rede/timeout não deve derrubar o alarme por engano —
+            // só tenta de novo sozinho no próximo ciclo, silenciosamente.
+            android.util.Log.w("RideAlertService", "Erro ao checar status do pedido (tenta de novo no próximo ciclo): " + e.getMessage());
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
     }
 
     private void criarCanalNotificacao() {
@@ -168,6 +255,7 @@ public class RideAlertService extends Service {
 
     private void pararAlerta() {
         handler.removeCallbacks(pararPorTimeout);
+        pararChecagemPeriodica();
         pararSomSeEstiverTocando();
         salvarPedidoAtual(null);
         NotificationManager manager = getSystemService(NotificationManager.class);
@@ -198,6 +286,7 @@ public class RideAlertService extends Service {
     @Override
     public void onDestroy() {
         handler.removeCallbacks(pararPorTimeout);
+        pararChecagemPeriodica();
         pararSomSeEstiverTocando();
         super.onDestroy();
     }

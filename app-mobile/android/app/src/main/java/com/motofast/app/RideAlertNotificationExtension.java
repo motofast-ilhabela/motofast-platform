@@ -93,12 +93,23 @@ public class RideAlertNotificationExtension implements INotificationServiceExten
 
         String titulo = event.getNotification().getTitle();
         String corpo = event.getNotification().getBody();
-        android.util.Log.d(TAG, "tipo=nova_corrida (ou sem tipo) — ligando alarme. titulo=" + titulo);
+        // ADICIONADO em 18/09/2026: o push de "corrida nova" agora pode
+        // trazer o pedidoId junto (ver api/notificar-motoboys.js e
+        // api/notificar-motoboy-especifico.js) — CRÍTICO pra checagem
+        // periódica de segurança do RideAlertService funcionar com a tela
+        // bloqueada: sem isso, o serviço ligava o alarme sem saber qual
+        // pedido checar, e só descobria o pedidoId de verdade quando o
+        // JS rodasse (o que não acontece com a tela bloqueada) — bug real
+        // em produção, onde o alarme nunca parava sozinho mesmo já tendo
+        // sido aceito por outro motoboy minutos antes.
+        String pedidoId = dados != null ? dados.optString("pedidoId", null) : null;
+        android.util.Log.d(TAG, "tipo=nova_corrida (ou sem tipo) — ligando alarme. titulo=" + titulo + " pedidoId=" + pedidoId);
 
         Intent intent = new Intent(context, RideAlertService.class);
         intent.setAction(RideAlertService.ACTION_START);
         if (titulo != null) intent.putExtra(RideAlertService.EXTRA_TITLE, titulo);
         if (corpo != null) intent.putExtra(RideAlertService.EXTRA_BODY, corpo);
+        if (pedidoId != null) intent.putExtra(RideAlertService.EXTRA_PEDIDO_ID, pedidoId);
         ContextCompat.startForegroundService(context, intent);
     }
 
