@@ -2739,12 +2739,12 @@ export default function AppEmpresario() {
 
   // Dispara notificação push de verdade (via servidor), que chega mesmo com o app do motoboy fechado.
   // Não trava o fluxo se falhar — a publicação do pedido já aconteceu de qualquer forma.
-  async function notificarMotoboysPush(titulo, corpo) {
+  async function notificarMotoboysPush(titulo, corpo, pedidoId) {
     try {
       await fetch("/api/notificar-motoboys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ titulo, corpo }),
+        body: JSON.stringify({ titulo, corpo, pedidoId }),
       });
     } catch (e) {
       console.log("Erro ao notificar motoboys via push:", e);
@@ -2823,6 +2823,7 @@ export default function AppEmpresario() {
             motoboyId,
             titulo: "🏍️ Novo Pedido MotoFast!",
             corpo: `Entrega em ${pedido.bairro} — R$${pedido.taxaMotoboy || pedido.taxa}`,
+            pedidoId: pedidoDB?.id,
           }),
         }).catch(e => console.log("Erro ao notificar motoboy do turno fixo:", e));
       });
@@ -2839,6 +2840,7 @@ export default function AppEmpresario() {
             motoboyId,
             titulo: "🏍️ Novo Pedido (aviso — não é sua prioridade)",
             corpo: `Entrega em ${pedido.bairro} — R$${pedido.taxaMotoboy || pedido.taxa}`,
+            pedidoId: pedidoDB?.id,
           }),
         }).catch(e => console.log("Erro ao notificar conta de monitoramento:", e));
       });
@@ -2846,7 +2848,8 @@ export default function AppEmpresario() {
       // Ninguém do turno fixo online agora — publica normal, pra todo mundo
       notificarMotoboysPush(
         "🏍️ Novo Pedido MotoFast!",
-        `Entrega em ${pedido.bairro} — R$${pedido.taxaMotoboy || pedido.taxa}`
+        `Entrega em ${pedido.bairro} — R$${pedido.taxaMotoboy || pedido.taxa}`,
+        pedidoDB?.id
       );
     }
 
@@ -3045,6 +3048,7 @@ export default function AppEmpresario() {
                         motoboyId,
                         titulo: "🏍️ Novo Pedido MotoFast!",
                         corpo: `Entrega em ${avisoSemMotoboy.bairro} — R$${avisoSemMotoboy.taxaMotoboy || avisoSemMotoboy.taxa}`,
+                        pedidoId: pedidoReenviado?.id,
                       }),
                     }).catch(e => console.log("Erro ao notificar motoboy do turno fixo:", e));
                   });
@@ -3056,13 +3060,15 @@ export default function AppEmpresario() {
                         motoboyId,
                         titulo: "🏍️ Novo Pedido (aviso — não é sua prioridade)",
                         corpo: `Entrega em ${avisoSemMotoboy.bairro} — R$${avisoSemMotoboy.taxaMotoboy || avisoSemMotoboy.taxa}`,
+                        pedidoId: pedidoReenviado?.id,
                       }),
                     }).catch(e => console.log("Erro ao notificar conta de monitoramento:", e));
                   });
                 } else {
                   notificarMotoboysPush(
                     "🏍️ Novo Pedido MotoFast!",
-                    `Entrega em ${avisoSemMotoboy.bairro} — R$${avisoSemMotoboy.taxaMotoboy || avisoSemMotoboy.taxa}`
+                    `Entrega em ${avisoSemMotoboy.bairro} — R$${avisoSemMotoboy.taxaMotoboy || avisoSemMotoboy.taxa}`,
+                    pedidoReenviado?.id
                   );
                 }
                 await carregarPedidos(empresa.id);
