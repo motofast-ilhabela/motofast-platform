@@ -395,12 +395,14 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
   );
 }
 
-function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
+function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCancelarItem }) {
   const [pedidosEntregues, setPedidosEntregues] = useState([]);
   const [saiuEstab, setSaiuEstab] = useState({});
   const [modalCancelar, setModalCancelar] = useState(false);
   const [motivoCancelamento, setMotivoCancelamento] = useState("");
   const [motivoCustom, setMotivoCustom] = useState("");
+  const [modalCancelarItem, setModalCancelarItem] = useState(null); // id do pedido, ou null
+  const [motivoItem, setMotivoItem] = useState("");
 
   async function sairEstabelecimento(pedidoId) {
     setSaiuEstab(prev=>({...prev,[pedidoId]:true}));
@@ -413,6 +415,13 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
   function marcarEntregue(pedidoId) {
     const novos = [...pedidosEntregues, pedidoId];
     setPedidosEntregues(novos);
+    // Adicionado em 07/09/2026 no site: antes, o banco só era atualizado
+    // quando TODOS os pedidos da corrida terminavam juntos — até lá, mesmo
+    // o que já tinha sido entregue continuava marcado como "a caminho" pro
+    // Admin, sem jeito de saber qual já foi de fato entregue quando o
+    // motoboy está com várias corridas ao mesmo tempo. Agora cada uma grava
+    // sozinha, na hora, assim que confirmada.
+    onEntregarItem(pedidoId);
     const todos = corrida.pedidos.map(p=>p.id);
     if (todos.every(id=>novos.includes(id))) {
       setTimeout(()=>onEntregar(), 800);
@@ -598,9 +607,46 @@ function CorridaAtiva({ corrida, onEntregar, onCancelar }) {
                 <span style={{color:"#34d399",fontWeight:700,fontSize:13}}>✅ Entregue para {p.clienteNome}!</span>
               </div>
             )}
+
+            {!entregue && corrida.pedidos.length > 1 && (
+              <button onClick={()=>{setModalCancelarItem(p.id);setMotivoItem("");}}
+                style={{width:"100%",padding:"8px",marginTop:8,borderRadius:8,background:"transparent",border:"none",color:"#6b7280",fontWeight:600,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>
+                Pedido duplicado ou errado? Cancelar só este
+              </button>
+            )}
           </Card>
         );
       })}
+
+      {modalCancelarItem && (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{background:"#111827",border:"2px solid #f59e0b",borderRadius:16,width:"100%",maxWidth:420,padding:24}}>
+            <div style={{color:"#fbbf24",fontWeight:900,fontSize:18,marginBottom:6}}>Cancelar só este pedido</div>
+            <div style={{color:"#9ca3af",fontSize:13,marginBottom:14}}>
+              Isso cancela <b>apenas este pedido</b>. Os outros pedidos da corrida continuam normais, você não fica offline e não precisa refazer nada.
+            </div>
+            <textarea value={motivoItem} onChange={e=>setMotivoItem(e.target.value)}
+              placeholder="Por que está cancelando este pedido? (ex: lançado em duplicidade)" rows={3}
+              style={{background:"#0f172a",border:"1px solid #f59e0b",borderRadius:8,color:"#f9fafb",padding:"10px 12px",width:"100%",fontSize:13,outline:"none",resize:"none",boxSizing:"border-box",marginBottom:14}}/>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={()=>{
+                if (!motivoItem.trim()) return;
+                onCancelarItem(modalCancelarItem, motivoItem.trim());
+                setModalCancelarItem(null);
+                setMotivoItem("");
+              }}
+                disabled={!motivoItem.trim()}
+                style={{flex:2,padding:"13px",borderRadius:10,background:"#f59e0b",border:"none",color:"#000",fontWeight:800,fontSize:15,cursor:"pointer",opacity:!motivoItem.trim()?0.4:1}}>
+                Confirmar — cancelar só este
+              </button>
+              <button onClick={()=>{setModalCancelarItem(null);setMotivoItem("");}}
+                style={{flex:1,padding:"13px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:14,cursor:"pointer"}}>
+                Voltar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{marginTop:10}}>
         <button onClick={()=>setModalCancelar(true)} style={{width:"100%",padding:"12px",borderRadius:10,background:"#1f2937",border:"1px solid #ef444466",color:"#f87171",fontWeight:700,fontSize:14,cursor:"pointer"}}>
@@ -1696,14 +1742,22 @@ export default function Motoboy() {
     setPedidoDisponivel(null); pedidoRef.current = null; ofertaAtivaRef.current = null; tentativas.current = 0;
   }
 
+  // Adicionado em 07/09/2026 no site: grava "entregue" no banco assim que
+  // CADA pedido é confirmado, não só quando a corrida inteira termina — o
+  // Admin passa a ver na hora quais itens já foram entregues numa corrida
+  // com vários pedidos, em vez de tudo continuar "a caminho" até o último.
+  async function entregarItemIndividual(pedidoId) {
+    await supabase.from("pedidos").update({
+      status: "entregue",
+      entregue_em: new Date().toISOString(),
+    }).eq("id", pedidoId);
+  }
+
   async function finalizarCorrida() {
     if (!corridaAtiva) return;
-    for (const p of corridaAtiva.pedidos) {
-      await supabase.from("pedidos").update({
-        status: "entregue",
-        entregue_em: new Date().toISOString(),
-      }).eq("id", p.id);
-    }
+    // Cada pedido já foi gravado como "entregue" individualmente, assim que
+    // confirmado (ver entregarItemIndividual) — aqui só falta o
+    // encerramento local: some da tela e joga pro histórico local.
     const agora = new Date();
     const novos = corridaAtiva.pedidos.map(p=>({
       id:p.id,
@@ -1721,6 +1775,26 @@ export default function Motoboy() {
     setAba("ganhos");
   }
 
+  // Adicionado em 07/09/2026 no site: cancela só ESSE pedido específico da
+  // corrida (ex: lançado em duplicidade) — os outros continuam normais, o
+  // motoboy não fica offline e não precisa refazer nada.
+  async function cancelarPedidoIndividual(pedidoId, motivo) {
+    await supabase.from("pedidos").update({
+      status: "cancelado",
+      motivo_cancelamento: motivo,
+      cancelado_por_motoboy: true,
+      cancelado_em: new Date().toISOString(),
+    }).eq("id", pedidoId);
+    setCorridaAtiva(prev => {
+      if (!prev) return prev;
+      const restantes = prev.pedidos.filter(p => p.id !== pedidoId);
+      // Se não sobrou nenhum pedido pra entregar nessa corrida, encerra ela
+      // (sem marcar nada como entregue — os outros, se algum já tivesse
+      // sido, já foram gravados individualmente antes de chegar aqui).
+      return restantes.length === 0 ? null : { ...prev, pedidos: restantes };
+    });
+  }
+
   async function cancelarCorrida(motivo) {
     if (corridaAtiva) {
       for (const p of corridaAtiva.pedidos) {
@@ -1728,6 +1802,7 @@ export default function Motoboy() {
           status: "cancelado",
           motivo_cancelamento: motivo,
           cancelado_por_motoboy: true,
+          cancelado_em: new Date().toISOString(),
         }).eq("id", p.id);
       }
     }
@@ -1978,7 +2053,7 @@ export default function Motoboy() {
 
         {aba==="corrida" && (
           corridaAtiva
-            ? <CorridaAtiva corrida={corridaAtiva} onEntregar={finalizarCorrida} onCancelar={cancelarCorrida}/>
+            ? <CorridaAtiva corrida={corridaAtiva} onEntregar={finalizarCorrida} onEntregarItem={entregarItemIndividual} onCancelar={cancelarCorrida} onCancelarItem={cancelarPedidoIndividual}/>
             : <Card style={{textAlign:"center",padding:40}}>
                 <div style={{fontSize:48,marginBottom:12}}>🏍️</div>
                 <div style={{color:"#6b7280",fontSize:15}}>Nenhuma corrida ativa</div>
