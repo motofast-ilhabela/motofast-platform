@@ -1958,10 +1958,19 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                 );
               })()}
               {empSel.planoPagamentoMotoboy==="semanal" && (()=>{
-                const segundaAtual3 = segundaFeiraDaSemana(new Date());
-                const entsSemana = historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue"&&e.semana===segundaAtual3);
+                // CORRIGIDO em 20/09/2026: antes usava a semana ATUAL (ainda em
+                // andamento) — quem paga durante a semana, referente à semana
+                // anterior que já fechou, marcava "pago" num total que ainda
+                // ia crescer com as entregas dos dias seguintes, fazendo
+                // "voltar a ficar pendente" sem ser um bug de reversão de
+                // verdade — era dívida NOVA se somando à antiga já marcada.
+                // Agora aponta pra semana ANTERIOR (já fechada, não recebe
+                // mais entrega nova) — que é a que realmente é paga toda
+                // semana, então marcar como paga aqui fica definitivo.
+                const semanaAnterior3 = segundaFeiraDaSemana(new Date(new Date().setDate(new Date().getDate()-7)));
+                const entsSemana = historico.filter(e=>e.empresarioId===empSel.id&&e.status==="Entregue"&&e.semana===semanaAnterior3);
                 const totalSemanaTaxa = entsSemana.reduce((s,e)=>s+e.taxaEmpresario,0);
-                const valorJaPago = empSel.pagamentosSemanais?.[segundaAtual3] || 0;
+                const valorJaPago = empSel.pagamentosSemanais?.[semanaAnterior3] || 0;
                 const pendenteSemanaAtual = Math.max(0, totalSemanaTaxa - valorJaPago);
                 const inputId = `valor-pago-semana-${empSel.id}`;
                 const porSemanaMapPag = {};
@@ -1986,7 +1995,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                       )}
                     </div>
 
-                    <div style={{color:"#6b7280",fontSize:12,marginBottom:10}}>Semana atual: {entsSemana.length} entrega(s) · Total: <strong style={{color:"#60a5fa"}}>R${totalSemanaTaxa.toFixed(2)}</strong></div>
+                    <div style={{color:"#6b7280",fontSize:12,marginBottom:10}}>Semana anterior (já fechada): {entsSemana.length} entrega(s) · Total: <strong style={{color:"#60a5fa"}}>R${totalSemanaTaxa.toFixed(2)}</strong></div>
                     <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:10}}>
                       {pendenteSemanaAtual<=0 && totalSemanaTaxa>0 ? <Tag label="✅ Pago essa semana" cor="#34d399"/> : <Tag label={`⚠️ Falta R$${pendenteSemanaAtual.toFixed(2)} essa semana`} cor="#fbbf24"/>}
                       {valorJaPago>0 && <span style={{color:"#6b7280",fontSize:11}}>já registrado: R${valorJaPago.toFixed(2)}</span>}
@@ -1996,13 +2005,13 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                         style={{background:"#111827",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"8px 12px",width:110,fontSize:14,outline:"none"}}/>
                       <button onClick={()=>{
                         const val = parseFloat(document.getElementById(inputId).value) || 0;
-                        atualizarValorPagoSemana(empSel.id, segundaAtual3, val);
+                        atualizarValorPagoSemana(empSel.id, semanaAnterior3, val);
                       }} style={{padding:"8px 14px",borderRadius:8,background:"#0d3d2e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,fontSize:12,cursor:"pointer"}}>
-                        💾 Salvar valor pago (semana atual)
+                        💾 Salvar valor pago (semana anterior)
                       </button>
-                      <button onClick={()=>marcarTaxaSemanalPaga(empSel.id, segundaAtual3, totalSemanaTaxa)}
+                      <button onClick={()=>marcarTaxaSemanalPaga(empSel.id, semanaAnterior3, totalSemanaTaxa)}
                         style={{padding:"8px 14px",borderRadius:8,background:"#10b981",border:"none",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>
-                        ✅ Marcar tudo como pago (semana atual)
+                        ✅ Marcar tudo como pago (semana anterior)
                       </button>
                     </div>
                   </Card>
