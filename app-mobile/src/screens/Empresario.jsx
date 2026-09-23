@@ -1440,10 +1440,12 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                     ✏️ Editar este pedido
                   </button>
                   <button onClick={async()=>{
-                    if (!window.confirm(`Cancelar só a entrega de ${p.clienteNome}? Os outros pedidos dessa corrida continuam normais. O motoboy será avisado.`)) return;
+                    const motivo = window.prompt(`Por que está cancelando a entrega de ${p.clienteNome}? (o motoboy vai ver esse motivo)`, "");
+                    if (motivo === null) return; // clicou em Cancelar no aviso
                     await supabase.from("pedidos").update({
                       status: "cancelado",
-                      motivo_cancelamento: "Cancelado pelo estabelecimento",
+                      motivo_cancelamento: motivo.trim() || "Cancelado pelo estabelecimento",
+                      cancelado_em: new Date().toISOString(),
                     }).eq("id", p.id);
                     await onRecarregar();
                   }} style={{marginTop:8,width:"100%",padding:"9px",borderRadius:8,background:"#3d1010",border:"1px solid #ef444466",color:"#f87171",fontWeight:700,fontSize:12,cursor:"pointer"}}>
@@ -1457,11 +1459,14 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                 cancelar individual acima, que cancela só um cliente por vez. */}
             <div style={{marginTop:8,marginBottom:8}}>
               <button onClick={async()=>{
-                if (!window.confirm("Tem certeza que quer cancelar TODOS os pedidos desta corrida (todos os clientes)? O motoboy será notificado.")) return;
+                const motivo = window.prompt("Por que está cancelando TODOS os pedidos ainda não entregues desta corrida? (o motoboy vai ver esse motivo)", "");
+                if (motivo === null) return;
                 for (const p of corrida.pedidos) {
+                  if (p.status==="entregue") continue; // já finalizado, não mexe
                   await supabase.from("pedidos").update({
                     status: "cancelado",
-                    motivo_cancelamento: "Cancelado pelo estabelecimento",
+                    motivo_cancelamento: motivo.trim() || "Cancelado pelo estabelecimento",
+                    cancelado_em: new Date().toISOString(),
                   }).eq("id", p.id);
                 }
                 await onRecarregar();
