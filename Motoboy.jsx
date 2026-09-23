@@ -63,58 +63,6 @@ function Overlay({ children, maxW=480, borderColor="#1f2937" }) {
 }
 
 const SONS = {
-  bipe_triplo: {
-    label:"Bipe Triplo", emoji:"📳", descricao:"3 bipes rápidos e agudos",
-    tocarCtx:(ctx)=>{
-      [0,0.2,0.4].forEach(d=>{
-        const o=ctx.createOscillator(),g=ctx.createGain();
-        o.connect(g);g.connect(ctx.destination);
-        o.frequency.value=1000;o.type="square";
-        g.gain.setValueAtTime(1.0,ctx.currentTime+d);
-        g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+d+0.18);
-        o.start(ctx.currentTime+d);o.stop(ctx.currentTime+d+0.18);
-      });
-    }
-  },
-  sirene: {
-    label:"Sirene", emoji:"🚨", descricao:"Sirene crescente e forte",
-    tocarCtx:(ctx)=>{
-      const o=ctx.createOscillator(),g=ctx.createGain();
-      o.connect(g);g.connect(ctx.destination);o.type="sawtooth";
-      o.frequency.setValueAtTime(400,ctx.currentTime);
-      o.frequency.linearRampToValueAtTime(1200,ctx.currentTime+0.4);
-      o.frequency.linearRampToValueAtTime(400,ctx.currentTime+0.8);
-      g.gain.setValueAtTime(1.0,ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.9);
-      o.start(ctx.currentTime);o.stop(ctx.currentTime+0.9);
-    }
-  },
-  campainha: {
-    label:"Campainha", emoji:"🔔", descricao:"Campainha longa e clara",
-    tocarCtx:(ctx)=>{
-      [660,880,660].forEach((f,i)=>{
-        const o=ctx.createOscillator(),g=ctx.createGain();
-        o.connect(g);g.connect(ctx.destination);
-        o.frequency.value=f;o.type="sine";
-        g.gain.setValueAtTime(1.0,ctx.currentTime+i*0.25);
-        g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+i*0.25+0.22);
-        o.start(ctx.currentTime+i*0.25);o.stop(ctx.currentTime+i*0.25+0.22);
-      });
-    }
-  },
-  alerta_forte: {
-    label:"Alerta Forte", emoji:"⚡", descricao:"Tom alto e contínuo — mais chamativo",
-    tocarCtx:(ctx)=>{
-      [0,0.15,0.30,0.45].forEach(d=>{
-        const o=ctx.createOscillator(),g=ctx.createGain();
-        o.connect(g);g.connect(ctx.destination);
-        o.frequency.value=1400;o.type="square";
-        g.gain.setValueAtTime(1.0,ctx.currentTime+d);
-        g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+d+0.12);
-        o.start(ctx.currentTime+d);o.stop(ctx.currentTime+d+0.12);
-      });
-    }
-  },
   two_tone: {
     label:"Dois Tons", emoji:"🎵", descricao:"Alternância entre dois tons — estilo ambulância",
     tocarCtx:(ctx)=>{
@@ -948,7 +896,7 @@ export default function AppMotoboy() {
   const [historico, setHistorico] = useState([]);
   const [pedidoDisponivel, setPedidoDisponivel] = useState(null);
   const [corridaAtiva, setCorridaAtiva] = useState(null);
-  const [tipoSom, setTipoSom] = useState("alerta_forte");
+  const [tipoSom, setTipoSom] = useState("two_tone");
   const [pedidoCancelado, setPedidoCancelado] = useState(false);
   const [pedidoPegoOutro, setPedidoPegoOutro] = useState(false);
   const [avisoCorridaCancelada, setAvisoCorridaCancelada] = useState(null);
@@ -1638,26 +1586,37 @@ export default function AppMotoboy() {
     setPedidoDisponivel(null); pedidoRef.current = null; ofertaAtivaRef.current = null; tentativas.current = 0;
   }
 
+  // CORRIGIDO em 23/09/2026: antes, cada entrega só entrava no saldo/contagem
+  // de Ganhos quando a corrida TODA terminava (função finalizarCorrida, que
+  // só roda depois da ÚLTIMA entrega ser confirmada). Se o motoboy tivesse
+  // várias entregas na mesma corrida, a primeira ficava "invisível" no saldo
+  // até ele finalizar todas — parecendo que a tela não atualizava sozinha.
+  // Agora cada entrega entra no histórico local (e no saldo) assim que ELA
+  // MESMA é confirmada, não precisa esperar as outras da mesma corrida.
   async function entregarItemIndividual(pedidoId) {
     await supabase.from("pedidos").update({
       status: "entregue",
       entregue_em: new Date().toISOString(),
     }).eq("id", pedidoId);
+
+    const pedido = corridaAtiva?.pedidos?.find(p => p.id === pedidoId);
+    if (pedido) {
+      setHistorico(prev => [...prev, {
+        id: Date.now() + Math.random(),
+        clienteNome: pedido.clienteNome, empresaNome: pedido.empresaNome,
+        bairro: pedido.bairro, pagamento: pedido.pagamento, taxa: pedido.taxa,
+        status: "Entregue", data: "Hoje", dataISO: dataLocalISO(), hora: "agora",
+        semana: segundaFeiraDaSemana(new Date()), mes: new Date().getMonth() + 1, repasePago: false,
+      }]);
+    }
   }
 
   async function finalizarCorrida() {
     if (!corridaAtiva) return;
-    // Cada pedido já foi gravado como "entregue" individualmente, assim que
-    // confirmado (ver entregarItemIndividual) — aqui só falta o encerramento
-    // local: some da tela e joga pro histórico local do motoboy.
-    const novos = corridaAtiva.pedidos.map(p=>({
-      id:Date.now()+Math.random(),
-      clienteNome:p.clienteNome, empresaNome:p.empresaNome,
-      bairro:p.bairro, pagamento:p.pagamento, taxa:p.taxa,
-      status:"Entregue", data:"Hoje", hora:"agora",
-      semana:3, mes:6, repasePago:false,
-    }));
-    setHistorico(prev=>[...prev,...novos]);
+    // Cada pedido já foi gravado como "entregue" (no banco e no histórico
+    // local) individualmente, assim que confirmado — ver
+    // entregarItemIndividual logo acima. Aqui só falta o encerramento local:
+    // some da tela e troca de aba.
     setCorridaAtiva(null);
     setAba("ganhos");
   }
@@ -1930,26 +1889,6 @@ export default function AppMotoboy() {
               </Card>
             )}
 
-            <Card style={{background:"#0f172a",border:"1px solid #1f2937",marginBottom:14}}>
-              <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>🔔 Som de Notificação</div>
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {Object.entries(SONS).map(([key,som])=>(
-                  <button key={key} onClick={()=>{setTipoSom(key);tocarSomEscolhido(key);}}
-                    style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13,
-                      background:tipoSom===key?"#1e293b":"#111827",
-                      border:tipoSom===key?"1px solid #34d399":"1px solid #1f2937",
-                      color:tipoSom===key?"#34d399":"#9ca3af",textAlign:"left"}}>
-                    <span>{som.emoji} {som.label}</span>
-                    <span style={{fontSize:11,color:tipoSom===key?"#34d399":"#4b5563"}}>
-                      {tipoSom===key?"✅ Selecionado — clique para ouvir":"Clique para ouvir"}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <div style={{color:"#4b5563",fontSize:11,marginTop:10}}>
-                💡 O som escolhido tocará a cada 5 segundos quando chegar um pedido
-              </div>
-            </Card>
 
             {online && !corridaAtiva && (
               <Card style={{background:"#0f172a",border:"1px solid #1f2937"}}>
