@@ -2608,6 +2608,8 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
   const [atribuindoId, setAtribuindoId] = useState(null); // pedido cujo dropdown está aberto
   const [motoboySelecionado, setMotoboySelecionado] = useState({});
   const [motoboySelecionadoTroca, setMotoboySelecionadoTroca] = useState({}); // reatribuição de corrida já aceita
+  const [buscaMotoboyTroca, setBuscaMotoboyTroca] = useState({}); // filtro de texto por nome, um por pedido
+  const [buscaMotoboyAguardando, setBuscaMotoboyAguardando] = useState({}); // mesmo filtro, pro atribuir manual de pedido aguardando
   const [trocandoId, setTrocandoId] = useState(null); // id do pedido sendo reatribuído agora
   useEffect(()=>{
     const t = setInterval(()=>setTick(x=>x+1), 1000);
@@ -2773,10 +2775,19 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
               <FilaRodizioPedido pedidoId={p.id}/>
               <div style={{marginTop:10,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",borderTop:"1px solid #1f2937",paddingTop:10}}>
                 <span style={{color:"#6b7280",fontSize:12,fontWeight:600}}>👤 Atribuir manualmente:</span>
+                <input type="text" placeholder="🔎 Buscar motoboy pelo nome..."
+                  value={buscaMotoboyAguardando[p.id] || ""}
+                  onChange={e=>setBuscaMotoboyAguardando(prev=>({...prev,[p.id]:e.target.value}))}
+                  style={{flex:1,minWidth:140,background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"6px 10px",fontSize:12,outline:"none"}}/>
+              </div>
+              <div style={{marginTop:6,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                 <select value={motoboySelecionado[p.id] || ""} onChange={e=>setMotoboySelecionado(prev=>({...prev,[p.id]:e.target.value}))}
-                  style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"6px 10px",fontSize:13}}>
+                  style={{flex:1,minWidth:140,background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"6px 10px",fontSize:13}}>
                   <option value="">Selecione um motoboy...</option>
-                  {(motoboys||[]).filter(m=>!m.banido).map(m => <option key={m.id} value={m.id}>{m.nomeCompleto}{m.online?" 🟢":" ⚫"}</option>)}
+                  {(motoboys||[])
+                    .filter(m=>!m.banido && m.online)
+                    .filter(m=>(m.nomeCompleto||"").toLowerCase().includes((buscaMotoboyAguardando[p.id]||"").toLowerCase()))
+                    .map(m => <option key={m.id} value={m.id}>{m.nomeCompleto} 🟢</option>)}
                 </select>
                 <Btn small cor="azul" disabled={!motoboySelecionado[p.id]} onClick={()=>atribuirManualmente(p.id, motoboySelecionado[p.id])}>Atribuir</Btn>
               </div>
@@ -2827,12 +2838,25 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
                       {reenviando===p.id ? "Reenviando..." : "🔄 Motoboy pediu pra trocar — devolver pra fila"}
                     </button>
                     {/* Diferente do botão acima: isso passa a corrida direto pra um
-                        motoboy ESPECÍFICO escolhido agora, sem abrir pra fila geral. */}
+                        motoboy ESPECÍFICO escolhido agora, sem abrir pra fila geral.
+                        Ajustado em 23/09/2026: só mostra motoboys ONLINE (offline
+                        não adianta atribuir, não vai receber) e tem busca por
+                        nome, pra não precisar rolar a lista toda quando tiver
+                        muita gente online. */}
+                    <div style={{marginTop:6,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
+                      <input type="text" placeholder="🔎 Buscar motoboy pelo nome..."
+                        value={buscaMotoboyTroca[p.id] || ""}
+                        onChange={e=>setBuscaMotoboyTroca(prev=>({...prev,[p.id]:e.target.value}))}
+                        style={{flex:1,minWidth:140,background:"#0f172a",border:"1px solid #374151",borderRadius:6,color:"#f9fafb",padding:"6px 8px",fontSize:12,outline:"none"}}/>
+                    </div>
                     <div style={{marginTop:6,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
                       <select value={motoboySelecionadoTroca[p.id] || ""} onChange={e=>setMotoboySelecionadoTroca(prev=>({...prev,[p.id]:e.target.value}))}
                         style={{flex:1,minWidth:140,background:"#0f172a",border:"1px solid #374151",borderRadius:6,color:"#f9fafb",padding:"6px 8px",fontSize:12}}>
                         <option value="">👤 Atribuir a um motoboy específico...</option>
-                        {(motoboys||[]).filter(m=>!m.banido && m.id!==p.motoboyId).map(m => <option key={m.id} value={m.id}>{m.nomeCompleto}{m.online?" 🟢":" ⚫"}</option>)}
+                        {(motoboys||[])
+                          .filter(m=>!m.banido && m.id!==p.motoboyId && m.online)
+                          .filter(m=>(m.nomeCompleto||"").toLowerCase().includes((buscaMotoboyTroca[p.id]||"").toLowerCase()))
+                          .map(m => <option key={m.id} value={m.id}>{m.nomeCompleto} 🟢</option>)}
                       </select>
                       <Btn small cor="azul" disabled={!motoboySelecionadoTroca[p.id] || trocandoId===p.id}
                         onClick={()=>{setTrocandoId(p.id); reatribuirParaOutroMotoboy(p.id, motoboySelecionadoTroca[p.id]);}}>
