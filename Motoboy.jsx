@@ -936,6 +936,20 @@ export default function AppMotoboy() {
   const [pedidoPegoOutro, setPedidoPegoOutro] = useState(false);
   const [avisoCorridaCancelada, setAvisoCorridaCancelada] = useState(null);
   const [avisoCorridaAtribuida, setAvisoCorridaAtribuida] = useState(null);
+  // Adicionado em 20/09/2026 a pedido do Alessandro: além do aviso rápido na
+  // tela (que já existia), guarda um registro do dia — pra quando o motoboy
+  // não vê o aviso na hora (tela apagada, distraído na correria), ele ainda
+  // consegue abrir a aba "Cancelados" depois e ver o que aconteceu.
+  const [canceladosMes, setCanceladosMes] = useState([]);
+  const [naoVistosCancelados, setNaoVistosCancelados] = useState(0);
+  const alarmeCancelamentoRef = useRef(null);
+
+  // Zera o número vermelho assim que o motoboy entra na aba de Cancelados —
+  // a lista continua toda lá dentro, organizada por dia, com a contagem
+  // certa de cada dia (isso não apaga nada, só o "aviso de novo").
+  useEffect(() => {
+    if (aba === "cancelados") setNaoVistosCancelados(0);
+  }, [aba]);
   const [motoboyId, setMotoboyId] = useState(null);
   const [motoboy, setMotoboy] = useState(MOTOBOY_VAZIO);
   const [rankingGeral, setRankingGeral] = useState([]);
@@ -979,6 +993,7 @@ export default function AppMotoboy() {
         if (error) console.error("Erro ao buscar motoboy:", error);
         if (mb) {
           setMotoboyId(mb.id);
+          carregarCanceladosMes(mb.id);
           try {
             if (window.OneSignalDeferred) {
               window.OneSignalDeferred.push(async function(OneSignal) {
@@ -1296,12 +1311,35 @@ export default function AppMotoboy() {
             return restantes.length === 0 ? null : { ...prev, pedidos: restantes };
           });
           if (removeu) {
-            tocarSomEscolhido(tipoSom);
+            tocarAlarmeCancelamento();
             setAvisoCorridaCancelada({
               clienteNome: atualizado.cliente_nome,
               motivo: atualizado.motivo_cancelamento || "Cancelado pelo estabelecimento",
             });
-            setTimeout(() => setAvisoCorridaCancelada(null), 8000);
+            setTimeout(() => setAvisoCorridaCancelada(prev => prev ? null : prev), 8000);
+            // Adiciona na aba "Cancelados" de hoje na hora, sem precisar
+            // recarregar a página — busca o nome do estabelecimento rapidinho.
+            (async () => {
+              let nomeEstab = "Estabelecimento";
+              if (atualizado.empresario_id) {
+                const { data: empDB } = await supabase.from("empresarios").select("nome").eq("id", atualizado.empresario_id).maybeSingle();
+                if (empDB?.nome) nomeEstab = empDB.nome;
+              }
+              const agora = new Date();
+              setCanceladosMes(prev => [{
+                id: atualizado.id,
+                clienteNome: atualizado.cliente_nome,
+                endereco: `${atualizado.rua}, ${atualizado.numero} — ${atualizado.bairro}`,
+                estabelecimentoNome: nomeEstab,
+                motivo: atualizado.motivo_cancelamento || "Não informado",
+                canceladoPorMotoboy: atualizado.cancelado_por_motoboy || false,
+                canceladoEm: agora.toISOString(),
+                diaChave: dataLocalISO(agora),
+                diaLabel: agora.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+                horario: agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+              }, ...prev]);
+              setNaoVistosCancelados(prev => prev + 1);
+            })();
           }
           return;
         }
@@ -1589,6 +1627,65 @@ export default function AppMotoboy() {
     setAba("ganhos");
   }
 
+  // Ampliado em 20/09/2026: busca o MÊS ATUAL inteiro (não só hoje) — pra
+  // alimentar a aba "❌ Cancelados" com histórico organizado por dia. O
+  // registro em si nunca é apagado do banco (fica disponível pra sempre no
+  // Histórico do Admin, filtrando por mês); aqui só muda a janela padrão
+  // exibida pro motoboy, que reseta visualmente todo mês, sem perder nada.
+  async function carregarCanceladosMes(idMotoboy) {
+    const agora = new Date();
+    const inicioMes = new Date(agora.getFullYear(), agora.getMonth(), 1, 0, 0, 0);
+    const { data, error } = await supabase
+      .from("pedidos")
+      .select("id, cliente_nome, rua, numero, bairro, motivo_cancelamento, cancelado_em, cancelado_por_motoboy, empresario_id")
+      .eq("motoboy_id", idMotoboy)
+      .eq("status", "cancelado")
+      .not("cancelado_em", "is", null)
+      .gte("cancelado_em", inicioMes.toISOString())
+      .order("cancelado_em", { ascending: false });
+    if (error) { console.error("Erro ao buscar cancelados do mês:", error); return; }
+    if (!data || data.length === 0) { setCanceladosMes([]); return; }
+
+    const idsEmpresarios = [...new Set(data.map(p => p.empresario_id).filter(Boolean))];
+    let mapaEmpresarios = {};
+    if (idsEmpresarios.length > 0) {
+      const { data: empsDB } = await supabase.from("empresarios").select("id, nome").in("id", idsEmpresarios);
+      (empsDB || []).forEach(e => { mapaEmpresarios[e.id] = e.nome; });
+    }
+
+    setCanceladosMes(data.map(p => ({
+      id: p.id,
+      clienteNome: p.cliente_nome,
+      endereco: `${p.rua}, ${p.numero} — ${p.bairro}`,
+      estabelecimentoNome: mapaEmpresarios[p.empresario_id] || "Estabelecimento",
+      motivo: p.motivo_cancelamento || "Não informado",
+      canceladoPorMotoboy: p.cancelado_por_motoboy || false,
+      canceladoEm: p.cancelado_em,
+      diaChave: dataLocalISO(new Date(p.cancelado_em)),
+      diaLabel: new Date(p.cancelado_em).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+      horario: new Date(p.cancelado_em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+    })));
+  }
+
+  // Toca o alarme por 4 segundos seguidos (4 toques, 1 por segundo) — o
+  // motoboy pode parar antes clicando em "Parar som", mas se aparecer OUTRO
+  // cancelamento depois, o alarme volta a tocar do zero, novo alerta.
+  function tocarAlarmeCancelamento() {
+    if (alarmeCancelamentoRef.current) clearInterval(alarmeCancelamentoRef.current);
+    let toques = 0;
+    tocarSomEscolhido(tipoSom);
+    toques++;
+    alarmeCancelamentoRef.current = setInterval(() => {
+      if (toques >= 4) { clearInterval(alarmeCancelamentoRef.current); alarmeCancelamentoRef.current = null; return; }
+      tocarSomEscolhido(tipoSom);
+      toques++;
+    }, 1000);
+  }
+  function pararAlarmeCancelamento() {
+    if (alarmeCancelamentoRef.current) { clearInterval(alarmeCancelamentoRef.current); alarmeCancelamentoRef.current = null; }
+    setAvisoCorridaCancelada(null);
+  }
+
   async function cancelarPedidoIndividual(pedidoId, motivo) {
     await supabase.from("pedidos").update({
       status: "cancelado",
@@ -1632,6 +1729,7 @@ export default function AppMotoboy() {
   const ABAS = [
     {id:"home",   label:"🏠 Início"},
     {id:"corrida",label:"🏍️ Corrida", badge:corridaAtiva?1:0},
+    {id:"cancelados", label:"❌ Cancelados", badge:naoVistosCancelados},
     {id:"ganhos", label:"💰 Ganhos"},
   ];
 
@@ -1851,6 +1949,60 @@ export default function AppMotoboy() {
               </Card>
         )}
 
+        {aba==="cancelados" && (()=>{
+          // Agrupa por dia (mais recente primeiro), cada dia com sua própria
+          // contagem separada: quantos foram cancelados pelo estabelecimento
+          // e quantos pelo próprio motoboy.
+          const porDia = {};
+          canceladosMes.forEach(c=>{
+            if (!porDia[c.diaChave]) porDia[c.diaChave] = { label: c.diaLabel, itens: [] };
+            porDia[c.diaChave].itens.push(c);
+          });
+          const diasOrdenados = Object.entries(porDia).sort((a,b)=>b[0].localeCompare(a[0]));
+          const nomeMesAtual = new Date().toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+
+          return (
+            <div>
+              <div style={{color:"#f87171",fontWeight:800,fontSize:20,marginBottom:6}}>❌ Cancelados — {nomeMesAtual}</div>
+              <div style={{color:"#6b7280",fontSize:13,marginBottom:16}}>Corridas que você tinha aceitado e foram canceladas nesse mês — pra você entender o motivo, mesmo se não viu o aviso na hora. Todo mês recomeça do zero aqui, mas nada se perde (fica registrado pra sempre).</div>
+              {diasOrdenados.length === 0 ? (
+                <Card style={{textAlign:"center",padding:40}}>
+                  <div style={{fontSize:48,marginBottom:12}}>✅</div>
+                  <div style={{color:"#6b7280",fontSize:15}}>Nenhum cancelamento esse mês</div>
+                </Card>
+              ) : diasOrdenados.map(([diaChave, {label, itens}])=>{
+                const porEstab = itens.filter(i=>!i.canceladoPorMotoboy).length;
+                const porMim = itens.filter(i=>i.canceladoPorMotoboy).length;
+                return (
+                  <div key={diaChave} style={{marginBottom:20}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8,flexWrap:"wrap"}}>
+                      <div style={{color:"#f9fafb",fontWeight:800,fontSize:15}}>📅 {label}</div>
+                      <Tag label={`${itens.length} no total`} cor="#9ca3af"/>
+                      {porEstab>0 && <Tag label={`${porEstab} pelo estabelecimento`} cor="#f87171"/>}
+                      {porMim>0 && <Tag label={`${porMim} por você`} cor="#fbbf24"/>}
+                    </div>
+                    {itens.map(c=>(
+                      <Card key={c.id} style={{marginBottom:10,borderLeft:"3px solid #ef4444"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                          <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{c.clienteNome}</div>
+                          <div style={{color:"#6b7280",fontSize:12}}>{c.horario}</div>
+                        </div>
+                        <div style={{color:"#9ca3af",fontSize:13,marginTop:3}}>📍 {c.endereco}</div>
+                        <div style={{color:"#60a5fa",fontSize:13,marginTop:3}}>🏪 {c.estabelecimentoNome}</div>
+                        <div style={{background:"#3d1010",borderRadius:8,padding:"8px 12px",marginTop:8}}>
+                          <div style={{color:"#f87171",fontSize:12,fontWeight:700}}>
+                            {c.canceladoPorMotoboy ? "Cancelado por você" : "Cancelado pelo estabelecimento"}
+                          </div>
+                          <div style={{color:"#fca5a5",fontSize:13,marginTop:2}}>{c.motivo}</div>
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
         {aba==="ganhos" && <Ganhos historico={historico} motoboyId={motoboyId} todosHistorico={historico} rankingGeral={rankingGeral} motoboy={motoboy}/>}
       </div>
 
@@ -1883,6 +2035,9 @@ export default function AppMotoboy() {
           <div style={{color:"#f87171",fontWeight:900,fontSize:16}}>Entrega cancelada — não precisa mais ir</div>
           <div style={{color:"#f9fafb",fontSize:14,marginTop:4,fontWeight:700}}>{avisoCorridaCancelada.clienteNome}</div>
           <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>{avisoCorridaCancelada.motivo}</div>
+          <button onClick={pararAlarmeCancelamento} style={{marginTop:10,padding:"7px 16px",borderRadius:8,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+            🔇 Já vi, parar o som
+          </button>
         </div>
       )}
 
