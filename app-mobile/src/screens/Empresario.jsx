@@ -2613,7 +2613,7 @@ export default function Empresario() {
       const restante = Math.max(1000, 10*60*1000 - decorrido); // mínimo 1s para não cancelar na hora
       return setTimeout(async ()=>{
         await supabase.from("pedidos")
-          .update({ status: "cancelado", motivo_cancelamento: "Nenhum motoboy aceitou em 10 minutos" })
+          .update({ status: "cancelado", motivo_cancelamento: "Nenhum motoboy aceitou em 10 minutos", cancelado_em: new Date().toISOString() })
           .eq("id", pedidoAlvo.id)
           .eq("status","aguardando");
         setAvisoSemMotoboy(pedidoAlvo);

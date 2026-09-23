@@ -2264,6 +2264,10 @@ function Historico({ historico, motoboys, empresarios }) {
   const [filtroStatus, setFiltroStatus] = useState("Todos");
   const [filtroMes, setFiltroMes] = useState("Todos");
   const [filtroMb, setFiltroMb] = useState("Todos");
+  // Adicionado em 21/09/2026: no site a hora do cancelamento aparece só no
+  // hover do badge — não existe hover em touch, então aqui vira um toque
+  // pra mostrar/esconder, guardando qual pedido está expandido no momento.
+  const [horaCancelamentoExpandida, setHoraCancelamentoExpandida] = useState(null);
   const ss = {background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"7px 10px",fontSize:13};
 
   const mesesDisponiveis = [...new Set(historico.map(e=>MESES[e.mes-1]))];
@@ -2336,7 +2340,9 @@ function Historico({ historico, motoboys, empresarios }) {
                     <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700,whiteSpace:"nowrap"}}>R${e.taxaMotoboy}</td>
                     <td style={{padding:"8px 12px",color:"#a78bfa",fontWeight:700,whiteSpace:"nowrap"}}>R${e.lucro}</td>
                     <td style={{padding:"8px 12px",whiteSpace:"nowrap"}}>
-                      <span style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}}>
+                      <span
+                        onClick={()=>{ if (!entregue && e.horaCancelamento) setHoraCancelamentoExpandida(prev => prev===e.id ? null : e.id); }}
+                        style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,cursor:(!entregue && e.horaCancelamento)?"pointer":"default"}}>
                         {entregue?"✅":"❌"} {e.status}
                       </span>
                       {!entregue && (
@@ -2346,6 +2352,12 @@ function Historico({ historico, motoboys, empresarios }) {
                       )}
                       {!entregue && e.motivoCancelamento && (
                         <div style={{color:"#6b7280",fontSize:10,marginTop:2}}>{e.motivoCancelamento}</div>
+                      )}
+                      {/* Adicionado em 21/09/2026: no site a hora aparece no hover do
+                          badge — sem hover em touch, então um toque no badge acima
+                          mostra/esconde ela aqui embaixo. */}
+                      {!entregue && e.horaCancelamento && horaCancelamentoExpandida===e.id && (
+                        <div style={{color:"#9ca3af",fontSize:10,marginTop:2}}>🕐 às {e.horaCancelamento}</div>
                       )}
                     </td>
                   </tr>
@@ -3366,6 +3378,7 @@ export default function Admin() {
             status: p.status === "entregue" ? "Entregue" : "Cancelada",
             canceladoPorMotoboy: p.cancelado_por_motoboy || false,
             motivoCancelamento: p.motivo_cancelamento || null,
+            horaCancelamento: p.cancelado_em ? new Date(p.cancelado_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
             data: dataStr,
             horaSaida,
             horaEntrega,
