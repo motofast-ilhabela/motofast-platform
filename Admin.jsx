@@ -2595,6 +2595,7 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
   const [motoboySelecionado, setMotoboySelecionado] = useState({});
   const [motoboySelecionadoTroca, setMotoboySelecionadoTroca] = useState({}); // reatribuição de corrida já aceita
   const [buscaMotoboyTroca, setBuscaMotoboyTroca] = useState({}); // filtro de texto por nome, um por pedido
+  const [buscaMotoboyAguardando, setBuscaMotoboyAguardando] = useState({}); // mesmo filtro, pro atribuir manual de pedido aguardando
   const [trocandoId, setTrocandoId] = useState(null); // id do pedido sendo reatribuído agora
   useEffect(()=>{
     const t = setInterval(()=>setTick(x=>x+1), 1000);
@@ -2760,10 +2761,19 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
               <FilaRodizioPedido pedidoId={p.id}/>
               <div style={{marginTop:10,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",borderTop:"1px solid #1f2937",paddingTop:10}}>
                 <span style={{color:"#6b7280",fontSize:12,fontWeight:600}}>👤 Atribuir manualmente:</span>
+                <input type="text" placeholder="🔎 Buscar motoboy pelo nome..."
+                  value={buscaMotoboyAguardando[p.id] || ""}
+                  onChange={e=>setBuscaMotoboyAguardando(prev=>({...prev,[p.id]:e.target.value}))}
+                  style={{flex:1,minWidth:140,background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"6px 10px",fontSize:12,outline:"none"}}/>
+              </div>
+              <div style={{marginTop:6,display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                 <select value={motoboySelecionado[p.id] || ""} onChange={e=>setMotoboySelecionado(prev=>({...prev,[p.id]:e.target.value}))}
-                  style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"6px 10px",fontSize:13}}>
+                  style={{flex:1,minWidth:140,background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"6px 10px",fontSize:13}}>
                   <option value="">Selecione um motoboy...</option>
-                  {(motoboys||[]).filter(m=>!m.banido).map(m => <option key={m.id} value={m.id}>{m.nomeCompleto}{m.online?" 🟢":" ⚫"}</option>)}
+                  {(motoboys||[])
+                    .filter(m=>!m.banido && m.online)
+                    .filter(m=>(m.nomeCompleto||"").toLowerCase().includes((buscaMotoboyAguardando[p.id]||"").toLowerCase()))
+                    .map(m => <option key={m.id} value={m.id}>{m.nomeCompleto} 🟢</option>)}
                 </select>
                 <Btn small cor="azul" disabled={!motoboySelecionado[p.id]} onClick={()=>atribuirManualmente(p.id, motoboySelecionado[p.id])}>Atribuir</Btn>
               </div>
