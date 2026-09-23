@@ -1601,13 +1601,28 @@ export default function AppMotoboy() {
 
     const pedido = corridaAtiva?.pedidos?.find(p => p.id === pedidoId);
     if (pedido) {
+      const agoraData = new Date();
       setHistorico(prev => [...prev, {
         id: Date.now() + Math.random(),
         clienteNome: pedido.clienteNome, empresaNome: pedido.empresaNome,
         bairro: pedido.bairro, pagamento: pedido.pagamento, taxa: pedido.taxa,
-        status: "Entregue", data: "Hoje", dataISO: dataLocalISO(), hora: "agora",
-        semana: segundaFeiraDaSemana(new Date()), mes: new Date().getMonth() + 1, repasePago: false,
+        status: "Entregue",
+        data: agoraData.toLocaleDateString("pt-BR"), dataISO: dataLocalISO(agoraData),
+        hora: agoraData.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
+        semana: segundaFeiraDaSemana(agoraData), mes: agoraData.getMonth() + 1, repasePago: false,
       }]);
+      // CORRIGIDO em 23/09/2026: antes chamava uma função (carregarRankingGeral)
+      // que não existia no arquivo — não fazia nada e ainda gerava erro no
+      // console. Agora atualiza a posição no Ranking na hora, localmente
+      // (soma essa entrega e reordena), sem precisar de nova busca no banco.
+      setRankingGeral(prev => {
+        if (!prev || prev.length === 0) return prev;
+        const jaEsta = prev.some(m => m.id === motoboyId);
+        const atualizado = jaEsta
+          ? prev.map(m => m.id === motoboyId ? { ...m, qtd: m.qtd + 1, ganhos: m.ganhos + (Number(pedido.taxa) || 0) } : m)
+          : [...prev, { id: motoboyId, nome: motoboy?.nomeCompleto || "Você", qtd: 1, ganhos: Number(pedido.taxa) || 0 }];
+        return atualizado.slice().sort((a, b) => b.qtd - a.qtd);
+      });
     }
   }
 
