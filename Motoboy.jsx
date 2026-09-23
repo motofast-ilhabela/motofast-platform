@@ -149,6 +149,16 @@ function getAudioCtx() {
   return _audioCtx;
 }
 
+// Adicionado em 20/09/2026: o navegador só libera tocar som sozinho depois
+// de alguma interação da pessoa na página (política de autoplay). O alarme
+// de cancelamento dispara sozinho, sem clique nenhum na hora — então sem
+// isso aqui, ele podia ficar mudo se o motoboy não tivesse tocado em nada
+// há um tempo. Essa função "destrava" o áudio a cada toque na tela,
+// garantindo que na hora do alarme o som já esteja liberado.
+function destravarAudioNoToque() {
+  try { getAudioCtx(); } catch(e) { /* silencioso — só uma tentativa de destravar */ }
+}
+
 function tocarSomEscolhido(tipoSom) {
   try {
     const ctx = getAudioCtx();
@@ -928,6 +938,13 @@ export default function AppMotoboy() {
   const audioCtxRef = useRef(null);
   const [online, setOnline] = useState(false);
   const [aba, setAba] = useState("home");
+
+  // Destrava o áudio a cada toque em qualquer lugar da tela, pra o alarme de
+  // cancelamento (que dispara sozinho, sem clique) já ter o som liberado.
+  useEffect(() => {
+    document.addEventListener("pointerdown", destravarAudioNoToque);
+    return () => document.removeEventListener("pointerdown", destravarAudioNoToque);
+  }, []);
   const [historico, setHistorico] = useState([]);
   const [pedidoDisponivel, setPedidoDisponivel] = useState(null);
   const [corridaAtiva, setCorridaAtiva] = useState(null);
@@ -1326,29 +1343,38 @@ export default function AppMotoboy() {
               motivo: atualizado.motivo_cancelamento || "Cancelado pelo estabelecimento",
             });
             setTimeout(() => setAvisoCorridaCancelada(prev => prev ? null : prev), 8000);
-            // Adiciona na aba "Cancelados" na hora, sem precisar recarregar a
-            // página — busca o nome do estabelecimento rapidinho.
-            (async () => {
-              let nomeEstab = "Estabelecimento";
-              if (atualizado.empresario_id) {
-                const { data: empDB } = await supabase.from("empresarios").select("nome").eq("id", atualizado.empresario_id).maybeSingle();
-                if (empDB?.nome) nomeEstab = empDB.nome;
-              }
-              const agora = new Date();
-              setCanceladosMes(prev => [{
-                id: atualizado.id,
-                clienteNome: atualizado.cliente_nome,
-                endereco: `${atualizado.rua}, ${atualizado.numero} — ${atualizado.bairro}`,
-                estabelecimentoNome: nomeEstab,
-                motivo: atualizado.motivo_cancelamento || "Não informado",
-                canceladoPorMotoboy: atualizado.cancelado_por_motoboy || false,
-                canceladoEm: agora.toISOString(),
-                diaChave: dataLocalISO(agora),
-                diaLabel: agora.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
-                horario: agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-              }, ...prev]);
-              setNaoVistosCancelados(prev => prev + 1);
-            })();
+            // CORRIGIDO em 20/09/2026: antes, o número da aba e o item na
+            // lista só apareciam DEPOIS de buscar o nome do estabelecimento
+            // no banco — se essa busca falhasse por qualquer motivo (rede,
+            // permissão), nem o número nem o item apareciam, mesmo o
+            // cancelamento tendo acontecido de verdade. Agora atualiza a
+            // aba e o número NA HORA, com "Estabelecimento" como nome
+            // provisório, e corrige o nome depois se a busca der certo —
+            // nunca mais depende dela pra aparecer.
+            const agora = new Date();
+            setCanceladosMes(prev => [{
+              id: atualizado.id,
+              clienteNome: atualizado.cliente_nome,
+              endereco: `${atualizado.rua}, ${atualizado.numero} — ${atualizado.bairro}`,
+              estabelecimentoNome: "Estabelecimento",
+              motivo: atualizado.motivo_cancelamento || "Não informado",
+              canceladoPorMotoboy: atualizado.cancelado_por_motoboy || false,
+              canceladoEm: agora.toISOString(),
+              diaChave: dataLocalISO(agora),
+              diaLabel: agora.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }),
+              horario: agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
+            }, ...prev]);
+            setNaoVistosCancelados(prev => prev + 1);
+
+            if (atualizado.empresario_id) {
+              supabase.from("empresarios").select("nome").eq("id", atualizado.empresario_id).maybeSingle()
+                .then(({ data: empDB }) => {
+                  if (empDB?.nome) {
+                    setCanceladosMes(prev => prev.map(c => c.id === atualizado.id ? { ...c, estabelecimentoNome: empDB.nome } : c));
+                  }
+                })
+                .catch(e => console.log("Erro ao buscar nome do estabelecimento (não impede o aviso/contador):", e));
+            }
           }
           return;
         }
