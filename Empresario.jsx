@@ -1300,9 +1300,16 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
   const aguardando = ativos.filter(p=>p.status==="aguardando");
   const emRotaPedidos = ativos.filter(p=>p.status==="em_rota");
 
-  // Agrupa pedidos em rota pela corrida (mesmo motoboy/mesma saída)
+  // Agrupa pedidos em rota pela corrida (mesmo motoboy/mesma saída).
+  // Ajustado em 20/09/2026: inclui também os já "entregue" que pertencem à
+  // MESMA corrida de um pedido ainda ativo — assim o card da corrida
+  // continua na tela até todos terminarem, mas já mostra "Finalizado" nos
+  // que a pessoa concluiu, dando pro estabelecimento confiança de mandar
+  // mais uma entrega pro mesmo motoboy antes dele voltar pra base.
+  const corridaIdsComAtivo = new Set(emRotaPedidos.map(p=>p.corridaId).filter(Boolean));
+  const entreguesDaMesmaCorrida = pedidos.filter(p=>p.status==="entregue" && p.corridaId && corridaIdsComAtivo.has(p.corridaId));
   const corridasMap = {};
-  emRotaPedidos.forEach(p=>{
+  [...emRotaPedidos, ...entreguesDaMesmaCorrida].forEach(p=>{
     const cid = p.corridaId || p.id;
     if (!corridasMap[cid]) corridasMap[cid] = [];
     corridasMap[cid].push(p);
@@ -1422,8 +1429,9 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
             {/* Pedidos desta corrida */}
             {corrida.pedidos.map((p,i)=>{
               const pg = PG[p.pagamento]||{icon:"•",cor:"#9ca3af",label:p.pagamento};
+              const finalizado = p.status==="entregue";
               return (
-                <div key={p.id} style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+                <div key={p.id} style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginBottom:10,opacity:finalizado?0.6:1}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
                     <div>
                       <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,marginBottom:3}}>PEDIDO #{i+1} — {p.clienteNome}</div>
@@ -1435,9 +1443,12 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
                       <div style={{color:"#34d399",fontWeight:800,fontSize:18}}>R${p.taxa}</div>
-                      <Tag label={`${pg.icon} ${pg.label}`} cor={pg.cor}/>
+                      {finalizado
+                        ? <Tag label="✅ Finalizado" cor="#34d399"/>
+                        : <Tag label={`${pg.icon} ${pg.label}`} cor={pg.cor}/>}
                     </div>
                   </div>
+                  {!finalizado && (<>
                   {p.clienteTel && (
                     <button onClick={()=>abrirWhatsCliente(p)} style={{marginTop:10,width:"100%",padding:"9px",borderRadius:8,background:"#0d3d2e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,fontSize:12,cursor:"pointer"}}>
                       📲 Avisar cliente que o pedido saiu
@@ -1447,16 +1458,18 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                     ✏️ Editar este pedido
                   </button>
                   <button onClick={async()=>{
-                    if (!window.confirm(`Cancelar só a entrega de ${p.clienteNome}? Os outros pedidos dessa corrida continuam normais. O motoboy será avisado.`)) return;
+                    const motivo = window.prompt(`Por que está cancelando a entrega de ${p.clienteNome}? (o motoboy vai ver esse motivo)`, "");
+                    if (motivo === null) return; // clicou em Cancelar no aviso
                     await supabase.from("pedidos").update({
                       status: "cancelado",
-                      motivo_cancelamento: "Cancelado pelo estabelecimento",
+                      motivo_cancelamento: motivo.trim() || "Cancelado pelo estabelecimento",
                       cancelado_em: new Date().toISOString(),
                     }).eq("id", p.id);
                     await onRecarregar();
                   }} style={{marginTop:8,width:"100%",padding:"9px",borderRadius:8,background:"#3d1010",border:"1px solid #ef444466",color:"#f87171",fontWeight:700,fontSize:12,cursor:"pointer"}}>
                     ❌ Cancelar este pedido
                   </button>
+                  </>)}
                 </div>
               );
             })}
@@ -1465,11 +1478,13 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                 cancelar individual acima, que cancela só um cliente por vez. */}
             <div style={{marginTop:8,marginBottom:8}}>
               <button onClick={async()=>{
-                if (!window.confirm("Tem certeza que quer cancelar TODOS os pedidos desta corrida (todos os clientes)? O motoboy será notificado.")) return;
+                const motivo = window.prompt("Por que está cancelando TODOS os pedidos ainda não entregues desta corrida? (o motoboy vai ver esse motivo)", "");
+                if (motivo === null) return;
                 for (const p of corrida.pedidos) {
+                  if (p.status==="entregue") continue; // já finalizado, não mexe
                   await supabase.from("pedidos").update({
                     status: "cancelado",
-                    motivo_cancelamento: "Cancelado pelo estabelecimento",
+                    motivo_cancelamento: motivo.trim() || "Cancelado pelo estabelecimento",
                     cancelado_em: new Date().toISOString(),
                   }).eq("id", p.id);
                 }
@@ -2569,6 +2584,13 @@ export default function AppEmpresario() {
     // segunda (nome do motoboy) falhar por qualquer motivo, a primeira (os
     // pedidos em si, o que realmente importa pra tela não travar) continua
     // funcionando normalmente.
+    // Adicionado em 20/09/2026 a pedido do Alessandro: assim como o Admin já
+    // mostra "Finalizado" pedido por pedido dentro de uma corrida com várias
+    // entregas, o estabelecimento também precisa ver isso — pra saber que já
+    // pode confiar mais uma entrega pro mesmo motoboy. Busca também os
+    // pedidos "entregue" que ainda pertencem a uma corrida com pelo menos
+    // um pedido ativo (a corrida inteira só sai da tela quando TODOS
+    // terminarem).
     const { data: pedidosDB, error } = await supabase
       .from("pedidos")
       .select("*")
@@ -2579,8 +2601,26 @@ export default function AppEmpresario() {
     if (error) { console.error("Erro ao carregar pedidos:", error); return; }
     if (!pedidosDB) return;
 
+    const corridaIdsAtivas = [...new Set(pedidosDB.map(p => p.corrida_id).filter(Boolean))];
+    let entreguesDaCorridaAtiva = [];
+    if (corridaIdsAtivas.length > 0) {
+      const { data: entreguesDB, error: erroEntregues } = await supabase
+        .from("pedidos")
+        .select("*")
+        .eq("empresario_id", empresaId)
+        .eq("status", "entregue")
+        .in("corrida_id", corridaIdsAtivas);
+      if (erroEntregues) {
+        console.error("Erro ao carregar entregas finalizadas da mesma corrida (não bloqueia a lista de pedidos):", erroEntregues);
+      } else {
+        entreguesDaCorridaAtiva = entreguesDB || [];
+      }
+    }
+
+    const todosPedidosDB = [...pedidosDB, ...entreguesDaCorridaAtiva];
+
     let mapaMotoboys = {};
-    const idsMotoboys = [...new Set(pedidosDB.map(p=>p.motoboy_id).filter(Boolean))];
+    const idsMotoboys = [...new Set(todosPedidosDB.map(p=>p.motoboy_id).filter(Boolean))];
     if (idsMotoboys.length > 0) {
       try {
         const { data: motoboysDB, error: erroMotoboys } = await supabase
@@ -2597,7 +2637,7 @@ export default function AppEmpresario() {
       }
     }
 
-    setPedidos(pedidosDB.map(p=>({
+    setPedidos(todosPedidosDB.map(p=>({
       id: p.id,
       clienteNome: p.cliente_nome,
       clienteTel: p.cliente_telefone,

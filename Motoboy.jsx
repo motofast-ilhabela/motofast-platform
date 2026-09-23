@@ -943,6 +943,7 @@ export default function AppMotoboy() {
   const [canceladosMes, setCanceladosMes] = useState([]);
   const [naoVistosCancelados, setNaoVistosCancelados] = useState(0);
   const alarmeCancelamentoRef = useRef(null);
+  const avisadosCancelamentoRef = useRef(new Set());
 
   // Zera o número vermelho assim que o motoboy entra na aba de Cancelados —
   // a lista continua toda lá dentro, organizada por dia, com a contagem
@@ -1301,24 +1302,32 @@ export default function AppMotoboy() {
         // chamado outro motoboy, gerando duplicidade e confusão. Agora tira
         // da tela e avisa na hora, com som.
         if (atualizado.status === "cancelado") {
-          let removeu = false;
           setCorridaAtiva(prev => {
             if (!prev) return prev;
             const aindaTenho = prev.pedidos.some(p => p.id === atualizado.id);
             if (!aindaTenho) return prev;
-            removeu = true;
             const restantes = prev.pedidos.filter(p => p.id !== atualizado.id);
             return restantes.length === 0 ? null : { ...prev, pedidos: restantes };
           });
-          if (removeu) {
+          // CORRIGIDO em 20/09/2026: antes, o alarme/aviso/aba só disparava
+          // se o pedido fosse encontrado dentro do corridaAtiva NAQUELE
+          // instante exato — se desse qualquer diferença de tempo entre o
+          // estado local e o evento (bem comum no dia a dia), o aviso
+          // simplesmente não aparecia, mesmo o cancelamento acontecendo de
+          // verdade. Agora dispara sempre que um pedido MEU for cancelado,
+          // independente de estar ou não achando ele no estado local nesse
+          // milissegundo exato — com proteção pra nunca avisar duas vezes
+          // do mesmo pedido.
+          if (!avisadosCancelamentoRef.current.has(atualizado.id)) {
+            avisadosCancelamentoRef.current.add(atualizado.id);
             tocarAlarmeCancelamento();
             setAvisoCorridaCancelada({
               clienteNome: atualizado.cliente_nome,
               motivo: atualizado.motivo_cancelamento || "Cancelado pelo estabelecimento",
             });
             setTimeout(() => setAvisoCorridaCancelada(prev => prev ? null : prev), 8000);
-            // Adiciona na aba "Cancelados" de hoje na hora, sem precisar
-            // recarregar a página — busca o nome do estabelecimento rapidinho.
+            // Adiciona na aba "Cancelados" na hora, sem precisar recarregar a
+            // página — busca o nome do estabelecimento rapidinho.
             (async () => {
               let nomeEstab = "Estabelecimento";
               if (atualizado.empresario_id) {
