@@ -1746,31 +1746,43 @@ export default function Motoboy() {
   // CADA pedido é confirmado, não só quando a corrida inteira termina — o
   // Admin passa a ver na hora quais itens já foram entregues numa corrida
   // com vários pedidos, em vez de tudo continuar "a caminho" até o último.
+  // CORRIGIDO em 23/09/2026 no site: antes, cada entrega só entrava no
+  // saldo/contagem de Ganhos quando a corrida TODA terminava (finalizarCorrida,
+  // que só roda depois da ÚLTIMA entrega ser confirmada). Se o motoboy
+  // tivesse várias entregas na mesma corrida, a primeira ficava "invisível"
+  // no saldo até ele finalizar todas — parecendo que a tela não atualizava
+  // sozinha. Agora cada entrega entra no histórico local (e no saldo) assim
+  // que ELA MESMA é confirmada, não precisa esperar as outras da mesma
+  // corrida.
   async function entregarItemIndividual(pedidoId) {
     await supabase.from("pedidos").update({
       status: "entregue",
       entregue_em: new Date().toISOString(),
     }).eq("id", pedidoId);
+
+    const pedido = corridaAtiva?.pedidos?.find(p => p.id === pedidoId);
+    if (pedido) {
+      const agora = new Date();
+      setHistorico(prev => [...prev, {
+        id: pedido.id,
+        clienteNome: pedido.clienteNome, empresaNome: pedido.empresaNome,
+        bairro: pedido.bairro, pagamento: pedido.pagamento, taxa: pedido.taxa,
+        status: "Entregue",
+        data: agora.toLocaleDateString("pt-BR"),
+        dataISO: dataLocalISO(agora),
+        hora: agora.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
+        semana: segundaFeiraDaSemana(agora), mes: agora.getMonth()+1,
+        repasePago: false,
+      }]);
+    }
   }
 
   async function finalizarCorrida() {
     if (!corridaAtiva) return;
-    // Cada pedido já foi gravado como "entregue" individualmente, assim que
-    // confirmado (ver entregarItemIndividual) — aqui só falta o
-    // encerramento local: some da tela e joga pro histórico local.
-    const agora = new Date();
-    const novos = corridaAtiva.pedidos.map(p=>({
-      id:p.id,
-      clienteNome:p.clienteNome, empresaNome:p.empresaNome,
-      bairro:p.bairro, pagamento:p.pagamento, taxa:p.taxa,
-      status:"Entregue",
-      data: agora.toLocaleDateString("pt-BR"),
-      dataISO: dataLocalISO(agora),
-      hora: agora.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
-      semana: segundaFeiraDaSemana(agora), mes: agora.getMonth()+1,
-      repasePago:false,
-    }));
-    setHistorico(prev=>[...prev,...novos]);
+    // Cada pedido já foi gravado como "entregue" (no banco e no histórico
+    // local) individualmente, assim que confirmado — ver
+    // entregarItemIndividual logo acima. Aqui só falta o encerramento
+    // local: some da tela e troca de aba.
     setCorridaAtiva(null);
     setAba("ganhos");
   }
