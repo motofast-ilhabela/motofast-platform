@@ -934,6 +934,8 @@ export default function AppMotoboy() {
   const [tipoSom, setTipoSom] = useState("alerta_forte");
   const [pedidoCancelado, setPedidoCancelado] = useState(false);
   const [pedidoPegoOutro, setPedidoPegoOutro] = useState(false);
+  const [avisoCorridaCancelada, setAvisoCorridaCancelada] = useState(null);
+  const [avisoCorridaAtribuida, setAvisoCorridaAtribuida] = useState(null);
   const [motoboyId, setMotoboyId] = useState(null);
   const [motoboy, setMotoboy] = useState(MOTOBOY_VAZIO);
   const [rankingGeral, setRankingGeral] = useState([]);
@@ -1254,14 +1256,16 @@ export default function AppMotoboy() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "pedidos" }, () => {
         buscarPedidoReal();
       })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pedidos" }, (payload) => {
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pedidos" }, async (payload) => {
         // Adicionado em 07/09/2026, junto com a função de reatribuir corrida
         // no Admin: se um pedido que eu tinha na minha corrida foi passado
         // pro Admin pra outro motoboy (motoboy_id mudou pra outra pessoa),
         // tira ele da minha tela na hora — sem isso, ficava preso aparecendo
         // pra mim até eu dar refresh manual, mesmo não sendo mais meu.
         const atualizado = payload.new;
-        if (atualizado && atualizado.motoboy_id !== motoboyId) {
+        if (!atualizado) return;
+
+        if (atualizado.motoboy_id !== motoboyId) {
           setCorridaAtiva(prev => {
             if (!prev) return prev;
             const aindaTenho = prev.pedidos.some(p => p.id === atualizado.id);
@@ -1269,6 +1273,80 @@ export default function AppMotoboy() {
             const restantes = prev.pedidos.filter(p => p.id !== atualizado.id);
             return restantes.length === 0 ? null : { ...prev, pedidos: restantes };
           });
+          return;
+        }
+
+        // Adicionado em 20/09/2026, a pedido do Alessandro (dois bugs sérios
+        // no dia a dia de correria):
+        //
+        // (1) Pedido meu que foi CANCELADO (pelo estabelecimento, na maioria
+        // das vezes) enquanto eu já tinha aceitado — antes ficava preso na
+        // minha tela até eu atualizar manualmente, e podia acontecer de eu
+        // fazer a entrega de algo que o estabelecimento já tinha cancelado e
+        // chamado outro motoboy, gerando duplicidade e confusão. Agora tira
+        // da tela e avisa na hora, com som.
+        if (atualizado.status === "cancelado") {
+          let removeu = false;
+          setCorridaAtiva(prev => {
+            if (!prev) return prev;
+            const aindaTenho = prev.pedidos.some(p => p.id === atualizado.id);
+            if (!aindaTenho) return prev;
+            removeu = true;
+            const restantes = prev.pedidos.filter(p => p.id !== atualizado.id);
+            return restantes.length === 0 ? null : { ...prev, pedidos: restantes };
+          });
+          if (removeu) {
+            tocarSomEscolhido(tipoSom);
+            setAvisoCorridaCancelada({
+              clienteNome: atualizado.cliente_nome,
+              motivo: atualizado.motivo_cancelamento || "Cancelado pelo estabelecimento",
+            });
+            setTimeout(() => setAvisoCorridaCancelada(null), 8000);
+          }
+          return;
+        }
+
+        // (2) O Admin ATRIBUIU uma corrida específica pra mim (motoboy_id
+        // virou o meu no banco) — antes eu só via isso se atualizasse a tela
+        // manualmente, e em dia de correria isso passava batido. Agora busca
+        // os dados completos e já entra na minha corrida sozinho, com aviso.
+        if (atualizado.status === "aceito" || atualizado.status === "saiu_estabelecimento") {
+          const jaTenho = corridaAtiva?.pedidos?.some(p => p.id === atualizado.id);
+          if (!jaTenho) {
+            const { data: pedidoCompleto } = await supabase
+              .from("pedidos")
+              .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
+              .eq("id", atualizado.id)
+              .maybeSingle();
+            if (pedidoCompleto) {
+              const novoItem = {
+                id: pedidoCompleto.id,
+                empresaNome: pedidoCompleto.empresarios?.nome || "Estabelecimento",
+                empresaTel: pedidoCompleto.empresarios?.telefone || "",
+                empresaEndereco: pedidoCompleto.empresarios?.endereco_estabelecimento || "",
+                clienteNome: pedidoCompleto.cliente_nome,
+                clienteTel: pedidoCompleto.cliente_telefone,
+                rua: pedidoCompleto.rua, num: pedidoCompleto.numero,
+                bairro: pedidoCompleto.bairro, ref: pedidoCompleto.referencia,
+                pagamento: pedidoCompleto.forma_pagamento,
+                taxa: pedidoCompleto.taxa_motoboy || pedidoCompleto.taxa,
+                obs: pedidoCompleto.observacao,
+                valorPedido: pedidoCompleto.valor_pedido, valorReceber: pedidoCompleto.valor_receber, troco: pedidoCompleto.valor_troco,
+                criadoEm: new Date(pedidoCompleto.criado_em).getTime(),
+              };
+              setCorridaAtiva(prev => prev
+                ? { ...prev, pedidos: [...prev.pedidos, novoItem] }
+                : { id: pedidoCompleto.corrida_id || Date.now(), pedidos: [novoItem] }
+              );
+              tocarSomEscolhido(tipoSom);
+              dispararNotificacaoPush(
+                "🏍️ Corrida atribuída pelo Admin!",
+                `Nova entrega pra ${novoItem.clienteNome} em ${novoItem.bairro} — R$${novoItem.taxa}.`
+              );
+              setAvisoCorridaAtribuida(novoItem);
+              setTimeout(() => setAvisoCorridaAtribuida(null), 8000);
+            }
+          }
         }
       })
       .subscribe();
@@ -1794,6 +1872,28 @@ export default function AppMotoboy() {
           <div style={{fontSize:32,marginBottom:8}}>🏍️</div>
           <div style={{color:"#fbbf24",fontWeight:900,fontSize:16}}>Já pegaram essa corrida</div>
           <div style={{color:"#9ca3af",fontSize:13,marginTop:4}}>Outro motoboy aceitou primeiro — fica de olho no próximo pedido</div>
+        </div>
+      )}
+
+      {avisoCorridaCancelada && (
+        <div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",zIndex:500,
+          background:"#3d1010",border:"2px solid #ef4444",borderRadius:12,padding:"16px 24px",
+          textAlign:"center",boxShadow:"0 4px 20px rgba(239,68,68,0.4)",minWidth:300}}>
+          <div style={{fontSize:32,marginBottom:8}}>🚫</div>
+          <div style={{color:"#f87171",fontWeight:900,fontSize:16}}>Entrega cancelada — não precisa mais ir</div>
+          <div style={{color:"#f9fafb",fontSize:14,marginTop:4,fontWeight:700}}>{avisoCorridaCancelada.clienteNome}</div>
+          <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>{avisoCorridaCancelada.motivo}</div>
+        </div>
+      )}
+
+      {avisoCorridaAtribuida && (
+        <div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",zIndex:500,
+          background:"#0d3d2e",border:"2px solid #34d399",borderRadius:12,padding:"16px 24px",
+          textAlign:"center",boxShadow:"0 4px 20px rgba(52,211,153,0.4)",minWidth:300}}>
+          <div style={{fontSize:32,marginBottom:8}}>🏍️</div>
+          <div style={{color:"#34d399",fontWeight:900,fontSize:16}}>Nova corrida atribuída pra você!</div>
+          <div style={{color:"#f9fafb",fontSize:14,marginTop:4,fontWeight:700}}>{avisoCorridaAtribuida.clienteNome} — {avisoCorridaAtribuida.bairro}</div>
+          <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>R${avisoCorridaAtribuida.taxa} · já está na sua lista de entregas</div>
         </div>
       )}
 
