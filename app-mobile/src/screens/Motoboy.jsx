@@ -1015,6 +1015,7 @@ export default function Motoboy() {
   const [corridaAtiva, setCorridaAtiva] = useState(null);
   const [tipoSom, setTipoSom] = useState("alerta_forte");
   const [pedidoCancelado, setPedidoCancelado] = useState(false);
+  const [pedidoPegoOutro, setPedidoPegoOutro] = useState(false);
   const [avisoCorridaCancelada, setAvisoCorridaCancelada] = useState(null);
   // Adicionado em 20/09/2026 no site a pedido do Alessandro: além do aviso
   // rápido na tela (acima), guarda um registro do dia — pra quando o
@@ -1351,6 +1352,16 @@ export default function Motoboy() {
           if (verificacao && verificacao.status === "cancelado") {
             setPedidoCancelado(true);
             setTimeout(() => setPedidoCancelado(false), 4000);
+          }
+          // Adicionado em 07/09/2026 no site a pedido do Alessandro:
+          // motoboys estavam reclamando que o pedido só "sumia" da tela sem
+          // explicação quando outro motoboy aceitava primeiro — pareciam
+          // achar que era bug do app. Agora avisa explicitamente o que
+          // aconteceu. Só o aviso VISUAL — não muda em nada como/quando o
+          // alarme para (linha abaixo, intocada).
+          if (verificacao && verificacao.status === "aceito") {
+            setPedidoPegoOutro(true);
+            setTimeout(() => setPedidoPegoOutro(false), 4000);
           }
           if (Capacitor.isNativePlatform()) RideAlert.stopAlert();
           setPedidoDisponivel(null);
@@ -2279,6 +2290,16 @@ export default function Motoboy() {
           <div style={{fontSize:32,marginBottom:8}}>❌</div>
           <div style={{color:"#f87171",fontWeight:900,fontSize:16}}>Pedido cancelado</div>
           <div style={{color:"#9ca3af",fontSize:13,marginTop:4}}>O estabelecimento cancelou este pedido</div>
+        </div>
+      )}
+
+      {pedidoPegoOutro && (
+        <div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",zIndex:500,
+          background:"#1e293b",border:"2px solid #f59e0b",borderRadius:12,padding:"16px 24px",
+          textAlign:"center",boxShadow:"0 4px 20px rgba(245,158,11,0.4)",minWidth:280}}>
+          <div style={{fontSize:32,marginBottom:8}}>🏍️</div>
+          <div style={{color:"#fbbf24",fontWeight:900,fontSize:16}}>Já pegaram essa corrida</div>
+          <div style={{color:"#9ca3af",fontSize:13,marginTop:4}}>Outro motoboy aceitou primeiro — fica de olho no próximo pedido</div>
         </div>
       )}
 
