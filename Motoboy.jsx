@@ -473,7 +473,10 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                   </div>
                 )}
 
-                <button onClick={()=>marcarEntregue(p.id)} style={{width:"100%",padding:"14px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
+                <button onClick={()=>{
+                  if (!window.confirm(`Confirmar que você ENTREGOU o pedido de ${p.clienteNome} de verdade?`)) return;
+                  marcarEntregue(p.id);
+                }} style={{width:"100%",padding:"14px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
                   ✅ Confirmar entrega
                 </button>
               </div>
