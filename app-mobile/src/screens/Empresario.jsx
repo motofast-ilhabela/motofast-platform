@@ -2,6 +2,39 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient.js";
 
+// Som de alerta pra cancelamento de motoboy — adicionado no site em
+// 07/09/2026 a pedido do Alessandro. Estabelecimentos não ficam olhando a
+// tela o tempo todo, então um aviso só visual passava despercebido: o
+// motoboy cancelava no meio da corrida e ninguém percebia até o cliente
+// reclamar do atraso. Som próprio (diferente de qualquer som do motoboy),
+// grave e insistente, repete sozinho enquanto o aviso não for fechado. Web
+// Audio puro (funciona dentro do WebView do app nativo igual no navegador)
+// — sistema TOTALMENTE separado do RideAlertService/alarme nativo de
+// corrida nova do Motoboy.jsx, que não é tocado por nada aqui.
+let _audioCtxEmpresario = null;
+function getAudioCtxEmpresario() {
+  if (!_audioCtxEmpresario) {
+    _audioCtxEmpresario = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (_audioCtxEmpresario.state === "suspended") _audioCtxEmpresario.resume();
+  return _audioCtxEmpresario;
+}
+function tocarSomCancelamento() {
+  try {
+    const ctx = getAudioCtxEmpresario();
+    [0, 0.3, 0.6, 0.9].forEach(d => {
+      [220, 440].forEach(freq => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.frequency.value = freq; o.type = "sawtooth";
+        g.gain.setValueAtTime(1.0, ctx.currentTime + d);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + d + 0.25);
+        o.start(ctx.currentTime + d); o.stop(ctx.currentTime + d + 0.25);
+      });
+    });
+  } catch (e) { console.log("Som de cancelamento bloqueado:", e); }
+}
+
 // Cópia adaptada de Empresario.jsx da plataforma web (ver CLAUDE.md — mudanças
 // de regra de negócio precisam ser replicadas manualmente entre as duas
 // versões). Adaptações técnicas feitas aqui (nenhuma mudança de regra de
@@ -2277,7 +2310,19 @@ export default function Empresario() {
   });
   const [avisoSemMotoboy, setAvisoSemMotoboy] = useState(null);
   const [avisoCancelamentoMotoboy, setAvisoCancelamentoMotoboy] = useState(null);
+  const [publicandoNovoAposCancelamento, setPublicandoNovoAposCancelamento] = useState(false);
   const notificadosCancelamento = useRef(new Set());
+
+  // Toca o som de cancelamento assim que o aviso aparece, e repete a cada 4s
+  // enquanto o estabelecimento não fechar o aviso — pensado pra quem não fica
+  // com o olho grudado na tela o dia inteiro.
+  useEffect(() => {
+    if (!avisoCancelamentoMotoboy) return;
+    tocarSomCancelamento();
+    const intervalo = setInterval(tocarSomCancelamento, 4000);
+    return () => clearInterval(intervalo);
+  }, [avisoCancelamentoMotoboy]);
+
   const [empresa, setEmpresa] = useState({...EMPRESA, id:null}); // começa SEM id até carregar o real do Supabase
   const [carregando, setCarregando] = useState(true);
   // Valor exato pendente quando a conta está bloqueada — pra mostrar na tela de
@@ -2403,6 +2448,14 @@ export default function Empresario() {
                   motivo: p.motivo_cancelamento || "Não informado",
                   motoboyNome: pedidoConhecido?.motoboyNome || "Motoboy",
                   motoboyTel: pedidoConhecido?.motoboyTel || "",
+                  // Adicionado em 07/09/2026 no site — guarda os dados
+                  // completos do pedido pra dar pra republicar com 1
+                  // clique, sem precisar digitar tudo de novo.
+                  clienteTel: p.cliente_telefone,
+                  rua: p.rua, num: p.numero, ref: p.referencia, obs: p.observacao,
+                  pagamento: p.forma_pagamento, taxa: p.taxa, taxaMotoboy: p.taxa_motoboy || 0,
+                  valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
+                  distanciaKm: p.distancia_km, metodoCalculoKm: p.metodo_calculo_km,
                 });
               }
               carregarPedidos(emp.id);
@@ -2986,6 +3039,21 @@ export default function Empresario() {
                 </a>
               </div>
             )}
+            {/* Adicionado no site em 07/09/2026 a pedido do Alessandro:
+                republica o mesmo pedido com 1 clique, sem precisar digitar
+                tudo de novo (endereço, forma de pagamento, etc.) —
+                reaproveita a mesma publicarPedido() usada na tela de Nova
+                Entrega. */}
+            <button onClick={async()=>{
+                setPublicandoNovoAposCancelamento(true);
+                await publicarPedido(avisoCancelamentoMotoboy);
+                setPublicandoNovoAposCancelamento(false);
+                setAvisoCancelamentoMotoboy(null);
+              }}
+              disabled={publicandoNovoAposCancelamento}
+              style={{width:"100%",padding:"14px",borderRadius:10,background:"#f59e0b",border:"none",color:"#000",fontWeight:900,fontSize:15,cursor:publicandoNovoAposCancelamento?"not-allowed":"pointer",marginBottom:10,opacity:publicandoNovoAposCancelamento?0.6:1}}>
+              {publicandoNovoAposCancelamento ? "Chamando..." : "🏍️ Chamar novo motoboy agora"}
+            </button>
             <button onClick={()=>setAvisoCancelamentoMotoboy(null)}
               style={{width:"100%",padding:"12px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:14,cursor:"pointer"}}>
               Fechar
