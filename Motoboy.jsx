@@ -255,7 +255,10 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
       </div>
 
       <div style={{display:"flex",gap:10}}>
-        <button onClick={onRecusar} style={{flex:1,padding:"14px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:15,cursor:"pointer"}}>
+        <button onClick={()=>{
+          if (!window.confirm("Tem certeza que quer recusar essa corrida?")) return;
+          onRecusar();
+        }} style={{flex:1,padding:"14px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:15,cursor:"pointer"}}>
           ❌ Recusar
         </button>
         {aindaBloqueado ? (
@@ -474,7 +477,7 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                 )}
 
                 <button onClick={()=>{
-                  if (!window.confirm(`Confirmar que você ENTREGOU o pedido de ${p.clienteNome} de verdade?`)) return;
+                  if (!window.confirm(`Confirma que entregou pra ${p.clienteNome}?`)) return;
                   marcarEntregue(p.id);
                 }} style={{width:"100%",padding:"14px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
                   ✅ Confirmar entrega
