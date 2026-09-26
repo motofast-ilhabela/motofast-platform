@@ -1017,6 +1017,7 @@ export default function Motoboy() {
   const [pedidoCancelado, setPedidoCancelado] = useState(false);
   const [pedidoPegoOutro, setPedidoPegoOutro] = useState(false);
   const [avisoCorridaCancelada, setAvisoCorridaCancelada] = useState(null);
+  const [avisoCorridaAtribuida, setAvisoCorridaAtribuida] = useState(null);
   // Adicionado em 20/09/2026 no site a pedido do Alessandro: além do aviso
   // rápido na tela (acima), guarda um registro do dia — pra quando o
   // motoboy não vê o aviso na hora (tela apagada, distraído na correria),
@@ -1345,7 +1346,7 @@ export default function Motoboy() {
       if (pedidoRef.current) {
         const { data: verificacao } = await supabase
           .from("pedidos")
-          .select("status")
+          .select("status, motoboy_id")
           .eq("id", pedidoRef.current.id)
           .maybeSingle();
         if (!verificacao || verificacao.status !== "aguardando") {
@@ -1359,7 +1360,16 @@ export default function Motoboy() {
           // achar que era bug do app. Agora avisa explicitamente o que
           // aconteceu. Só o aviso VISUAL — não muda em nada como/quando o
           // alarme para (linha abaixo, intocada).
-          if (verificacao && verificacao.status === "aceito") {
+          //
+          // CORRIGIDO em 25/09/2026: essa checagem não sabia DE QUEM era o
+          // "aceito" — se o Admin atribuísse esse MESMO pedido (que também
+          // estava sendo ofertado normalmente pra esse motoboy, já que todo
+          // motoboy online vê a mesma fila de "aguardando") direto pra ELE
+          // MESMO, isso disparava por engano o aviso de "já pegaram",
+          // atropelando o aviso/alarme corretos da atribuição direta (ver
+          // branch (2) do listener de UPDATE, mais abaixo). Só mostra "já
+          // pegaram" quando for de verdade outra pessoa.
+          if (verificacao && verificacao.status === "aceito" && verificacao.motoboy_id !== motoboyId) {
             setPedidoPegoOutro(true);
             setTimeout(() => setPedidoPegoOutro(false), 4000);
           }
@@ -1520,7 +1530,7 @@ export default function Motoboy() {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "pedidos" }, () => {
         buscarPedidoReal();
       })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pedidos" }, (payload) => {
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "pedidos" }, async (payload) => {
         // Adicionado em 07/09/2026, junto com a função de reatribuir corrida
         // no Admin: se um pedido que eu tinha na minha corrida foi passado
         // pro Admin pra outro motoboy (motoboy_id mudou pra outra pessoa),
@@ -1592,6 +1602,82 @@ export default function Motoboy() {
                   }
                 })
                 .catch(e => console.log("Erro ao buscar nome do estabelecimento (não impede o aviso/contador):", e));
+            }
+          }
+          return;
+        }
+
+        // (2) O Admin ATRIBUIU uma corrida específica pra mim (motoboy_id
+        // virou o meu no banco) — antes eu só via isso se atualizasse a tela
+        // manualmente, e em dia de correria isso passava batido. Agora busca
+        // os dados completos e já entra na minha corrida sozinho, com aviso
+        // + o alarme nativo tocando de verdade (mesmo com a tela bloqueada) —
+        // ADICIONADO em 24/09/2026: liga o RideAlertService pra esse gatilho
+        // novo, do mesmo jeito que já liga pra uma oferta normal.
+        if (atualizado.status === "aceito" || atualizado.status === "saiu_estabelecimento") {
+          const jaTenho = corridaAtiva?.pedidos?.some(p => p.id === atualizado.id);
+          if (!jaTenho) {
+            const { data: pedidoCompleto } = await supabase
+              .from("pedidos")
+              .select("*, empresarios(nome, telefone, endereco_estabelecimento)")
+              .eq("id", atualizado.id)
+              .maybeSingle();
+            if (pedidoCompleto) {
+              const novoItem = {
+                id: pedidoCompleto.id,
+                empresaNome: pedidoCompleto.empresarios?.nome || "Estabelecimento",
+                empresaTel: pedidoCompleto.empresarios?.telefone || "",
+                empresaEndereco: pedidoCompleto.empresarios?.endereco_estabelecimento || "",
+                clienteNome: pedidoCompleto.cliente_nome,
+                clienteTel: pedidoCompleto.cliente_telefone,
+                rua: pedidoCompleto.rua, num: pedidoCompleto.numero,
+                bairro: pedidoCompleto.bairro, ref: pedidoCompleto.referencia,
+                pagamento: pedidoCompleto.forma_pagamento,
+                taxa: pedidoCompleto.taxa_motoboy || pedidoCompleto.taxa,
+                obs: pedidoCompleto.observacao,
+                valorPedido: pedidoCompleto.valor_pedido, valorReceber: pedidoCompleto.valor_receber, troco: pedidoCompleto.valor_troco,
+                criadoEm: new Date(pedidoCompleto.criado_em).getTime(),
+              };
+              // CORRIGIDO em 26/09/2026: se esse MESMO pedido já estava
+              // sendo ofertado normalmente pra mim (pedidoRef.current — todo
+              // motoboy online vê a mesma fila de "aguardando", então isso é
+              // bem comum), precisa limpar essa oferta pendente AGORA, do
+              // mesmo jeito que aceitar() já faz. Sem isso, o efeito de
+              // polling (que tem uma trava "if (pedidoRef.current) return"
+              // logo no início) nunca mais se reconfigura depois que
+              // corridaAtiva muda aqui embaixo — ele só se recria quando
+              // corridaAtiva muda, mas de cara já barra na trava porque
+              // pedidoRef.current continuaria preenchido — e como é
+              // exatamente esse efeito que teria o código pra limpar
+              // pedidoRef.current mais tarde, ele nunca roda de novo pra
+              // fazer isso. Resultado real visto em teste: o ciclo de
+              // reoferta de 30s (efeito SEPARADO, ligado em pedidoDisponivel)
+              // continuava rodando sozinho pra sempre, mostrando a tela de
+              // Aceitar/Recusar de um pedido que já tinha virado uma corrida
+              // de verdade.
+              if (pedidoRef.current?.id === atualizado.id) {
+                setPedidoDisponivel(null);
+                pedidoRef.current = null;
+                ofertaAtivaRef.current = null;
+                tentativas.current = 0;
+              }
+              setCorridaAtiva(prev => prev
+                ? { ...prev, pedidos: [...prev.pedidos, novoItem] }
+                : { id: pedidoCompleto.corrida_id || Date.now(), pedidos: [novoItem] }
+              );
+              dispararNotificacaoPush(
+                "🏍️ Corrida atribuída pelo Admin!",
+                `Nova entrega pra ${novoItem.clienteNome} em ${novoItem.bairro} — R$${novoItem.taxa}.`
+              );
+              if (Capacitor.isNativePlatform()) {
+                RideAlert.startAlert({
+                  titulo: "🏍️ Corrida atribuída pelo Admin!",
+                  corpo: `Nova entrega pra ${novoItem.clienteNome} em ${novoItem.bairro} — R$${novoItem.taxa}`,
+                  pedidoId: String(novoItem.id),
+                });
+              }
+              setAvisoCorridaAtribuida(novoItem);
+              setTimeout(() => setAvisoCorridaAtribuida(null), 8000);
             }
           }
           return;
@@ -2314,6 +2400,17 @@ export default function Motoboy() {
           <button onClick={pararAlarmeCancelamento} style={{marginTop:10,padding:"7px 16px",borderRadius:8,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:12,cursor:"pointer"}}>
             🔇 Já vi, parar o som
           </button>
+        </div>
+      )}
+
+      {avisoCorridaAtribuida && (
+        <div style={{position:"fixed",top:20,left:"50%",transform:"translateX(-50%)",zIndex:500,
+          background:"#0d3d2e",border:"2px solid #34d399",borderRadius:12,padding:"16px 24px",
+          textAlign:"center",boxShadow:"0 4px 20px rgba(52,211,153,0.4)",minWidth:300}}>
+          <div style={{fontSize:32,marginBottom:8}}>🏍️</div>
+          <div style={{color:"#34d399",fontWeight:900,fontSize:16}}>Nova corrida atribuída pra você!</div>
+          <div style={{color:"#f9fafb",fontSize:14,marginTop:4,fontWeight:700}}>{avisoCorridaAtribuida.clienteNome} — {avisoCorridaAtribuida.bairro}</div>
+          <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>R${avisoCorridaAtribuida.taxa} · já está na sua lista de entregas</div>
         </div>
       )}
 
