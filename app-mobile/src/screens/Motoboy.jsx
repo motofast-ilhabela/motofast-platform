@@ -2256,26 +2256,16 @@ export default function Motoboy() {
               </Card>
             )}
 
-            <Card style={{background:"#0f172a",border:"1px solid #1f2937",marginBottom:14}}>
-              <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:12}}>🔔 Som de Notificação</div>
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {Object.entries(SONS).map(([key,som])=>(
-                  <button key={key} onClick={()=>{setTipoSom(key);tocarSomEscolhido(key);}}
-                    style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 14px",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13,
-                      background:tipoSom===key?"#1e293b":"#111827",
-                      border:tipoSom===key?"1px solid #34d399":"1px solid #1f2937",
-                      color:tipoSom===key?"#34d399":"#9ca3af",textAlign:"left"}}>
-                    <span>{som.emoji} {som.label}</span>
-                    <span style={{fontSize:11,color:tipoSom===key?"#34d399":"#4b5563"}}>
-                      {tipoSom===key?"✅ Selecionado — clique para ouvir":"Clique para ouvir"}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <div style={{color:"#4b5563",fontSize:11,marginTop:10}}>
-                💡 O som escolhido tocará a cada 5 segundos quando chegar um pedido
-              </div>
-            </Card>
+            {/* REMOVIDO em 26/09/2026: seletor antigo de som (Bipe Triplo,
+                Sirene, etc), de antes do alarme nativo em loop existir —
+                ficou como leftover sem função real, já que quem toca o som
+                de corrida nova de verdade hoje é o RideAlertService nativo,
+                sempre com o mesmo som (alarme_buzina.wav), sem escolha do
+                usuário. `tocarSomEscolhido`/`tipoSom`/`SONS` continuam no
+                arquivo — ainda são usados pelo alarme de cancelamento
+                (tocarAlarmeCancelamento) e pelo loop de teste no navegador
+                (não-nativo, dentro de ModalPedidoDisponivel) — só essa
+                interface de escolha manual que não fazia mais sentido. */}
 
             {online && !corridaAtiva && (
               <Card style={{background:"#0f172a",border:"1px solid #1f2937"}}>
