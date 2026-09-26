@@ -1,6 +1,23 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient.js";
 
+// Adicionado em 24/09/2026 a pedido do Alessandro: detecta sozinho se está
+// no verão (alta temporada em Ilhabela), sem precisar lembrar de avisar
+// ninguém. Verão no Brasil = 21/dez a 20/mar (datas praticamente fixas todo
+// ano). Fora disso (outono, inverno, primavera) = baixa temporada.
+function estamosNoVerao() {
+  const agora = new Date();
+  const mes = agora.getMonth() + 1;
+  const dia = agora.getDate();
+  if (mes === 12 && dia >= 21) return true;
+  if (mes === 1 || mes === 2) return true;
+  if (mes === 3 && dia <= 20) return true;
+  return false;
+}
+function prazoChegadaMotoboyMin() {
+  return estamosNoVerao() ? 15 : 12;
+}
+
 const SUPORTE_TEL = "5512991213656";
 const BAIRROS = ["Perequê","Vila","Barra Velha","Itaquanduba","Água Branca","Zabumba","Sul","Centro","Armação","Curral"];
 const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -2796,7 +2813,17 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
                   <div>
                     <div style={{color:"#34d399",fontWeight:800,fontSize:16}}>🏍️ {primeiro.motoboyNome || "Motoboy"}</div>
                     <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>
-                      {pedidosDaCorrida.length} pedido{pedidosDaCorrida.length!==1?"s":""} nesta corrida · saiu há {formatTempo(Date.now()-(primeiro.saiuEstabelecimentoEm||primeiro.criadoEm))}
+                      {pedidosDaCorrida.length} pedido{pedidosDaCorrida.length!==1?"s":""} nesta corrida ·{" "}
+                      {/* CORRIGIDO em 24/09/2026: antes sempre dizia "saiu há X"
+                          usando criado_em como base quando ele ainda nem tinha
+                          retirado o pedido — dava a entender que ele já estava
+                          a caminho do cliente há mais tempo do que a
+                          realidade. Agora diferencia as duas fases certinho. */}
+                      {primeiro.saiuEstabelecimentoEm
+                        ? `saiu do estabelecimento há ${formatTempo(Date.now()-primeiro.saiuEstabelecimentoEm)}`
+                        : primeiro.aceitoEm
+                          ? `aceitou há ${formatTempo(Date.now()-primeiro.aceitoEm)} — ainda buscando no estabelecimento`
+                          : `criado há ${formatTempo(Date.now()-primeiro.criadoEm)}`}
                     </div>
                   </div>
                   <div style={{textAlign:"right"}}>
@@ -2804,7 +2831,13 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
                     <div style={{color:"#fbbf24",fontWeight:800,fontSize:18}}>R${totalMotoboy}</div>
                   </div>
                 </div>
-                {pedidosDaCorrida.map((p,i)=>(
+                {pedidosDaCorrida.map((p,i)=>{
+                  const PRAZO_CHEGADA_MIN = prazoChegadaMotoboyMin();
+                  const aindaNoEstabelecimento = p.status==="aceito" && p.aceitoEm;
+                  const minutosDesdeAceite = aindaNoEstabelecimento ? (Date.now() - p.aceitoEm) / 60000 : 0;
+                  const dentroDoPrazo = minutosDesdeAceite < PRAZO_CHEGADA_MIN;
+                  const minutosRestantes = Math.max(0, Math.ceil(PRAZO_CHEGADA_MIN - minutosDesdeAceite));
+                  return (
                   <div key={p.id} style={{background:"#0f172a",borderRadius:8,padding:"9px 12px",marginBottom:6,opacity:p.status==="entregue"?0.6:1}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6}}>
                       <div>
@@ -2815,6 +2848,18 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
                         ? <Tag label="✅ Finalizado" cor="#34d399"/>
                         : <Tag label={p.status==="saiu_estabelecimento"?"🚀 A caminho do cliente":"📦 Buscando no estabelecimento"} cor={p.status==="saiu_estabelecimento"?"#34d399":"#60a5fa"}/>}
                     </div>
+                    {/* Adicionado em 24/09/2026: cronômetro do prazo de 12min
+                        pra chegar no estabelecimento, contado a partir do
+                        aceite — pra você conferir na hora se a reclamação de
+                        um estabelecimento sobre demora é real ou não. */}
+                    {aindaNoEstabelecimento && (
+                      <div style={{marginTop:6,display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,
+                        background:dentroDoPrazo?"#0d3d2e":"#3d1010",color:dentroDoPrazo?"#34d399":"#f87171"}}>
+                        {dentroDoPrazo
+                          ? `⏱️ Dentro do prazo — chega em até ${minutosRestantes} min`
+                          : `⏱️ Passou do prazo de ${PRAZO_CHEGADA_MIN} min pra chegar`}
+                      </div>
+                    )}
                     {p.status!=="entregue" && (<>
                     {/* Uso raro — só quando o motoboy pediu pra trocar (ex: aceitou
                         por engano). Fica discreto de propósito, dentro de cada
@@ -2851,7 +2896,7 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
                     </div>
                     </>)}
                   </div>
-                ))}
+                  );})}
                 {primeiro.motoboyTel && (
                   <div style={{display:"flex",gap:8,marginTop:8}}>
                     <a href={`https://wa.me/55${primeiro.motoboyTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
@@ -3466,6 +3511,7 @@ export default function App() {
         motoboyTel: p.motoboys?.telefone || null,
         empresaNome: p.empresarios?.nome || "Estabelecimento",
         criadoEm: new Date(p.criado_em).getTime(),
+        aceitoEm: p.aceito_em ? new Date(p.aceito_em).getTime() : null,
         saiuEstabelecimentoEm: p.saiu_estabelecimento_em ? new Date(p.saiu_estabelecimento_em).getTime() : null,
         taxaMotoboy: p.taxa_motoboy || 0,
       }));

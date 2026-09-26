@@ -1,6 +1,23 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient.js";
 
+// Adicionado em 24/09/2026 a pedido do Alessandro: detecta sozinho se está
+// no verão (alta temporada em Ilhabela), sem precisar lembrar de avisar
+// ninguém. Verão no Brasil = 21/dez a 20/mar (datas praticamente fixas todo
+// ano). Fora disso (outono, inverno, primavera) = baixa temporada.
+function estamosNoVerao() {
+  const agora = new Date();
+  const mes = agora.getMonth() + 1;
+  const dia = agora.getDate();
+  if (mes === 12 && dia >= 21) return true;
+  if (mes === 1 || mes === 2) return true;
+  if (mes === 3 && dia <= 20) return true;
+  return false;
+}
+function prazoChegadaMotoboyMin() {
+  return estamosNoVerao() ? 15 : 12;
+}
+
 // Som de alerta pra cancelamento de motoboy — adicionado em 07/09/2026 a
 // pedido do Alessandro. Estabelecimentos não ficam olhando a tela o tempo
 // todo, então um aviso só visual passava despercebido: o motoboy cancelava
@@ -1430,6 +1447,18 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
             {corrida.pedidos.map((p,i)=>{
               const pg = PG[p.pagamento]||{icon:"•",cor:"#9ca3af",label:p.pagamento};
               const finalizado = p.status==="entregue";
+              // Adicionado em 24/09/2026 a pedido do Alessandro: cronômetro
+              // do prazo de chegada no estabelecimento (12 minutos a partir
+              // do ACEITE, não da criação do pedido — isso corrige o
+              // cronômetro antigo, que contava tempo errado). Só faz sentido
+              // enquanto o motoboy ainda não retirou o pedido — depois que
+              // ele clica "saí do estabelecimento", o prazo de chegada já
+              // foi cumprido, então o cronômetro para de aparecer.
+              const PRAZO_CHEGADA_MIN = prazoChegadaMotoboyMin();
+              const aindaNoEstabelecimento = !finalizado && !p.saiuEstabelecimentoEm && p.aceitoEm;
+              const minutosDesdeAceite = aindaNoEstabelecimento ? (Date.now() - new Date(p.aceitoEm).getTime()) / 60000 : 0;
+              const dentroDoPrazo = minutosDesdeAceite < PRAZO_CHEGADA_MIN;
+              const minutosRestantes = Math.max(0, Math.ceil(PRAZO_CHEGADA_MIN - minutosDesdeAceite));
               return (
                 <div key={p.id} style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginBottom:10,opacity:finalizado?0.6:1}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
@@ -1440,6 +1469,14 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                       {p.obs && <div style={{color:"#9ca3af",fontSize:11,marginTop:2}}>💬 Obs: {p.obs}</div>}
                       {p.pagamento==="dinheiro" && <div style={{color:"#fbbf24",fontSize:11,marginTop:3,fontWeight:700}}>💵 Troco — motoboy retorna com o dinheiro</div>}
                       {p.pagamento==="cartao" && <div style={{color:"#60a5fa",fontSize:11,marginTop:3,fontWeight:700}}>💳 Maquininha já entregue ao motoboy</div>}
+                      {aindaNoEstabelecimento && (
+                        <div style={{marginTop:6,display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,
+                          background:dentroDoPrazo?"#0d3d2e":"#3d1010",color:dentroDoPrazo?"#34d399":"#f87171"}}>
+                          {dentroDoPrazo
+                            ? `⏱️ Motoboy no prazo — chega em até ${minutosRestantes} min`
+                            : `⏱️ Motoboy passou do prazo de chegada (${PRAZO_CHEGADA_MIN} min)`}
+                        </div>
+                      )}
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
                       <div style={{color:"#34d399",fontWeight:800,fontSize:18}}>R${p.taxa}</div>
@@ -1458,11 +1495,23 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                     ✏️ Editar este pedido
                   </button>
                   <button onClick={async()=>{
-                    const motivo = window.prompt(`Por que está cancelando a entrega de ${p.clienteNome}? (o motoboy vai ver esse motivo)`, "");
-                    if (motivo === null) return; // clicou em Cancelar no aviso
+                    // Adicionado em 24/09/2026: se ainda estiver dentro do
+                    // prazo de 12min pro motoboy chegar no estabelecimento,
+                    // exige justificativa (o motoboy vai ver isso na aba de
+                    // Cancelados dele, marcado como cancelado ANTES do prazo
+                    // acabar). Depois do prazo, cancela direto, sem perguntar
+                    // nada — igual sempre foi.
+                    let motivo;
+                    if (aindaNoEstabelecimento && dentroDoPrazo) {
+                      motivo = window.prompt(`O motoboy ainda está dentro do prazo normal pra chegar (faltam ${minutosRestantes} min). Por que está cancelando a entrega de ${p.clienteNome} mesmo assim?`, "");
+                      if (motivo === null || !motivo.trim()) { if (motivo !== null) alert("Precisa informar o motivo pra cancelar antes do prazo terminar."); return; }
+                      motivo = `[Cancelado antes do prazo de chegada — faltavam ${minutosRestantes} min] ${motivo.trim()}`;
+                    } else {
+                      motivo = "Cancelado pelo estabelecimento";
+                    }
                     await supabase.from("pedidos").update({
                       status: "cancelado",
-                      motivo_cancelamento: motivo.trim() || "Cancelado pelo estabelecimento",
+                      motivo_cancelamento: motivo,
                       cancelado_em: new Date().toISOString(),
                     }).eq("id", p.id);
                     await onRecarregar();
@@ -2463,6 +2512,7 @@ export default function AppEmpresario() {
                     motoboyNome: existente?.motoboyNome || null,
                     motoboyTel: existente?.motoboyTel || null,
                     corridaId: p.corrida_id,
+                    aceitoEm: p.aceito_em || null,
                     saiuEstabelecimentoEm: p.saiu_estabelecimento_em || null,
                     entregueEm: p.entregue_em || null,
                     distanciaKm: p.distancia_km || null,
@@ -2652,6 +2702,7 @@ export default function AppEmpresario() {
       motoboyNome: mapaMotoboys[p.motoboy_id]?.nome_completo || null,
       motoboyTel: mapaMotoboys[p.motoboy_id]?.telefone || null,
       corridaId: p.corrida_id,
+      aceitoEm: p.aceito_em || null,
       saiuEstabelecimentoEm: p.saiu_estabelecimento_em || null,
       entregueEm: p.entregue_em || null,
       distanciaKm: p.distancia_km || null,

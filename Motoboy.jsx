@@ -1,6 +1,23 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabaseClient.js";
 
+// Adicionado em 24/09/2026 a pedido do Alessandro: detecta sozinho se está
+// no verão (alta temporada em Ilhabela), sem precisar lembrar de avisar
+// ninguém. Verão no Brasil = 21/dez a 20/mar (datas praticamente fixas todo
+// ano). Fora disso (outono, inverno, primavera) = baixa temporada.
+function estamosNoVerao() {
+  const agora = new Date();
+  const mes = agora.getMonth() + 1;
+  const dia = agora.getDate();
+  if (mes === 12 && dia >= 21) return true;
+  if (mes === 1 || mes === 2) return true;
+  if (mes === 3 && dia <= 20) return true;
+  return false;
+}
+function prazoChegadaMotoboyMin() {
+  return estamosNoVerao() ? 15 : 12;
+}
+
 function dataLocalISO(date = new Date()) {
   const y = date.getFullYear();
   const m = String(date.getMonth()+1).padStart(2,"0");
@@ -283,6 +300,13 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
   const [motivoCustom, setMotivoCustom] = useState("");
   const [modalCancelarItem, setModalCancelarItem] = useState(null); // id do pedido, ou null
   const [motivoItem, setMotivoItem] = useState("");
+  // Adicionado em 24/09/2026: atualiza a tela sozinha a cada segundo, pro
+  // cronômetro do prazo de chegada contar em tempo real.
+  const [, setTickCorrida] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTickCorrida(x => x + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   async function sairEstabelecimento(pedidoId) {
     setSaiuEstab(prev=>({...prev,[pedidoId]:true}));
@@ -357,6 +381,26 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                   <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏪 1º — Ir buscar no estabelecimento</div>
                   <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{p.empresaNome}</div>
                   <div style={{color:"#9ca3af",fontSize:13,marginTop:2}}>{p.empresaEndereco||"Perequê, Ilhabela/SP"}</div>
+                  {(()=>{
+                    // Adicionado em 24/09/2026 a pedido do Alessandro:
+                    // cronômetro do prazo de 12min pra chegar no
+                    // estabelecimento, contado a partir do aceite — some
+                    // sozinho assim que ele clica "Saí do estabelecimento"
+                    // (já não faz mais sentido depois disso).
+                    if (!p.aceitoEm) return null;
+                    const PRAZO_CHEGADA_MIN = prazoChegadaMotoboyMin();
+                    const minutosDesdeAceite = (Date.now() - new Date(p.aceitoEm).getTime()) / 60000;
+                    const dentroDoPrazo = minutosDesdeAceite < PRAZO_CHEGADA_MIN;
+                    const minutosRestantes = Math.max(0, Math.ceil(PRAZO_CHEGADA_MIN - minutosDesdeAceite));
+                    return (
+                      <div style={{marginTop:8,padding:"6px 12px",borderRadius:8,fontSize:12,fontWeight:800,textAlign:"center",
+                        background:dentroDoPrazo?"#0d3d2e":"#3d1010",color:dentroDoPrazo?"#34d399":"#f87171"}}>
+                        {dentroDoPrazo
+                          ? `⏱️ Você está no prazo — chegue em até ${minutosRestantes} min`
+                          : `⏱️ Prazo de ${PRAZO_CHEGADA_MIN} min já passou`}
+                      </div>
+                    );
+                  })()}
                   {p.empresaTel && (
                     <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
                       <a href={`https://wa.me/55${p.empresaTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
@@ -1360,6 +1404,7 @@ export default function AppMotoboy() {
                 obs: pedidoCompleto.observacao,
                 valorPedido: pedidoCompleto.valor_pedido, valorReceber: pedidoCompleto.valor_receber, troco: pedidoCompleto.valor_troco,
                 criadoEm: new Date(pedidoCompleto.criado_em).getTime(),
+                aceitoEm: pedidoCompleto.aceito_em || null,
               };
               setCorridaAtiva(prev => prev
                 ? { ...prev, pedidos: [...prev.pedidos, novoItem] }
@@ -1557,8 +1602,8 @@ export default function AppMotoboy() {
     }).then(()=>{}, e=>console.log("Erro ao registrar aceite:", e));
 
     setCorridaAtiva(prev => prev
-      ? { ...prev, pedidos: [...prev.pedidos, {...pedidoDisponivel}] }
-      : { id: corridaIdParaUsar || Date.now(), pedidos: [{...pedidoDisponivel}] }
+      ? { ...prev, pedidos: [...prev.pedidos, {...pedidoDisponivel, aceitoEm: data.aceito_em}] }
+      : { id: corridaIdParaUsar || Date.now(), pedidos: [{...pedidoDisponivel, aceitoEm: data.aceito_em}] }
     );
     setPedidoDisponivel(null);
     pedidoRef.current = null;
