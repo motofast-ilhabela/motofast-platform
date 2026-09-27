@@ -17,6 +17,15 @@ function estamosNoVerao() {
 function prazoChegadaMotoboyMin() {
   return estamosNoVerao() ? 15 : 12;
 }
+// Formata minutos de atraso de um jeito fácil de ler: "5 min", "45 min",
+// "1h 5min", "2h" — sem precisar ninguém fazer conta na cabeça.
+function formatarAtraso(minutosAtraso) {
+  const min = Math.floor(minutosAtraso);
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}min`;
+}
 
 function dataLocalISO(date = new Date()) {
   const y = date.getFullYear();
@@ -397,7 +406,7 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                         background:dentroDoPrazo?"#0d3d2e":"#3d1010",color:dentroDoPrazo?"#34d399":"#f87171"}}>
                         {dentroDoPrazo
                           ? `⏱️ Você está no prazo — chegue em até ${minutosRestantes} min`
-                          : `⏱️ Prazo de ${PRAZO_CHEGADA_MIN} min já passou`}
+                          : `⏱️ Você está ${formatarAtraso(minutosDesdeAceite - PRAZO_CHEGADA_MIN)} atrasado`}
                       </div>
                     );
                   })()}
@@ -1068,6 +1077,7 @@ export default function AppMotoboy() {
                 pagamento: p.forma_pagamento, taxa: p.taxa_motoboy || p.taxa,
                 valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
                 criadoEm: new Date(p.criado_em).getTime(),
+                aceitoEm: p.aceito_em || null,
                 statusBanco: p.status,
               })),
             });

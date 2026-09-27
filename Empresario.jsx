@@ -17,6 +17,15 @@ function estamosNoVerao() {
 function prazoChegadaMotoboyMin() {
   return estamosNoVerao() ? 15 : 12;
 }
+// Formata minutos de atraso de um jeito fácil de ler: "5 min", "45 min",
+// "1h 5min", "2h" — sem precisar ninguém fazer conta na cabeça.
+function formatarAtraso(minutosAtraso) {
+  const min = Math.floor(minutosAtraso);
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}min`;
+}
 
 // Som de alerta pra cancelamento de motoboy — adicionado em 07/09/2026 a
 // pedido do Alessandro. Estabelecimentos não ficam olhando a tela o tempo
@@ -1474,7 +1483,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                           background:dentroDoPrazo?"#0d3d2e":"#3d1010",color:dentroDoPrazo?"#34d399":"#f87171"}}>
                           {dentroDoPrazo
                             ? `⏱️ Motoboy no prazo — chega em até ${minutosRestantes} min`
-                            : `⏱️ Motoboy passou do prazo de chegada (${PRAZO_CHEGADA_MIN} min)`}
+                            : `⏱️ Motoboy está ${formatarAtraso(minutosDesdeAceite - PRAZO_CHEGADA_MIN)} atrasado`}
                         </div>
                       )}
                     </div>
@@ -1495,20 +1504,23 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                     ✏️ Editar este pedido
                   </button>
                   <button onClick={async()=>{
-                    // Adicionado em 24/09/2026: se ainda estiver dentro do
-                    // prazo de 12min pro motoboy chegar no estabelecimento,
-                    // exige justificativa (o motoboy vai ver isso na aba de
-                    // Cancelados dele, marcado como cancelado ANTES do prazo
-                    // acabar). Depois do prazo, cancela direto, sem perguntar
-                    // nada — igual sempre foi.
-                    let motivo;
+                    // CORRIGIDO em 24/09/2026 a pedido do Alessandro: agora
+                    // SEMPRE pede motivo, antes ou depois do prazo — a
+                    // diferença é só na frase. Antes do prazo, avisa que o
+                    // motoboy ainda está no tempo dele. Depois do prazo, só
+                    // pergunta o motivo, sem falar nada sobre atraso (porque
+                    // aí já é óbvio que ele está atrasado de verdade).
+                    let pergunta;
                     if (aindaNoEstabelecimento && dentroDoPrazo) {
-                      motivo = window.prompt(`O motoboy ainda está dentro do prazo normal pra chegar (faltam ${minutosRestantes} min). Por que está cancelando a entrega de ${p.clienteNome} mesmo assim?`, "");
-                      if (motivo === null || !motivo.trim()) { if (motivo !== null) alert("Precisa informar o motivo pra cancelar antes do prazo terminar."); return; }
-                      motivo = `[Cancelado antes do prazo de chegada — faltavam ${minutosRestantes} min] ${motivo.trim()}`;
+                      pergunta = `O motoboy ainda está no tempo dele pra chegar (faltam ${minutosRestantes} min). Por que você quer cancelar a entrega de ${p.clienteNome} mesmo assim?`;
                     } else {
-                      motivo = "Cancelado pelo estabelecimento";
+                      pergunta = `Por que você está cancelando a entrega de ${p.clienteNome}?`;
                     }
+                    let motivo = window.prompt(pergunta, "");
+                    if (motivo === null || !motivo.trim()) { if (motivo !== null) alert("Precisa informar o motivo pra cancelar."); return; }
+                    motivo = (aindaNoEstabelecimento && dentroDoPrazo)
+                      ? `[Cancelado antes do prazo de chegada — faltavam ${minutosRestantes} min] ${motivo.trim()}`
+                      : motivo.trim();
                     await supabase.from("pedidos").update({
                       status: "cancelado",
                       motivo_cancelamento: motivo,
@@ -2071,6 +2083,16 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
               </div>
               {/* Linha 3: Motoboy */}
               {e.motoboyNome && <div style={{color:"#9ca3af",fontSize:12,marginBottom:6}}>🏍️ {e.motoboyNome}</div>}
+              {/* Adicionado em 24/09/2026 a pedido do Alessandro: mostra o
+                  motivo do cancelamento pro estabelecimento consultar depois
+                  — antes só aparecia num aviso rápido na hora, sem ficar
+                  registrado pra consulta posterior. */}
+              {!entregue && e.motivo && (
+                <div style={{background:"#3d1010",borderRadius:8,padding:"6px 10px",marginBottom:6}}>
+                  <div style={{color:"#f87171",fontSize:11,fontWeight:700}}>Motivo do cancelamento:</div>
+                  <div style={{color:"#fca5a5",fontSize:12,marginTop:1}}>{e.motivo}</div>
+                </div>
+              )}
               {/* Linha 4: Datas e horários */}
               <div style={{display:"flex",gap:12,flexWrap:"wrap",borderTop:"1px solid #1f2937",paddingTop:8,marginTop:4}}>
                 <div style={{fontSize:11,color:"#6b7280"}}>📅 {e.data}</div>

@@ -17,6 +17,15 @@ function estamosNoVerao() {
 function prazoChegadaMotoboyMin() {
   return estamosNoVerao() ? 15 : 12;
 }
+// Formata minutos de atraso de um jeito fácil de ler: "5 min", "45 min",
+// "1h 5min", "2h" — sem precisar ninguém fazer conta na cabeça.
+function formatarAtraso(minutosAtraso) {
+  const min = Math.floor(minutosAtraso);
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}min`;
+}
 
 const SUPORTE_TEL = "5512991213656";
 const BAIRROS = ["Perequê","Vila","Barra Velha","Itaquanduba","Água Branca","Zabumba","Sul","Centro","Armação","Curral"];
@@ -2857,7 +2866,7 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
                         background:dentroDoPrazo?"#0d3d2e":"#3d1010",color:dentroDoPrazo?"#34d399":"#f87171"}}>
                         {dentroDoPrazo
                           ? `⏱️ Dentro do prazo — chega em até ${minutosRestantes} min`
-                          : `⏱️ Passou do prazo de ${PRAZO_CHEGADA_MIN} min pra chegar`}
+                          : `⏱️ Motoboy está ${formatarAtraso(minutosDesdeAceite - PRAZO_CHEGADA_MIN)} atrasado`}
                       </div>
                     )}
                     {p.status!=="entregue" && (<>
