@@ -1157,7 +1157,16 @@ export default function AppMotoboy() {
     if (!online || !motoboyId) return;
     if (motoboy?.bloqueado || motoboy?.banido) return;
     if (corridaAtiva && !ehContaMonitoramento) return;
-    if (pedidoRef.current) return;
+    // CORRIGIDO em 28/09/2026: aqui existia um "if (pedidoRef.current) return;"
+    // que fazia esta busca NÃO recomeçar quando já havia uma oferta na tela.
+    // Só que, pras contas de monitoramento com corrida ativa, a sincronização
+    // da corrida (a cada 3s) troca o objeto corridaAtiva e faz este efeito
+    // recomeçar o tempo todo — então, com uma oferta tocando, ele saía cedo, a
+    // verificação "esse pedido ainda está disponível?" morria, e a oferta ficava
+    // tocando pra sempre mesmo depois de outro motoboy (ex: Alencar) aceitar.
+    // Reproduzido em simulação. A trava era desnecessária: a própria
+    // buscarPedidoReal já trata "tem oferta na tela" verificando o status dela e
+    // saindo, sem criar oferta duplicada.
 
     async function buscarPedidoReal() {
       if (pedidoRef.current) {
