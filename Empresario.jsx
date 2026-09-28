@@ -330,6 +330,10 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   const [calcKm, setCalcKm] = useState(false);
   const [taxaKm, setTaxaKm] = useState({e:0, m:0});
   const [erroCalculo, setErroCalculo] = useState(false);
+  // Adicionado em 27/09/2026: avisa quando o Google não teve certeza do
+  // endereço digitado (achou por aproximação, nome parecido) — sem travar
+  // a entrega, só alertando pra conferir antes de confirmar.
+  const [avisoEnderecoImpreciso, setAvisoEnderecoImpreciso] = useState(null);
   // Guarda qual caminho o cálculo usou (endereço completo, bairro oficial, etc) —
   // salvo junto com o pedido, pra dar pra investigar depois se algum valor parecer
   // estranho, sem precisar pedir print de mapa pro empresário de novo.
@@ -414,9 +418,17 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
     let cancelado = false;
     setCalcKm(true);
     setErroCalculo(false);
+    setAvisoEnderecoImpreciso(null);
     (async()=>{
       try {
-        const enderecoDestino = `${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil`;
+        // CORRIGIDO em 27/09/2026: antes incluía o bairro digitado junto com a
+        // rua nessa mesma string. Descoberta uma brecha real: quando o
+        // bairro NÃO bate com onde a rua realmente fica (por engano ou de
+        // propósito, pra pagar menos), o Google às vezes priorizava o
+        // bairro na hora de achar o lugar, devolvendo a distância do bairro
+        // errado — mais barata, sem avisar nada. Agora manda só rua +
+        // número + cidade, sem bairro — a rua real decide o cálculo.
+        const enderecoDestino = `${rua}, ${num||""}, Ilhabela, SP, Brasil`;
         const enderecoOrigem = empresa.endereco
           ? `${empresa.endereco}, Ilhabela, SP, Brasil`
           : `${empresa.bairro||""}, Ilhabela, SP, Brasil`;
@@ -435,7 +447,15 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         if (!cancelado && data.ok) {
           setDistanciaKm(data.km.toFixed(1));
           setTaxaKm(calcularTaxaPorKm(data.km));
-          setMetodoCalculoKm("Google Maps — endereço completo");
+          if (data.enderecoImpreciso) {
+            // O Google não achou o endereço exato — "chutou" por nome
+            // parecido. Não trava a entrega, só avisa pra conferir.
+            setMetodoCalculoKm("Google Maps — ⚠️ endereço não bateu exatamente");
+            setAvisoEnderecoImpreciso(data.enderecoEncontrado || null);
+          } else {
+            setMetodoCalculoKm("Google Maps — endereço completo");
+            setAvisoEnderecoImpreciso(null);
+          }
           return;
         }
 
@@ -692,6 +712,14 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
               </div>
             </div>
           )}
+          {!calcKm && avisoEnderecoImpreciso && (
+            <div style={{background:"#3d2a00",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px",marginTop:10}}>
+              <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⚠️ Confere o endereço do cliente</div>
+              <div style={{color:"#d1d5db",fontSize:12,marginTop:3}}>
+                O Google não achou esse endereço com certeza — ele calculou usando "<strong>{avisoEnderecoImpreciso}</strong>", que pode não ser exatamente o lugar certo. Se não bater, corrija a rua/bairro antes de confirmar.
+              </div>
+            </div>
+          )}
           {!calcKm && !distanciaKm && erroCalculo && (
             <div>
               <div style={{color:"#f87171",fontSize:13,marginBottom:10}}>
@@ -840,6 +868,10 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   const [calcKm, setCalcKm] = useState(false);
   const [taxaKm, setTaxaKm] = useState({e:0, m:0});
   const [erroCalculo, setErroCalculo] = useState(false);
+  // Adicionado em 27/09/2026: avisa quando o Google não teve certeza do
+  // endereço digitado (achou por aproximação, nome parecido) — sem travar
+  // a entrega, só alertando pra conferir antes de confirmar.
+  const [avisoEnderecoImpreciso, setAvisoEnderecoImpreciso] = useState(null);
   // Guarda qual caminho o cálculo usou (endereço completo, bairro oficial, etc) —
   // salvo junto com o pedido, pra dar pra investigar depois se algum valor parecer
   // estranho, sem precisar pedir print de mapa pro empresário de novo.
@@ -886,9 +918,17 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
     let cancelado = false;
     setCalcKm(true);
     setErroCalculo(false);
+    setAvisoEnderecoImpreciso(null);
     (async()=>{
       try {
-        const enderecoDestino = `${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil`;
+        // CORRIGIDO em 27/09/2026: antes incluía o bairro digitado junto com a
+        // rua nessa mesma string. Descoberta uma brecha real: quando o
+        // bairro NÃO bate com onde a rua realmente fica (por engano ou de
+        // propósito, pra pagar menos), o Google às vezes priorizava o
+        // bairro na hora de achar o lugar, devolvendo a distância do bairro
+        // errado — mais barata, sem avisar nada. Agora manda só rua +
+        // número + cidade, sem bairro — a rua real decide o cálculo.
+        const enderecoDestino = `${rua}, ${num||""}, Ilhabela, SP, Brasil`;
         const enderecoOrigem = empresa.endereco
           ? `${empresa.endereco}, Ilhabela, SP, Brasil`
           : `${empresa.bairro||""}, Ilhabela, SP, Brasil`;
@@ -903,7 +943,15 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         if (!cancelado && data.ok) {
           setDistanciaKm(data.km.toFixed(1));
           setTaxaKm(calcularTaxaPorKm(data.km));
-          setMetodoCalculoKm("Google Maps — endereço completo");
+          if (data.enderecoImpreciso) {
+            // O Google não achou o endereço exato — "chutou" por nome
+            // parecido. Não trava a entrega, só avisa pra conferir.
+            setMetodoCalculoKm("Google Maps — ⚠️ endereço não bateu exatamente");
+            setAvisoEnderecoImpreciso(data.enderecoEncontrado || null);
+          } else {
+            setMetodoCalculoKm("Google Maps — endereço completo");
+            setAvisoEnderecoImpreciso(null);
+          }
           return;
         }
 
@@ -1118,6 +1166,14 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
           {!calcKm && distanciaKm && taxaKm.e > 0 && (
             <div style={{color:"#34d399",fontWeight:900,fontSize:28}}>R${taxaKm.e.toFixed(2)}</div>
           )}
+          {!calcKm && avisoEnderecoImpreciso && (
+            <div style={{background:"#3d2a00",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px",marginTop:10}}>
+              <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⚠️ Confere o endereço do cliente</div>
+              <div style={{color:"#d1d5db",fontSize:12,marginTop:3}}>
+                O Google não achou esse endereço com certeza — ele calculou usando "<strong>{avisoEnderecoImpreciso}</strong>", que pode não ser exatamente o lugar certo. Se não bater, corrija a rua/bairro antes de confirmar.
+              </div>
+            </div>
+          )}
           {!calcKm && !distanciaKm && erroCalculo && (
             <div>
               <div style={{color:"#f87171",fontSize:13,marginBottom:10}}>
@@ -1294,6 +1350,24 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
       setModalAddCorrida(null);
       return;
     }
+    // Adicionado em 27/09/2026: o pedido adicionado entra direto como
+    // "aceito", mas antes não gravava o horário do aceite — sem ele, o
+    // cronômetro do prazo de chegada não aparecia nesse pedido (só no que o
+    // motoboy tinha aceitado). Como o motoboy já está a caminho do
+    // estabelecimento desde que aceitou a corrida, o prazo de chegada dele
+    // conta a partir desse aceite ORIGINAL — herda o horário do pedido mais
+    // antigo da mesma corrida em vez de zerar o relógio agora.
+    let aceitoEmDaCorrida = new Date().toISOString();
+    const { data: pedidoAnteriorDaCorrida } = await supabase
+      .from("pedidos")
+      .select("aceito_em")
+      .eq("corrida_id", novoPedido.corridaId)
+      .not("aceito_em", "is", null)
+      .order("aceito_em", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (pedidoAnteriorDaCorrida?.aceito_em) aceitoEmDaCorrida = pedidoAnteriorDaCorrida.aceito_em;
+
     const { data: pedidoDB } = await supabase.from("pedidos").insert({
       empresario_id: empresa.id,
       motoboy_id: novoPedido.motoboyId,
@@ -1314,6 +1388,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
       distancia_km: novoPedido.distanciaKm,
       metodo_calculo_km: novoPedido.metodoCalculoKm,
       status: "aceito", // já entra direto na corrida do motoboy, sem precisar aceitar de novo
+      aceito_em: aceitoEmDaCorrida,
     }).select().single();
 
     await onRecarregar();

@@ -1478,7 +1478,14 @@ export default function AppMotoboy() {
       if (!prev) return prev;
       return {
         ...prev,
-        pedidos: data.map(p=>({
+        // CORRIGIDO em 27/09/2026: esta busca inclui os pedidos "cancelado"
+        // (só pra conseguir detectar quando TODOS foram cancelados, acima).
+        // Mas antes ela recolocava todos na tela, inclusive o pedido que
+        // acabou de ser cancelado — por isso, cancelar um pedido (pelo
+        // empresário ou pelo próprio motoboy) fazia ele sumir e "voltar"
+        // poucos segundos depois. Agora só mantém na tela os que seguem
+        // ativos.
+        pedidos: data.filter(p => p.status !== "cancelado").map(p=>({
           id: p.id,
           empresaNome: p.empresarios?.nome || "Estabelecimento",
           empresaTel: p.empresarios?.telefone || "",
