@@ -47,15 +47,37 @@
           var s = document.querySelector('script[type="module"]');
           return s ? s.getAttribute('src') : null;
         }
-        var bundleAtual = pegarBundleAtual();
 
+        // CORRIGIDO em 28/09/2026 — esse verificador NUNCA funcionou desde que
+        // foi criado (28/08). Motivo: ele guardava o nome do arquivo atual
+        // UMA vez, no instante em que este script roda — mas na página que a
+        // Vercel publica, o script principal do app vem DEPOIS deste na
+        // ordem da página, então ali ele ainda não existia e o resultado era
+        // sempre "nenhum". Sem saber a versão atual, ele nunca recarregava
+        // (a condição exigia os dois nomes). Provado com teste simulando um
+        // navegador. Agora o nome atual é descoberto NA HORA de cada checagem
+        // (a página já está inteira carregada), e isso resolve.
         async function checarVersaoNova() {
           try {
+            var bundleAtual = pegarBundleAtual();
+            if (!bundleAtual) return;
             var resp = await fetch('/', { cache: 'no-store' });
             var html = await resp.text();
             var m = html.match(/<script[^>]+type=["']module["'][^>]+src=["']([^"']+)["']/i);
             var bundleNovo = m ? m[1] : null;
-            if (bundleNovo && bundleAtual && bundleNovo !== bundleAtual) {
+            if (bundleNovo && bundleNovo !== bundleAtual) {
+              // Trava contra loop de recarga: no máximo 1 tentativa a cada 5
+              // minutos pra mesma versão nova, mesmo se algo impedir de
+              // pegar a versão certa depois de recarregar.
+              try {
+                var chave = 'motofast_reload_para';
+                var ultimo = sessionStorage.getItem(chave);
+                if (ultimo) {
+                  var partes = ultimo.split('|');
+                  if (partes[0] === bundleNovo && Date.now() - Number(partes[1]) < 300000) return;
+                }
+                sessionStorage.setItem(chave, bundleNovo + '|' + Date.now());
+              } catch (e) { /* sem sessionStorage: segue sem a trava */ }
               console.log('[MotoFast] Nova versão detectada — recarregando automaticamente...');
               window.location.reload();
             }
@@ -64,8 +86,10 @@
           }
         }
 
-        // Checa a cada 60 segundos, e também sempre que o app volta a ficar visível
-        // (ex: motoboy que estava com a tela apagada e reabre o celular)
+        // Checa 15s depois de abrir (pega página velha que veio do cache), a
+        // cada 60 segundos, e sempre que o app volta a ficar visível (ex:
+        // motoboy que estava com a tela apagada e reabre o celular).
+        setTimeout(checarVersaoNova, 15000);
         setInterval(checarVersaoNova, 60000);
         document.addEventListener('visibilitychange', function () {
           if (document.visibilityState === 'visible') checarVersaoNova();

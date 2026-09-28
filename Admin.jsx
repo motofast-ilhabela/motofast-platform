@@ -1010,6 +1010,9 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   const [calcKmReg, setCalcKmReg] = useState(false);
   const [taxaKmReg, setTaxaKmReg] = useState({e:0, m:0});
   const [erroCalculoReg, setErroCalculoReg] = useState(false);
+  // Adicionado em 27/09/2026: mesmo aviso do Empresario.jsx — Google achou
+  // por aproximação, não exato.
+  const [avisoEnderecoImprecisoReg, setAvisoEnderecoImprecisoReg] = useState(null);
 
   // Fórmula por porcentagem — mesma lógica do Empresario.jsx (ver comentário
   // completo lá): Alessandro fica com 20% de cada entrega, motoboy recebe os
@@ -1070,9 +1073,14 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
     let cancelado = false;
     setCalcKmReg(true);
     setErroCalculoReg(false);
+    setAvisoEnderecoImprecisoReg(null);
     (async()=>{
       try {
-        const enderecoDestino = `${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil`;
+        // CORRIGIDO em 27/09/2026: mesma correção do Empresario.jsx — não manda
+        // mais o bairro pro Google junto com a rua (evita o Google priorizar
+        // o bairro digitado quando ele não bate com a rua real, dando
+        // distância mais barata e errada).
+        const enderecoDestino = `${rua}, ${num||""}, Ilhabela, SP, Brasil`;
         const enderecoOrigem = empSel.enderecoEstab
           ? `${empSel.enderecoEstab}, Ilhabela, SP, Brasil`
           : `${empSel.bairro||""}, Ilhabela, SP, Brasil`;
@@ -1084,6 +1092,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
         if (!cancelado && data.ok) {
           setDistanciaKmReg(data.km.toFixed(1));
           setTaxaKmReg(calcularTaxaPorKmReg(data.km));
+          if (data.enderecoImpreciso) setAvisoEnderecoImprecisoReg(data.enderecoEncontrado || null);
         } else if (!cancelado) {
           const resp2 = await fetch("/api/calcular-distancia", {
             method: "POST", headers: {"Content-Type":"application/json"},
@@ -1844,6 +1853,12 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                   )}
                   {empSel.modeloPrecificacao==="km" && !calcKmReg && erroCalculoReg && (
                     <div style={{color:"#f87171",fontSize:12,marginTop:4}}>⚠️ Não conseguiu calcular a distância — usando reserva por bairro abaixo.</div>
+                  )}
+                  {empSel.modeloPrecificacao==="km" && !calcKmReg && avisoEnderecoImprecisoReg && (
+                    <div style={{background:"#3d2a00",border:"1px solid #f59e0b",borderRadius:8,padding:"8px 12px",marginTop:6}}>
+                      <div style={{color:"#fbbf24",fontSize:11,fontWeight:700}}>⚠️ Endereço não bateu exatamente</div>
+                      <div style={{color:"#d1d5db",fontSize:11,marginTop:2}}>Google calculou usando "<strong>{avisoEnderecoImprecisoReg}</strong>" — confere se é o lugar certo.</div>
+                    </div>
                   )}
                   <div style={{color:"#34d399",fontWeight:800,fontSize:20,marginTop:4}}>Cliente R${taxaReg.e} → Motoboy R${taxaReg.m}</div>
                 </div>
@@ -2842,8 +2857,13 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
                 </div>
                 {pedidosDaCorrida.map((p,i)=>{
                   const PRAZO_CHEGADA_MIN = prazoChegadaMotoboyMin();
-                  const aindaNoEstabelecimento = p.status==="aceito" && p.aceitoEm;
-                  const minutosDesdeAceite = aindaNoEstabelecimento ? (Date.now() - p.aceitoEm) / 60000 : 0;
+                  // Se o pedido não tem o próprio horário de aceite (ex: adicionado
+                  // pelo empresário por uma página ainda na versão antiga), usa o
+                  // horário do aceite mais antigo da MESMA corrida.
+                  const temposAceite = pedidosDaCorrida.map(x => x.aceitoEm).filter(Boolean);
+                  const aceitoEmEfetivo = p.aceitoEm || (temposAceite.length ? Math.min(...temposAceite) : null);
+                  const aindaNoEstabelecimento = p.status==="aceito" && aceitoEmEfetivo;
+                  const minutosDesdeAceite = aindaNoEstabelecimento ? (Date.now() - aceitoEmEfetivo) / 60000 : 0;
                   const dentroDoPrazo = minutosDesdeAceite < PRAZO_CHEGADA_MIN;
                   const minutosRestantes = Math.max(0, Math.ceil(PRAZO_CHEGADA_MIN - minutosDesdeAceite));
                   return (

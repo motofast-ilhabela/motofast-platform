@@ -396,9 +396,17 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                     // estabelecimento, contado a partir do aceite — some
                     // sozinho assim que ele clica "Saí do estabelecimento"
                     // (já não faz mais sentido depois disso).
-                    if (!p.aceitoEm) return null;
+                    // Se o pedido não tem o próprio horário de aceite (ex: foi
+                    // adicionado pelo empresário por uma página ainda na versão
+                    // antiga), usa o horário do aceite mais antigo da MESMA
+                    // corrida — o motoboy já está a caminho desde então.
+                    const temposAceite = corrida.pedidos.map(x => x.aceitoEm).filter(Boolean).map(x => new Date(x).getTime());
+                    const aceitoEmEfetivo = p.aceitoEm
+                      ? new Date(p.aceitoEm).getTime()
+                      : (temposAceite.length ? Math.min(...temposAceite) : null);
+                    if (!aceitoEmEfetivo) return null;
                     const PRAZO_CHEGADA_MIN = prazoChegadaMotoboyMin();
-                    const minutosDesdeAceite = (Date.now() - new Date(p.aceitoEm).getTime()) / 60000;
+                    const minutosDesdeAceite = (Date.now() - aceitoEmEfetivo) / 60000;
                     const dentroDoPrazo = minutosDesdeAceite < PRAZO_CHEGADA_MIN;
                     const minutosRestantes = Math.max(0, Math.ceil(PRAZO_CHEGADA_MIN - minutosDesdeAceite));
                     return (
