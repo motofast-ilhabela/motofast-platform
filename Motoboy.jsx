@@ -1490,6 +1490,12 @@ export default function AppMotoboy() {
           pagamento: p.forma_pagamento, taxa: p.taxa_motoboy || p.taxa,
           valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
           criadoEm: new Date(p.criado_em).getTime(),
+          // CORRIGIDO em 27/09/2026: essa função recarrega a corrida do banco
+          // a cada poucos segundos e SUBSTITUI os pedidos da tela por esta
+          // versão. Como ela não trazia o horário do aceite, o cronômetro do
+          // prazo aparecia logo após aceitar e sumia poucos segundos depois,
+          // quando essa recarga rodava.
+          aceitoEm: p.aceito_em || null,
           statusBanco: p.status,
         })),
       };
