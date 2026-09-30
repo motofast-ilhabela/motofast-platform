@@ -1609,7 +1609,31 @@ export default function AppMotoboy() {
     // (relevante pras contas de monitoramento, que agora podem aceitar
     // pedido novo mesmo em corrida), o pedido novo entra na MESMA corrida,
     // em vez de criar uma nova e "perder de vista" a anterior.
+    //
+    // CORRIGIDO em 30/09/2026: essa decisão confiava só no estado local da
+    // tela (corridaAtiva?.id). Se esse estado ficasse desatualizado por
+    // qualquer motivo (ex: sincronização falhou, tela recarregou num
+    // momento ruim), o app achava que não tinha corrida em andamento e
+    // criava uma NOVA — mesmo já existindo uma corrida ativa de verdade no
+    // banco, com pedido pendente nela. Essa corrida antiga ficava órfã,
+    // presa, sem ninguém mais vendo ela (o motoboy só enxergava a nova).
+    // Aconteceu de verdade com um motoboy em 30/09/2026. Agora, antes de
+    // criar uma corrida nova, confere direto no banco se já existe alguma
+    // corrida ativa pra esse motoboy — a fonte da verdade nunca é só a
+    // tela.
     let corridaIdParaUsar = corridaAtiva?.id;
+    if (!corridaIdParaUsar) {
+      const { data: pedidoAtivoExistente } = await supabase
+        .from("pedidos")
+        .select("corrida_id")
+        .eq("motoboy_id", motoboyId)
+        .in("status", ["aceito", "saiu_estabelecimento"])
+        .not("corrida_id", "is", null)
+        .order("aceito_em", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      corridaIdParaUsar = pedidoAtivoExistente?.corrida_id;
+    }
     if (!corridaIdParaUsar) {
       const { data: corridaDB } = await supabase
         .from("corridas")
