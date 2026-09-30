@@ -1678,6 +1678,17 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                             : `⏱️ Motoboy está ${formatarAtraso(minutosDesdeAceite - PRAZO_CHEGADA_MIN)} atrasado`}
                         </div>
                       )}
+                      {/* Adicionado em 30/09/2026 a pedido do Alessandro: o
+                          Admin já mostrava "saiu do estabelecimento há Xm Ys"
+                          nessa fase — faltava a mesma informação aqui pro
+                          estabelecimento. Só aparece depois que o motoboy sai
+                          (é uma contagem diferente do cronômetro de prazo
+                          acima, que já sumiu nessa hora). */}
+                      {!finalizado && p.saiuEstabelecimentoEm && (
+                        <div style={{marginTop:6,display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,background:"#12305a",color:"#60a5fa"}}>
+                          🚀 A caminho do cliente há {formatTempo(Date.now() - new Date(p.saiuEstabelecimentoEm).getTime())}
+                        </div>
+                      )}
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
                       <div style={{color:"#34d399",fontWeight:800,fontSize:18}}>R${p.taxa}</div>
