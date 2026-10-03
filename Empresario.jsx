@@ -200,11 +200,11 @@ async function calcularPrioridade() {
 
   if (janelaAtiva) {
     const { data: mb } = await supabase.from("motoboys").select("id")
-      .eq("id", janelaAtiva.motoboy_id).eq("online", true).eq("ativo", true).eq("banido", false).maybeSingle();
+      .eq("id", janelaAtiva.motoboy_id).eq("online", true).eq("ativo", true).eq("banido", false).eq("bloqueado", false).maybeSingle();
     if (mb) {
       const { data: ocupado } = await supabase.from("pedidos").select("id")
-        .eq("motoboy_id", mb.id).in("status", ["aceito", "saiu_estabelecimento"]).maybeSingle();
-      if (!ocupado) {
+        .eq("motoboy_id", mb.id).in("status", ["aceito", "saiu_estabelecimento"]).limit(1);
+      if (!ocupado || ocupado.length === 0) {
         return {
           prioridadeAte: new Date(Date.now() + 20000).toISOString(),
           turnoPrioridade: null,
@@ -222,7 +222,7 @@ async function calcularPrioridade() {
     const { data: turnoFixoDB } = await supabase.from("motoboys_turno_fixo").select("motoboy_id").eq("turno", turno).eq("ativo", true);
     const idsTurnoFixo = (turnoFixoDB || []).map(t => t.motoboy_id);
     if (idsTurnoFixo.length > 0) {
-      const { data: onlineDB } = await supabase.from("motoboys").select("id").in("id", idsTurnoFixo).eq("online", true).eq("ativo", true).eq("banido", false);
+      const { data: onlineDB } = await supabase.from("motoboys").select("id").in("id", idsTurnoFixo).eq("online", true).eq("ativo", true).eq("banido", false).eq("bloqueado", false);
       const idsOnlineBrutos = (onlineDB || []).map(m => m.id);
       let idsOcupados = [];
       if (idsOnlineBrutos.length > 0) {
@@ -239,6 +239,18 @@ async function calcularPrioridade() {
     motoboyIdPrioridade: null,
     idsParaNotificar: idsOnlineTurnoFixo,
   };
+}
+
+// Adicionado em 02/10/2026: as contas de monitoramento do Alessandro recebem
+// aviso de toda corrida nova, mas precisam passar pelo mesmo filtro de
+// elegibilidade que qualquer motoboy (online, ativo, não banido, não
+// bloqueado) — antes não checava isso, e uma conta bloqueada continuava
+// recebendo aviso normalmente.
+async function idsMonitoramentoElegiveis() {
+  const { data } = await supabase.from("motoboys").select("id")
+    .in("id", CONTAS_MONITORAMENTO_IDS)
+    .eq("online", true).eq("ativo", true).eq("banido", false).eq("bloqueado", false);
+  return (data || []).map(m => m.id);
 }
 
 // Retorna a data (AAAA-MM-DD) da segunda-feira que inicia a semana REAL (segunda a
@@ -3155,7 +3167,7 @@ export default function AppEmpresario() {
       // também — só pra acompanhamento/gestão. NÃO dá prioridade nem acesso
       // antecipado pra aceitar; se alguma delas já for a própria prioridade
       // da vez, não manda de novo (evita notificação duplicada).
-      CONTAS_MONITORAMENTO_IDS.filter(id => !idsParaNotificar.includes(id)).forEach(motoboyId => {
+      (await idsMonitoramentoElegiveis()).filter(id => !idsParaNotificar.includes(id)).forEach(motoboyId => {
         fetch("/api/notificar-motoboy-especifico", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -3375,7 +3387,7 @@ export default function AppEmpresario() {
                       }),
                     }).catch(e => console.log("Erro ao notificar motoboy do turno fixo:", e));
                   });
-                  CONTAS_MONITORAMENTO_IDS.filter(id => !idsParaNotificarReenvio.includes(id)).forEach(motoboyId => {
+                  (await idsMonitoramentoElegiveis()).filter(id => !idsParaNotificarReenvio.includes(id)).forEach(motoboyId => {
                     fetch("/api/notificar-motoboy-especifico", {
                       method: "POST",
                       headers: { "Content-Type": "application/json" },
