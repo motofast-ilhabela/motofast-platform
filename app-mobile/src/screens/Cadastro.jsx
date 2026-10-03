@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient.js";
 import { lembrarEmail } from "../loginLembrado.js";
 import EmailsRecentes from "../EmailsRecentes.jsx";
+import EntrarComContaSalva, { liberarAberturaAutomatica } from "../EntrarComContaSalva.jsx";
+import { oferecerSalvarCredencial } from "../credenciais.js";
 
 // Cópia adaptada de Cadastro.jsx da plataforma web (ver CLAUDE.md — mudanças de
 // regra de negócio precisam ser replicadas manualmente entre as duas versões).
@@ -678,6 +680,11 @@ function TelaLogin({ tipo, onCadastrar }) {
     }
 
     await lembrarEmail(tipo, email);
+    // Login digitado à mão deu certo — pede pro Android mostrar "Salvar
+    // senha?" (ver credenciais.js). Se já estiver salva, ou a pessoa tocar
+    // em "Agora não", segue normal.
+    await oferecerSalvarCredencial(email, senha);
+    liberarAberturaAutomatica();
     navigate(tipo === "motoboy" ? "/motoboy" : "/empresario");
   }
 
@@ -690,6 +697,8 @@ function TelaLogin({ tipo, onCadastrar }) {
       </div>
 
       {erro && <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#f87171",fontSize:13}}>{erro}</div>}
+
+      <EntrarComContaSalva/>
 
       {/* <form> de verdade + autoComplete nos campos: é isso que faz o
           gerenciador de senhas do aparelho (Google / Chaveiro do iCloud)
@@ -769,6 +778,11 @@ export default function Cadastro() {
                 <div style={{color:"#34d399",fontWeight:900,fontSize:32,letterSpacing:-1,marginBottom:8}}>⚡ MotoFast</div>
                 <div style={{color:"#9ca3af",fontSize:15}}>Logística de entregas para Ilhabela e região</div>
               </div>
+
+              {/* Adicionado em 03/10/2026: abre sozinha (uma vez por abertura
+                  do app) a lista de contas salvas no celular — toca na conta e
+                  já entra na tela certa, seja motoboy, empresário ou admin. */}
+              <EntrarComContaSalva abrirSozinho/>
 
               <div style={{display:"flex",flexDirection:"column",gap:12,marginBottom:24}}>
                 {/* Card Empresário */}

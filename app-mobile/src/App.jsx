@@ -3,13 +3,15 @@ import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient.js'
 import { lembrarEmail } from './loginLembrado.js'
 import EmailsRecentes from './EmailsRecentes.jsx'
+import EntrarComContaSalva, { liberarAberturaAutomatica } from './EntrarComContaSalva.jsx'
+import { ADMIN_EMAIL, oferecerSalvarCredencial } from './credenciais.js'
 import Cadastro from './screens/Cadastro.jsx'
 import Motoboy from './screens/Motoboy.jsx'
 import Empresario from './screens/Empresario.jsx'
 import Admin from './screens/Admin.jsx'
 
-// Email autorizado como admin — mesma regra da plataforma web
-const ADMIN_EMAIL = "botdahora@gmail.com"
+// ADMIN_EMAIL (email autorizado como admin, mesma regra da plataforma web)
+// agora mora em credenciais.js — o login por conta salva também usa.
 
 // ─── TELA DE LOGIN DO ADMIN ───────────────────────────────────────────────────
 // Cópia adaptada do LoginAdmin de App.jsx da web: na web, o Admin NUNCA loga
@@ -44,6 +46,10 @@ function LoginAdmin() {
       setErro("Email ou senha incorretos.")
     } else {
       await lembrarEmail("admin", email)
+      // Login digitado deu certo — pede pro Android mostrar "Salvar senha?"
+      // (ver credenciais.js). O app nunca guarda a senha.
+      await oferecerSalvarCredencial(email, senha)
+      liberarAberturaAutomatica()
     }
     setCarregando(false)
   }
@@ -66,6 +72,8 @@ function LoginAdmin() {
             gerenciador de senhas do aparelho (Google / Chaveiro do iCloud)
             oferecer "Salvar senha?" e preencher sozinho da próxima vez — o
             app nunca guarda a senha (ver loginLembrado.js). */}
+        <EntrarComContaSalva/>
+
         <form onSubmit={entrar} autoComplete="on">
         {/* Só preenche o e-mail — sem levar o foco pra senha sozinho (o foco
             automático disparava o preenchimento do Android, que apagava o

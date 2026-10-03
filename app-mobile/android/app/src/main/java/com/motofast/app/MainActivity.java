@@ -12,6 +12,9 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(RideAlertPlugin.class);
+        // "Lembrar login" pelo Gerenciador de Credenciais do Android (ver
+        // CredenciaisPlugin) — independente do alarme acima.
+        registerPlugin(CredenciaisPlugin.class);
         super.onCreate(savedInstanceState);
     }
 

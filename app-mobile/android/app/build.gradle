@@ -47,6 +47,13 @@ dependencies {
     // versão própria.
     implementation platform('com.google.firebase:firebase-bom:34.19.0')
     implementation 'com.google.firebase:firebase-messaging'
+
+    // Gerenciador de Credenciais do Android — "lembrar login" (ver
+    // CredenciaisPlugin.java). O segundo pacote liga o Gerenciador de Senhas
+    // do Google via Play Services, necessário até o Android 13; do 14 em
+    // diante o sistema também oferece outros gerenciadores (ex: Samsung Pass).
+    implementation "androidx.credentials:credentials:1.3.0"
+    implementation "androidx.credentials:credentials-play-services-auth:1.3.0"
 }
 
 apply from: 'capacitor.build.gradle'
