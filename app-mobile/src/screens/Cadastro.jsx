@@ -602,11 +602,10 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
 // ─── TELA DE LOGIN ────────────────────────────────────────────────────────────
 function TelaLogin({ tipo, onCadastrar }) {
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
-  const [senha, setSenha] = useState("");
+  const [emailEstado, setEmail] = useState("");
+  const [senhaEstado, setSenha] = useState("");
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
-  const senhaRef = useRef(null);
 
   const config = {
     empresario: { emoji:"🏪", label:"Empresário", cor:"#60a5fa", desc:"Acesse para solicitar entregas" },
@@ -616,6 +615,16 @@ function TelaLogin({ tipo, onCadastrar }) {
 
   async function entrar(e) {
     if (e) e.preventDefault();
+    // CORRIGIDO em 03/10/2026 (teste no Samsung): o preenchimento automático
+    // do Android às vezes escreve direto no campo sem avisar o React — a tela
+    // mostrava a senha, mas o estado continuava vazio e dava "Preencha e-mail
+    // e senha". Agora lê o que está DE VERDADE nos campos do form na hora de
+    // entrar, e só cai no estado do React se o form não estiver disponível.
+    const form = e?.currentTarget;
+    const email = ((form?.elements?.email?.value) ?? emailEstado).trim();
+    const senha = (form?.elements?.password?.value) ?? senhaEstado;
+    if (email !== emailEstado) setEmail(email);
+    if (senha !== senhaEstado) setSenha(senha);
     if (!email || !senha) { setErro("Preencha e-mail e senha."); return; }
     if (!validarEmail(email)) { setErro("E-mail inválido."); return; }
     setErro("");
@@ -687,10 +696,13 @@ function TelaLogin({ tipo, onCadastrar }) {
           oferecer "Salvar senha?" e preencher sozinho da próxima vez — o app
           nunca guarda a senha (ver loginLembrado.js). */}
       <form onSubmit={entrar} autoComplete="on">
-      <EmailsRecentes tipo={tipo} cor={c.cor} onEscolher={em => { setEmail(em); senhaRef.current?.focus(); }}/>
+      {/* Só preenche o e-mail — NÃO leva o foco pra senha sozinho: no teste
+          de 03/10/2026, o foco automático disparava o preenchimento do
+          Android por conta própria, que apagava o e-mail recém-escolhido. */}
+      <EmailsRecentes tipo={tipo} cor={c.cor} onEscolher={em => setEmail(em)}/>
 
-      <Inp label="E-mail" value={email} onChange={setEmail} placeholder="seuemail@exemplo.com" type="email" name="email" autoComplete="username"/>
-      <Inp label="Senha" value={senha} onChange={setSenha} placeholder="Sua senha" type="password" name="password" autoComplete="current-password" inputRef={senhaRef}/>
+      <Inp label="E-mail" value={emailEstado} onChange={setEmail} placeholder="seuemail@exemplo.com" type="email" name="email" autoComplete="username"/>
+      <Inp label="Senha" value={senhaEstado} onChange={setSenha} placeholder="Sua senha" type="password" name="password" autoComplete="current-password"/>
 
       <div style={{textAlign:"right",marginBottom:14}}>
         <span style={{color:"#60a5fa",fontSize:12,cursor:"pointer"}} onClick={async()=>{const em=window.prompt("Digite o e-mail cadastrado nessa conta:");if(!em)return;const{error}=await supabase.auth.resetPasswordForEmail(em,{redirectTo:WEB_APP_URL+"/redefinir-senha"});alert(error?"Erro: "+error.message:"Se esse e-mail estiver cadastrado, você vai receber um link por e-mail pra trocar a senha (abre no navegador). Confira o spam também.")}}>Esqueci minha senha</span>

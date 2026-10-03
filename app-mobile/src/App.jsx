@@ -1,5 +1,5 @@
 import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { supabase } from './supabaseClient.js'
 import { lembrarEmail } from './loginLembrado.js'
 import EmailsRecentes from './EmailsRecentes.jsx'
@@ -20,14 +20,22 @@ const ADMIN_EMAIL = "botdahora@gmail.com"
 // as tabelas empresarios/motoboys, nunca o e-mail de admin).
 function LoginAdmin() {
   const navigate = useNavigate()
-  const [email, setEmail] = useState("")
-  const [senha, setSenha] = useState("")
+  const [emailEstado, setEmail] = useState("")
+  const [senhaEstado, setSenha] = useState("")
   const [erro, setErro] = useState("")
   const [carregando, setCarregando] = useState(false)
-  const senhaRef = useRef(null)
 
   async function entrar(e) {
     if (e) e.preventDefault()
+    // CORRIGIDO em 03/10/2026 (teste no Samsung): lê o que está DE VERDADE
+    // nos campos do form — o preenchimento automático do Android às vezes
+    // escreve direto no campo sem avisar o React (ver TelaLogin no
+    // Cadastro.jsx, mesmo problema).
+    const form = e?.currentTarget
+    const email = ((form?.elements?.email?.value) ?? emailEstado).trim()
+    const senha = (form?.elements?.password?.value) ?? senhaEstado
+    if (email !== emailEstado) setEmail(email)
+    if (senha !== senhaEstado) setSenha(senha)
     if (!email || !senha) { setErro("Preencha email e senha."); return; }
     setCarregando(true)
     setErro("")
@@ -59,7 +67,10 @@ function LoginAdmin() {
             oferecer "Salvar senha?" e preencher sozinho da próxima vez — o
             app nunca guarda a senha (ver loginLembrado.js). */}
         <form onSubmit={entrar} autoComplete="on">
-        <EmailsRecentes tipo="admin" onEscolher={em => { setEmail(em); senhaRef.current?.focus() }}/>
+        {/* Só preenche o e-mail — sem levar o foco pra senha sozinho (o foco
+            automático disparava o preenchimento do Android, que apagava o
+            e-mail escolhido). */}
+        <EmailsRecentes tipo="admin" onEscolher={em => setEmail(em)}/>
 
         <div style={{marginBottom:14}}>
           <div style={{color:"#9ca3af",fontSize:12,marginBottom:6,fontWeight:600}}>Email</div>
@@ -69,7 +80,7 @@ function LoginAdmin() {
             id="admin-email"
             autoComplete="username"
             autoCapitalize="none"
-            value={email}
+            value={emailEstado}
             onChange={e=>setEmail(e.target.value)}
             placeholder="seu@email.com"
             style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"11px 14px",width:"100%",fontSize:14,outline:"none",boxSizing:"border-box"}}
@@ -79,12 +90,11 @@ function LoginAdmin() {
         <div style={{marginBottom:24}}>
           <div style={{color:"#9ca3af",fontSize:12,marginBottom:6,fontWeight:600}}>Senha</div>
           <input
-            ref={senhaRef}
             type="password"
             name="password"
             id="admin-senha"
             autoComplete="current-password"
-            value={senha}
+            value={senhaEstado}
             onChange={e=>setSenha(e.target.value)}
             placeholder="••••••••"
             style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"11px 14px",width:"100%",fontSize:14,outline:"none",boxSizing:"border-box"}}
