@@ -96,6 +96,13 @@ const SUPORTE_TEL = "5512991213656";
 // aqui só pra receberem uma notificação informativa de todo pedido novo,
 // mesmo quando não são a prioridade da vez. Não dá acesso pra aceitar antes
 // da hora — isso continua controlado só pelo Motoboy.jsx.
+// Máximo de entregas que UM motoboy leva ao mesmo tempo na mesma corrida.
+// Mudado de 3 pra 4 em 28/09/2026 no site a pedido do Alessandro (correria
+// de temporada), replicado aqui em 03/10/2026 — quando chegar a temporada e
+// quiser 5, é só trocar este número aqui: todos os textos e travas da tela
+// se ajustam sozinhos.
+const MAX_PEDIDOS_POR_CORRIDA = 4;
+
 const CONTAS_MONITORAMENTO_IDS = [
   "c98107a7-1fd1-4429-9502-d8496501347d",
   "a8cc6740-ca4d-4bb1-9292-0b81ce8f18be",
@@ -1414,7 +1421,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
         );
       })}
 
-      {/* Corridas em rota — agrupa até 3 pedidos no mesmo motoboy */}
+      {/* Corridas em rota — agrupa até MAX_PEDIDOS_POR_CORRIDA pedidos no mesmo motoboy */}
       {corridas.map(corrida=>{
         const primeiro = corrida.pedidos[0];
         const totalCorrida = corrida.pedidos.reduce((s,p)=>s+(p.taxa||0),0);
@@ -1425,7 +1432,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12,flexWrap:"wrap",gap:8}}>
               <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                 <span style={{background:"#0d3d2e",color:"#34d399",padding:"3px 12px",borderRadius:20,fontSize:13,fontWeight:700}}>🏍️ Motoboy a caminho!</span>
-                <Tag label={`${corrida.pedidos.length}/3 pedido${corrida.pedidos.length!==1?"s":""} nesta corrida`} cor="#60a5fa"/>
+                <Tag label={`${corrida.pedidos.length}/${MAX_PEDIDOS_POR_CORRIDA} pedido${corrida.pedidos.length!==1?"s":""} nesta corrida`} cor="#60a5fa"/>
               </div>
               <div style={{textAlign:"right"}}>
                 <div style={{color:"#6b7280",fontSize:11}}>Total da corrida</div>
@@ -1517,7 +1524,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
               </button>
             </div>
 
-            {/* Adicionar pedido extra à mesma corrida (máx 3) ou aviso de limite —
+            {/* Adicionar pedido extra à mesma corrida (máx MAX_PEDIDOS_POR_CORRIDA) ou aviso de limite —
                 também travado quando o estabelecimento já bateu o limite mensal de
                 entregas, exatamente como a aba "Nova Entrega". Sem essa checagem
                 aqui, dava pra "furar" o bloqueio adicionando pedidos numa corrida
@@ -1526,7 +1533,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
               <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px"}}>
                 <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>🔒 Limite de {LIMITE_ENTREGAS_MES} entregas do mês atingido. Vá na aba "Nova Entrega" pra ver como regularizar.</div>
               </div>
-            ) : corrida.pedidos.length<3 ? (
+            ) : corrida.pedidos.length<MAX_PEDIDOS_POR_CORRIDA ? (
               <Btn small cor="azul" full onClick={()=>setModalAddCorrida({
                 corridaId: corrida.corridaId,
                 motoboyId: primeiro.motoboyId,
@@ -1534,11 +1541,11 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                 motoboyTel: primeiro.motoboyTel,
                 vagaNum: corrida.pedidos.length+1,
               })}>
-                ➕ Adicionar pedido a esta corrida (vaga {corrida.pedidos.length+1}/3)
+                ➕ Adicionar pedido a esta corrida (vaga {corrida.pedidos.length+1}/{MAX_PEDIDOS_POR_CORRIDA})
               </Btn>
             ) : (
               <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px"}}>
-                <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⚠️ Máximo de 3 pedidos atingido para esta corrida. Para um 4º pedido, use "Nova Entrega" (vai chamar outro motoboy).</div>
+                <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⚠️ Esse motoboy já está com {MAX_PEDIDOS_POR_CORRIDA} entregas ao mesmo tempo (o máximo). Quando ele entregar alguma, libera vaga — ou use "Nova Entrega" pra chamar outro motoboy.</div>
               </div>
             )}
           </Card>
