@@ -34,6 +34,34 @@ function getOneSignal() {
   return typeof window !== "undefined" ? window.plugins?.OneSignal : undefined;
 }
 
+// Adicionado em 24/09/2026 no site a pedido do Alessandro (replicado aqui em
+// 03/10/2026): detecta sozinho se está no verão (alta temporada em
+// Ilhabela), sem precisar lembrar de avisar ninguém. Verão no Brasil =
+// 21/dez a 20/mar (datas praticamente fixas todo ano). Fora disso (outono,
+// inverno, primavera) = baixa temporada.
+function estamosNoVerao() {
+  const agora = new Date();
+  const mes = agora.getMonth() + 1;
+  const dia = agora.getDate();
+  if (mes === 12 && dia >= 21) return true;
+  if (mes === 1 || mes === 2) return true;
+  if (mes === 3 && dia <= 20) return true;
+  return false;
+}
+function prazoChegadaMotoboyMin() {
+  return estamosNoVerao() ? 15 : 12;
+}
+
+// Formata minutos de atraso de um jeito fácil de ler: "5 min", "45 min",
+// "1h 5min", "2h" — sem precisar ninguém fazer conta na cabeça.
+function formatarAtraso(minutosAtraso) {
+  const min = Math.floor(minutosAtraso);
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}min`;
+}
+
 // Mesmo app OneSignal que o site já usa (ver api/notificar-motoboys.js e
 // api/notificar-motoboy-especifico.js) — o ID em si não é segredo, só
 // identifica pra qual app OneSignal o dispositivo se conecta.
@@ -403,6 +431,14 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
   const [motivoCustom, setMotivoCustom] = useState("");
   const [modalCancelarItem, setModalCancelarItem] = useState(null); // id do pedido, ou null
   const [motivoItem, setMotivoItem] = useState("");
+  // Adicionado em 24/09/2026 no site (replicado aqui em 03/10/2026): atualiza
+  // a tela sozinha a cada segundo, pro cronômetro do prazo de chegada contar
+  // em tempo real.
+  const [, setTickCorrida] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTickCorrida(x => x + 1), 1000);
+    return () => clearInterval(t);
+  }, []);
 
   async function sairEstabelecimento(pedidoId) {
     setSaiuEstab(prev=>({...prev,[pedidoId]:true}));
@@ -477,6 +513,35 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                   <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏪 1º — Ir buscar no estabelecimento</div>
                   <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{p.empresaNome}</div>
                   <div style={{color:"#9ca3af",fontSize:13,marginTop:2}}>{p.empresaEndereco||"Perequê, Ilhabela/SP"}</div>
+                  {(()=>{
+                    // Adicionado em 24/09/2026 no site a pedido do Alessandro
+                    // (replicado aqui em 03/10/2026): cronômetro do prazo de
+                    // 12min (15min no verão) pra chegar no estabelecimento,
+                    // contado a partir do aceite — some sozinho assim que ele
+                    // clica "Saí do estabelecimento" (já não faz mais sentido
+                    // depois disso).
+                    // Se o pedido não tem o próprio horário de aceite (ex: foi
+                    // adicionado pelo empresário por uma versão antiga), usa o
+                    // horário do aceite mais antigo da MESMA corrida — o
+                    // motoboy já está a caminho desde então.
+                    const temposAceite = corrida.pedidos.map(x => x.aceitoEm).filter(Boolean).map(x => new Date(x).getTime());
+                    const aceitoEmEfetivo = p.aceitoEm
+                      ? new Date(p.aceitoEm).getTime()
+                      : (temposAceite.length ? Math.min(...temposAceite) : null);
+                    if (!aceitoEmEfetivo) return null;
+                    const PRAZO_CHEGADA_MIN = prazoChegadaMotoboyMin();
+                    const minutosDesdeAceite = (Date.now() - aceitoEmEfetivo) / 60000;
+                    const dentroDoPrazo = minutosDesdeAceite < PRAZO_CHEGADA_MIN;
+                    const minutosRestantes = Math.max(0, Math.ceil(PRAZO_CHEGADA_MIN - minutosDesdeAceite));
+                    return (
+                      <div style={{marginTop:8,padding:"6px 12px",borderRadius:8,fontSize:12,fontWeight:800,textAlign:"center",
+                        background:dentroDoPrazo?"#0d3d2e":"#3d1010",color:dentroDoPrazo?"#34d399":"#f87171"}}>
+                        {dentroDoPrazo
+                          ? `⏱️ Você está no prazo — chegue em até ${minutosRestantes} min`
+                          : `⏱️ Você está ${formatarAtraso(minutosDesdeAceite - PRAZO_CHEGADA_MIN)} atrasado`}
+                      </div>
+                    );
+                  })()}
                   {p.empresaTel && (
                     <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
                       <a href={`https://wa.me/55${p.empresaTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
@@ -1160,6 +1225,7 @@ export default function Motoboy() {
                 pagamento: p.forma_pagamento, taxa: p.taxa_motoboy || p.taxa,
                 valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
                 criadoEm: new Date(p.criado_em).getTime(),
+                aceitoEm: p.aceito_em || null,
                 statusBanco: p.status,
               })),
             });
@@ -1637,6 +1703,7 @@ export default function Motoboy() {
                 obs: pedidoCompleto.observacao,
                 valorPedido: pedidoCompleto.valor_pedido, valorReceber: pedidoCompleto.valor_receber, troco: pedidoCompleto.valor_troco,
                 criadoEm: new Date(pedidoCompleto.criado_em).getTime(),
+                aceitoEm: pedidoCompleto.aceito_em || null,
               };
               // CORRIGIDO em 26/09/2026: se esse MESMO pedido já estava
               // sendo ofertado normalmente pra mim (pedidoRef.current — todo
@@ -1763,6 +1830,12 @@ export default function Motoboy() {
           pagamento: p.forma_pagamento, taxa: p.taxa_motoboy || p.taxa,
           valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
           criadoEm: new Date(p.criado_em).getTime(),
+          // CORRIGIDO em 27/09/2026 no site (replicado aqui em 03/10/2026):
+          // essa função recarrega a corrida do banco a cada poucos segundos e
+          // SUBSTITUI os pedidos da tela por esta versão. Sem o horário do
+          // aceite aqui, o cronômetro do prazo aparecia logo após aceitar e
+          // sumia poucos segundos depois, quando essa recarga rodava.
+          aceitoEm: p.aceito_em || null,
           statusBanco: p.status,
         })),
       };
@@ -1888,8 +1961,8 @@ export default function Motoboy() {
     }).then(()=>{}, e=>console.log("Erro ao registrar aceite:", e));
 
     setCorridaAtiva(prev => prev
-      ? { ...prev, pedidos: [...prev.pedidos, {...pedidoDisponivel}] }
-      : { id: corridaIdParaUsar || Date.now(), pedidos: [{...pedidoDisponivel}] }
+      ? { ...prev, pedidos: [...prev.pedidos, {...pedidoDisponivel, aceitoEm: data.aceito_em}] }
+      : { id: corridaIdParaUsar || Date.now(), pedidos: [{...pedidoDisponivel, aceitoEm: data.aceito_em}] }
     );
     setPedidoDisponivel(null);
     pedidoRef.current = null;

@@ -2,6 +2,34 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient.js";
 
+// Adicionado em 24/09/2026 no site a pedido do Alessandro (replicado aqui em
+// 03/10/2026): detecta sozinho se está no verão (alta temporada em
+// Ilhabela). Verão no Brasil = 21/dez a 20/mar. Fora disso = baixa
+// temporada. O prazo de chegada do motoboy no estabelecimento é maior no
+// verão.
+function estamosNoVerao() {
+  const agora = new Date();
+  const mes = agora.getMonth() + 1;
+  const dia = agora.getDate();
+  if (mes === 12 && dia >= 21) return true;
+  if (mes === 1 || mes === 2) return true;
+  if (mes === 3 && dia <= 20) return true;
+  return false;
+}
+function prazoChegadaMotoboyMin() {
+  return estamosNoVerao() ? 15 : 12;
+}
+
+// Formata minutos de atraso de um jeito fácil de ler: "5 min", "45 min",
+// "1h 5min", "2h" — sem precisar ninguém fazer conta na cabeça.
+function formatarAtraso(minutosAtraso) {
+  const min = Math.floor(minutosAtraso);
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}min`;
+}
+
 // Som de alerta pra cancelamento de motoboy — adicionado no site em
 // 07/09/2026 a pedido do Alessandro. Estabelecimentos não ficam olhando a
 // tela o tempo todo, então um aviso só visual passava despercebido: o
@@ -1354,6 +1382,25 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
       setModalAddCorrida(null);
       return;
     }
+    // Adicionado em 27/09/2026 no site (replicado aqui em 03/10/2026): o
+    // pedido adicionado entra direto como "aceito", mas antes não gravava o
+    // horário do aceite — sem ele, o cronômetro do prazo de chegada não
+    // aparecia nesse pedido (só no que o motoboy tinha aceitado). Como o
+    // motoboy já está a caminho do estabelecimento desde que aceitou a
+    // corrida, o prazo de chegada dele conta a partir desse aceite ORIGINAL —
+    // herda o horário do pedido mais antigo da mesma corrida em vez de zerar
+    // o relógio agora.
+    let aceitoEmDaCorrida = new Date().toISOString();
+    const { data: pedidoAnteriorDaCorrida } = await supabase
+      .from("pedidos")
+      .select("aceito_em")
+      .eq("corrida_id", novoPedido.corridaId)
+      .not("aceito_em", "is", null)
+      .order("aceito_em", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (pedidoAnteriorDaCorrida?.aceito_em) aceitoEmDaCorrida = pedidoAnteriorDaCorrida.aceito_em;
+
     const { data: pedidoDB } = await supabase.from("pedidos").insert({
       empresario_id: empresa.id,
       motoboy_id: novoPedido.motoboyId,
@@ -1374,6 +1421,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
       distancia_km: novoPedido.distanciaKm,
       metodo_calculo_km: novoPedido.metodoCalculoKm,
       status: "aceito", // já entra direto na corrida do motoboy, sem precisar aceitar de novo
+      aceito_em: aceitoEmDaCorrida,
     }).select().single();
 
     await onRecarregar();
@@ -1508,6 +1556,26 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
             {/* Pedidos desta corrida */}
             {corrida.pedidos.map((p,i)=>{
               const pg = PG[p.pagamento]||{icon:"•",cor:"#9ca3af",label:p.pagamento};
+              const finalizado = p.status==="entregue";
+              // Adicionado em 24/09/2026 no site a pedido do Alessandro
+              // (replicado aqui em 03/10/2026): cronômetro do prazo de
+              // chegada no estabelecimento (12 minutos, 15 no verão, a partir
+              // do ACEITE, não da criação do pedido). Só faz sentido enquanto
+              // o motoboy ainda não retirou o pedido — depois que ele clica
+              // "saí do estabelecimento", o prazo de chegada já foi
+              // cumprido, então o cronômetro para de aparecer.
+              const PRAZO_CHEGADA_MIN = prazoChegadaMotoboyMin();
+              // Se o pedido não tem o próprio horário de aceite (ex: adicionado
+              // por uma versão antiga), usa o horário do aceite mais antigo da
+              // MESMA corrida.
+              const temposAceite = corrida.pedidos.map(x => x.aceitoEm).filter(Boolean).map(x => new Date(x).getTime());
+              const aceitoEmEfetivo = p.aceitoEm
+                ? new Date(p.aceitoEm).getTime()
+                : (temposAceite.length ? Math.min(...temposAceite) : null);
+              const aindaNoEstabelecimento = !finalizado && !p.saiuEstabelecimentoEm && aceitoEmEfetivo;
+              const minutosDesdeAceite = aindaNoEstabelecimento ? (Date.now() - aceitoEmEfetivo) / 60000 : 0;
+              const dentroDoPrazo = minutosDesdeAceite < PRAZO_CHEGADA_MIN;
+              const minutosRestantes = Math.max(0, Math.ceil(PRAZO_CHEGADA_MIN - minutosDesdeAceite));
               return (
                 <div key={p.id} style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
@@ -1518,6 +1586,26 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                       {p.obs && <div style={{color:"#9ca3af",fontSize:11,marginTop:2}}>💬 Obs: {p.obs}</div>}
                       {p.pagamento==="dinheiro" && <div style={{color:"#fbbf24",fontSize:11,marginTop:3,fontWeight:700}}>💵 Troco — motoboy retorna com o dinheiro</div>}
                       {p.pagamento==="cartao" && <div style={{color:"#60a5fa",fontSize:11,marginTop:3,fontWeight:700}}>💳 Maquininha já entregue ao motoboy</div>}
+                      {aindaNoEstabelecimento && (
+                        <div style={{marginTop:6,display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,
+                          background:dentroDoPrazo?"#0d3d2e":"#3d1010",color:dentroDoPrazo?"#34d399":"#f87171"}}>
+                          {dentroDoPrazo
+                            ? `⏱️ Motoboy no prazo — chega em até ${minutosRestantes} min`
+                            : `⏱️ Motoboy está ${formatarAtraso(minutosDesdeAceite - PRAZO_CHEGADA_MIN)} atrasado`}
+                        </div>
+                      )}
+                      {/* Adicionado em 30/09/2026 no site a pedido do Alessandro
+                          (replicado aqui em 03/10/2026): o Admin já mostrava
+                          "saiu do estabelecimento há Xm Ys" nessa fase —
+                          faltava a mesma informação aqui pro estabelecimento.
+                          Só aparece depois que o motoboy sai (é uma contagem
+                          diferente do cronômetro de prazo acima, que já sumiu
+                          nessa hora). */}
+                      {!finalizado && p.saiuEstabelecimentoEm && (
+                        <div style={{marginTop:6,display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,background:"#12305a",color:"#60a5fa"}}>
+                          🚀 A caminho do cliente há {formatTempo(Date.now() - new Date(p.saiuEstabelecimentoEm).getTime())}
+                        </div>
+                      )}
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
                       <div style={{color:"#34d399",fontWeight:800,fontSize:18}}>R${p.taxa}</div>
@@ -1533,11 +1621,27 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                     ✏️ Editar este pedido
                   </button>
                   <button onClick={async()=>{
-                    const motivo = window.prompt(`Por que está cancelando a entrega de ${p.clienteNome}? (o motoboy vai ver esse motivo)`, "");
-                    if (motivo === null) return; // clicou em Cancelar no aviso
+                    // CORRIGIDO em 24/09/2026 no site a pedido do Alessandro
+                    // (replicado aqui em 03/10/2026): agora SEMPRE pede
+                    // motivo, antes ou depois do prazo — a diferença é só na
+                    // frase. Antes do prazo, avisa que o motoboy ainda está no
+                    // tempo dele. Depois do prazo, só pergunta o motivo, sem
+                    // falar nada sobre atraso (porque aí já é óbvio que ele
+                    // está atrasado de verdade).
+                    let pergunta;
+                    if (aindaNoEstabelecimento && dentroDoPrazo) {
+                      pergunta = `O motoboy ainda está no tempo dele pra chegar (faltam ${minutosRestantes} min). Por que você quer cancelar a entrega de ${p.clienteNome} mesmo assim?`;
+                    } else {
+                      pergunta = `Por que você está cancelando a entrega de ${p.clienteNome}?`;
+                    }
+                    let motivo = window.prompt(pergunta, "");
+                    if (motivo === null || !motivo.trim()) { if (motivo !== null) alert("Precisa informar o motivo pra cancelar."); return; }
+                    motivo = (aindaNoEstabelecimento && dentroDoPrazo)
+                      ? `[Cancelado antes do prazo de chegada — faltavam ${minutosRestantes} min] ${motivo.trim()}`
+                      : motivo.trim();
                     await supabase.from("pedidos").update({
                       status: "cancelado",
-                      motivo_cancelamento: motivo.trim() || "Cancelado pelo estabelecimento",
+                      motivo_cancelamento: motivo,
                       cancelado_em: new Date().toISOString(),
                     }).eq("id", p.id);
                     await onRecarregar();
@@ -2638,6 +2742,7 @@ export default function Empresario() {
         motoboyNome: p.motoboys?.nome_completo || null,
         motoboyTel: p.motoboys?.telefone || null,
         corridaId: p.corrida_id,
+        aceitoEm: p.aceito_em || null,
         saiuEstabelecimentoEm: p.saiu_estabelecimento_em || null,
         entregueEm: p.entregue_em || null,
         distanciaKm: p.distancia_km || null,
