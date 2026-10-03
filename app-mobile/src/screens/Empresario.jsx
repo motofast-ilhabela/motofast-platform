@@ -399,7 +399,14 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
     setErroCalculo(false);
     (async()=>{
       try {
-        const enderecoDestino = `${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil`;
+        // CORRIGIDO em 27/09/2026: antes incluía o bairro digitado junto com a
+        // rua nessa mesma string. Descoberta uma brecha real: quando o
+        // bairro NÃO bate com onde a rua realmente fica (por engano ou de
+        // propósito, pra pagar menos), o Google às vezes priorizava o
+        // bairro na hora de achar o lugar, devolvendo a distância do bairro
+        // errado — mais barata, sem avisar nada. Agora manda só rua +
+        // número + cidade, sem bairro — a rua real decide o cálculo.
+        const enderecoDestino = `${rua}, ${num||""}, Ilhabela, SP, Brasil`;
         const enderecoOrigem = empresa.endereco
           ? `${empresa.endereco}, Ilhabela, SP, Brasil`
           : `${empresa.bairro||""}, Ilhabela, SP, Brasil`;
@@ -871,7 +878,14 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
     setErroCalculo(false);
     (async()=>{
       try {
-        const enderecoDestino = `${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil`;
+        // CORRIGIDO em 27/09/2026: antes incluía o bairro digitado junto com a
+        // rua nessa mesma string. Descoberta uma brecha real: quando o
+        // bairro NÃO bate com onde a rua realmente fica (por engano ou de
+        // propósito, pra pagar menos), o Google às vezes priorizava o
+        // bairro na hora de achar o lugar, devolvendo a distância do bairro
+        // errado — mais barata, sem avisar nada. Agora manda só rua +
+        // número + cidade, sem bairro — a rua real decide o cálculo.
+        const enderecoDestino = `${rua}, ${num||""}, Ilhabela, SP, Brasil`;
         const enderecoOrigem = empresa.endereco
           ? `${empresa.endereco}, Ilhabela, SP, Brasil`
           : `${empresa.bairro||""}, Ilhabela, SP, Brasil`;

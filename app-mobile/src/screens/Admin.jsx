@@ -1055,7 +1055,11 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
     setErroCalculoReg(false);
     (async()=>{
       try {
-        const enderecoDestino = `${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil`;
+        // CORRIGIDO em 27/09/2026: mesma correção do Empresario.jsx — não manda
+        // mais o bairro pro Google junto com a rua (evita o Google priorizar
+        // o bairro digitado quando ele não bate com a rua real, dando
+        // distância mais barata e errada).
+        const enderecoDestino = `${rua}, ${num||""}, Ilhabela, SP, Brasil`;
         const enderecoOrigem = empSel.enderecoEstab
           ? `${empSel.enderecoEstab}, Ilhabela, SP, Brasil`
           : `${empSel.bairro||""}, Ilhabela, SP, Brasil`;
