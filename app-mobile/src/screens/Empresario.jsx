@@ -333,6 +333,11 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   const [calcKm, setCalcKm] = useState(false);
   const [taxaKm, setTaxaKm] = useState({e:0, m:0});
   const [erroCalculo, setErroCalculo] = useState(false);
+  // Adicionado em 27/09/2026 no site (replicado aqui em 03/10/2026): avisa
+  // quando o Google não teve certeza do endereço digitado (achou por
+  // aproximação, nome parecido) — sem travar a entrega, só alertando pra
+  // conferir antes de confirmar.
+  const [avisoEnderecoImpreciso, setAvisoEnderecoImpreciso] = useState(null);
   // Guarda qual caminho o cálculo usou (endereço completo, bairro oficial, etc) —
   // salvo junto com o pedido, pra dar pra investigar depois se algum valor parecer
   // estranho, sem precisar pedir print de mapa pro empresário de novo.
@@ -417,6 +422,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
     let cancelado = false;
     setCalcKm(true);
     setErroCalculo(false);
+    setAvisoEnderecoImpreciso(null);
     (async()=>{
       try {
         // CORRIGIDO em 27/09/2026: antes incluía o bairro digitado junto com a
@@ -445,7 +451,15 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         if (!cancelado && data.ok) {
           setDistanciaKm(data.km.toFixed(1));
           setTaxaKm(calcularTaxaPorKm(data.km));
-          setMetodoCalculoKm("Google Maps — endereço completo");
+          if (data.enderecoImpreciso) {
+            // O Google não achou o endereço exato — "chutou" por nome
+            // parecido. Não trava a entrega, só avisa pra conferir.
+            setMetodoCalculoKm("Google Maps — ⚠️ endereço não bateu exatamente");
+            setAvisoEnderecoImpreciso(data.enderecoEncontrado || null);
+          } else {
+            setMetodoCalculoKm("Google Maps — endereço completo");
+            setAvisoEnderecoImpreciso(null);
+          }
           return;
         }
 
@@ -702,6 +716,14 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
               </div>
             </div>
           )}
+          {!calcKm && avisoEnderecoImpreciso && (
+            <div style={{background:"#3d2a00",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px",marginTop:10}}>
+              <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⚠️ Confere o endereço do cliente</div>
+              <div style={{color:"#d1d5db",fontSize:12,marginTop:3}}>
+                O Google não achou esse endereço com certeza — ele calculou usando "<strong>{avisoEnderecoImpreciso}</strong>", que pode não ser exatamente o lugar certo. Se não bater, corrija a rua/bairro antes de confirmar.
+              </div>
+            </div>
+          )}
           {!calcKm && !distanciaKm && erroCalculo && (
             <div>
               <div style={{color:"#f87171",fontSize:13,marginBottom:10}}>
@@ -850,6 +872,11 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   const [calcKm, setCalcKm] = useState(false);
   const [taxaKm, setTaxaKm] = useState({e:0, m:0});
   const [erroCalculo, setErroCalculo] = useState(false);
+  // Adicionado em 27/09/2026 no site (replicado aqui em 03/10/2026): avisa
+  // quando o Google não teve certeza do endereço digitado (achou por
+  // aproximação, nome parecido) — sem travar a entrega, só alertando pra
+  // conferir antes de confirmar.
+  const [avisoEnderecoImpreciso, setAvisoEnderecoImpreciso] = useState(null);
   // Guarda qual caminho o cálculo usou (endereço completo, bairro oficial, etc) —
   // salvo junto com o pedido, pra dar pra investigar depois se algum valor parecer
   // estranho, sem precisar pedir print de mapa pro empresário de novo.
@@ -896,6 +923,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
     let cancelado = false;
     setCalcKm(true);
     setErroCalculo(false);
+    setAvisoEnderecoImpreciso(null);
     (async()=>{
       try {
         // CORRIGIDO em 27/09/2026: antes incluía o bairro digitado junto com a
@@ -920,7 +948,15 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         if (!cancelado && data.ok) {
           setDistanciaKm(data.km.toFixed(1));
           setTaxaKm(calcularTaxaPorKm(data.km));
-          setMetodoCalculoKm("Google Maps — endereço completo");
+          if (data.enderecoImpreciso) {
+            // O Google não achou o endereço exato — "chutou" por nome
+            // parecido. Não trava a entrega, só avisa pra conferir.
+            setMetodoCalculoKm("Google Maps — ⚠️ endereço não bateu exatamente");
+            setAvisoEnderecoImpreciso(data.enderecoEncontrado || null);
+          } else {
+            setMetodoCalculoKm("Google Maps — endereço completo");
+            setAvisoEnderecoImpreciso(null);
+          }
           return;
         }
 
@@ -1134,6 +1170,14 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
           )}
           {!calcKm && distanciaKm && taxaKm.e > 0 && (
             <div style={{color:"#34d399",fontWeight:900,fontSize:28}}>R${taxaKm.e.toFixed(2)}</div>
+          )}
+          {!calcKm && avisoEnderecoImpreciso && (
+            <div style={{background:"#3d2a00",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px",marginTop:10}}>
+              <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⚠️ Confere o endereço do cliente</div>
+              <div style={{color:"#d1d5db",fontSize:12,marginTop:3}}>
+                O Google não achou esse endereço com certeza — ele calculou usando "<strong>{avisoEnderecoImpreciso}</strong>", que pode não ser exatamente o lugar certo. Se não bater, corrija a rua/bairro antes de confirmar.
+              </div>
+            </div>
           )}
           {!calcKm && !distanciaKm && erroCalculo && (
             <div>
