@@ -1310,6 +1310,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
   const [modalMapa, setModalMapa] = useState(null);
   const [modalAddCorrida, setModalAddCorrida] = useState(null); // {corridaId, motoboyNome, motoboyTel, vagaNum}
   const [modalEditar, setModalEditar] = useState(null); // pedido sendo editado
+  const coresMotoboyRef = useRef({}); // motoboyId -> índice da cor na paleta (ver PALETA_MOTOBOYS)
 
   // Link de rastreio público + mensagem pronta pro empresário enviar ao cliente
   function linkRastreio(p) {
@@ -1434,9 +1435,20 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
   const aguardando = ativos.filter(p=>p.status==="aguardando");
   const emRotaPedidos = ativos.filter(p=>p.status==="em_rota");
 
-  // Agrupa pedidos em rota pela corrida (mesmo motoboy/mesma saída)
+  // Bloco abaixo (agrupamento das corridas, cores por motoboy e card da
+  // corrida) copiado do site em 03/10/2026 — versão de 20/09 (entregas já
+  // finalizadas continuam no card) + 28/09 (cor por motoboy, resumo com 2+
+  // motoboys, limite contando só pendentes) + 24/09 (cronômetro de chegada).
+  // Agrupa pedidos em rota pela corrida (mesmo motoboy/mesma saída).
+  // Ajustado em 20/09/2026: inclui também os já "entregue" que pertencem à
+  // MESMA corrida de um pedido ainda ativo — assim o card da corrida
+  // continua na tela até todos terminarem, mas já mostra "Finalizado" nos
+  // que a pessoa concluiu, dando pro estabelecimento confiança de mandar
+  // mais uma entrega pro mesmo motoboy antes dele voltar pra base.
+  const corridaIdsComAtivo = new Set(emRotaPedidos.map(p=>p.corridaId).filter(Boolean));
+  const entreguesDaMesmaCorrida = pedidos.filter(p=>p.status==="entregue" && p.corridaId && corridaIdsComAtivo.has(p.corridaId));
   const corridasMap = {};
-  emRotaPedidos.forEach(p=>{
+  [...emRotaPedidos, ...entreguesDaMesmaCorrida].forEach(p=>{
     const cid = p.corridaId || p.id;
     if (!corridasMap[cid]) corridasMap[cid] = [];
     corridasMap[cid].push(p);
@@ -1445,6 +1457,47 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
     corridaId,
     pedidos: lista.slice().sort((a,b)=>a.criadoEm-b.criadoEm),
   }));
+
+  // Adicionado em 28/09/2026 a pedido do Alessandro: cada motoboy em rota ganha
+  // uma cor própria, a MESMA em toda a tela, pro empresário bater o olho e saber
+  // de qual motoboy é cada entrega (no dia de correria, com vários motoboys e
+  // várias entregas, ele se perdia procurando o cliente). A cor fica guardada
+  // enquanto o motoboy tem corrida ativa — não troca no meio do turno quando
+  // outra corrida termina — e dois motoboys ao mesmo tempo nunca dividem a
+  // mesma cor enquanto houver cor livre.
+  const PALETA_MOTOBOYS = [
+    { cor:"#34d399", fundo:"#0d3d2e" }, // verde
+    { cor:"#60a5fa", fundo:"#12305a" }, // azul
+    { cor:"#fb923c", fundo:"#4a2410" }, // laranja
+    { cor:"#c084fc", fundo:"#3a1f5c" }, // roxo
+    { cor:"#f472b6", fundo:"#521a3a" }, // rosa
+    { cor:"#facc15", fundo:"#463a08" }, // amarelo
+  ];
+  const idsMotoboysEmRota = [...new Set(corridas.map(cr => cr.pedidos[0]?.motoboyId).filter(Boolean))];
+  Object.keys(coresMotoboyRef.current).forEach(id => {
+    if (!idsMotoboysEmRota.includes(id)) delete coresMotoboyRef.current[id];
+  });
+  idsMotoboysEmRota.forEach(id => {
+    if (coresMotoboyRef.current[id] === undefined) {
+      const usadas = Object.values(coresMotoboyRef.current);
+      let idx = PALETA_MOTOBOYS.findIndex((_, k) => !usadas.includes(k));
+      if (idx === -1) idx = idsMotoboysEmRota.indexOf(id) % PALETA_MOTOBOYS.length;
+      coresMotoboyRef.current[id] = idx;
+    }
+  });
+  const estiloMotoboy = (motoboyId) => PALETA_MOTOBOYS[coresMotoboyRef.current[motoboyId] ?? 0];
+  // Nome curto do motoboy pra destacar na tela: só o primeiro nome — mas se dois
+  // motoboys em rota tiverem o mesmo primeiro nome (ex: dois "Rafael"), acrescenta
+  // a inicial do sobrenome nos dois ("RAFAEL S." e "RAFAEL G.") pra não confundir.
+  const nomeCurtoDe = (nomeCompleto) => {
+    const partes = (nomeCompleto || "Motoboy").trim().split(/\s+/);
+    const primeiroNome = partes[0];
+    const repetido = corridas.some(cr => {
+      const outro = cr.pedidos[0]?.motoboyNome;
+      return outro && outro !== nomeCompleto && outro.trim().split(/\s+/)[0].toLowerCase() === primeiroNome.toLowerCase();
+    });
+    return repetido && partes[1] ? `${primeiroNome} ${partes[1][0].toUpperCase()}.` : primeiroNome;
+  };
 
   function formatTempo(ms) {
     const s = Math.floor(ms/1000);
@@ -1513,30 +1566,56 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
         );
       })}
 
-      {/* Corridas em rota — agrupa até MAX_PEDIDOS_POR_CORRIDA pedidos no mesmo motoboy */}
+      {/* Resumo rápido — com 2+ motoboys em rota, mostra numa olhada só de quem é
+          cada entrega (cada motoboy com a sua cor). Adicionado em 28/09/2026. */}
+      {corridas.length >= 2 && (
+        <div style={{background:"#0b1220",border:"1px solid #1f2937",borderRadius:12,padding:"14px 16px",marginBottom:14}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:800,letterSpacing:1,textTransform:"uppercase",marginBottom:10}}>
+            🏍️ Resumo — {corridas.length} motoboys em rota · {corridas.reduce((s,cr)=>s+cr.pedidos.filter(p=>p.status!=="entregue").length,0)} entregas pendentes
+          </div>
+          {corridas.map(corrida=>{
+            const cm = estiloMotoboy(corrida.pedidos[0].motoboyId);
+            const nomeCurto = nomeCurtoDe(corrida.pedidos[0].motoboyNome);
+            return (
+              <div key={corrida.corridaId} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"8px 10px",borderRadius:8,background:cm.fundo,borderLeft:`5px solid ${cm.cor}`,marginBottom:6}}>
+                <span style={{color:cm.cor,fontWeight:900,fontSize:14,minWidth:96}}>🏍️ {nomeCurto.toUpperCase()}</span>
+                {corrida.pedidos.map(p=>(
+                  <span key={p.id} style={{background:"#0f172a",color:p.status==="entregue"?"#6b7280":"#f9fafb",fontSize:13,fontWeight:700,padding:"3px 10px",borderRadius:20,border:`1px solid ${cm.cor}66`,textDecoration:p.status==="entregue"?"line-through":"none"}}>
+                    {p.status==="entregue"?"✅ ":""}{p.clienteNome}
+                  </span>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Corridas em rota — uma caixa por motoboy, cada uma na cor dele */}
       {corridas.map(corrida=>{
         const primeiro = corrida.pedidos[0];
         const totalCorrida = corrida.pedidos.reduce((s,p)=>s+(p.taxa||0),0);
+        const cm = estiloMotoboy(primeiro.motoboyId);
+        const nomeCurto = nomeCurtoDe(primeiro.motoboyNome);
+        const pendentes = corrida.pedidos.filter(p=>p.status!=="entregue").length;
 
         return (
-          <Card key={corrida.corridaId} style={{marginBottom:14,border:"1px solid #34d399"}}>
-            {/* Status */}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12,flexWrap:"wrap",gap:8}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                <span style={{background:"#0d3d2e",color:"#34d399",padding:"3px 12px",borderRadius:20,fontSize:13,fontWeight:700}}>🏍️ Motoboy a caminho!</span>
-                <Tag label={`${corrida.pedidos.length}/${MAX_PEDIDOS_POR_CORRIDA} pedido${corrida.pedidos.length!==1?"s":""} nesta corrida`} cor="#60a5fa"/>
+          <div key={corrida.corridaId} style={{marginBottom:18,border:`2px solid ${cm.cor}`,borderRadius:14,overflow:"hidden",background:"#111827"}}>
+            {/* Cabeçalho: nome do motoboy grande, na cor dele */}
+            <div style={{background:cm.fundo,padding:"12px 16px",borderBottom:`2px solid ${cm.cor}`}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                <div>
+                  <div style={{color:cm.cor,fontWeight:900,fontSize:22,letterSpacing:0.5,lineHeight:1.1}}>🏍️ {nomeCurto.toUpperCase()}</div>
+                  <div style={{color:"#d1d5db",fontSize:12,marginTop:3}}>
+                    {primeiro.motoboyNome || "Motoboy"} · {pendentes} de {MAX_PEDIDOS_POR_CORRIDA} entregas com ele agora
+                  </div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{color:"#9ca3af",fontSize:11}}>Total da corrida</div>
+                  <div style={{color:cm.cor,fontWeight:900,fontSize:22}}>R${totalCorrida}</div>
+                </div>
               </div>
-              <div style={{textAlign:"right"}}>
-                <div style={{color:"#6b7280",fontSize:11}}>Total da corrida</div>
-                <div style={{color:"#34d399",fontWeight:900,fontSize:24}}>R${totalCorrida}</div>
-              </div>
-            </div>
-
-            {/* Motoboy (uma vez só por corrida) */}
-            {primeiro.motoboyNome && (
-              <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px",marginBottom:12}}>
-                <div style={{color:"#34d399",fontWeight:700,fontSize:13,marginBottom:4}}>🏍️ Motoboy: {primeiro.motoboyNome}</div>
-                <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+              {primeiro.motoboyNome && (
+                <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:10}}>
                   <a href={`https://wa.me/55${primeiro.motoboyTel?.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
                     style={{background:"#111827",color:"#34d399",padding:"5px 12px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>
                     💬 WhatsApp
@@ -1550,24 +1629,25 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                     🗺️ Ver no Mapa
                   </button>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
+            <div style={{padding:"12px 14px"}}>
 
             {/* Pedidos desta corrida */}
             {corrida.pedidos.map((p,i)=>{
               const pg = PG[p.pagamento]||{icon:"•",cor:"#9ca3af",label:p.pagamento};
               const finalizado = p.status==="entregue";
-              // Adicionado em 24/09/2026 no site a pedido do Alessandro
-              // (replicado aqui em 03/10/2026): cronômetro do prazo de
-              // chegada no estabelecimento (12 minutos, 15 no verão, a partir
-              // do ACEITE, não da criação do pedido). Só faz sentido enquanto
-              // o motoboy ainda não retirou o pedido — depois que ele clica
-              // "saí do estabelecimento", o prazo de chegada já foi
-              // cumprido, então o cronômetro para de aparecer.
+              // Adicionado em 24/09/2026 a pedido do Alessandro: cronômetro
+              // do prazo de chegada no estabelecimento (12 minutos a partir
+              // do ACEITE, não da criação do pedido — isso corrige o
+              // cronômetro antigo, que contava tempo errado). Só faz sentido
+              // enquanto o motoboy ainda não retirou o pedido — depois que
+              // ele clica "saí do estabelecimento", o prazo de chegada já
+              // foi cumprido, então o cronômetro para de aparecer.
               const PRAZO_CHEGADA_MIN = prazoChegadaMotoboyMin();
               // Se o pedido não tem o próprio horário de aceite (ex: adicionado
-              // por uma versão antiga), usa o horário do aceite mais antigo da
-              // MESMA corrida.
+              // por uma página ainda na versão antiga), usa o horário do aceite
+              // mais antigo da MESMA corrida.
               const temposAceite = corrida.pedidos.map(x => x.aceitoEm).filter(Boolean).map(x => new Date(x).getTime());
               const aceitoEmEfetivo = p.aceitoEm
                 ? new Date(p.aceitoEm).getTime()
@@ -1577,10 +1657,15 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
               const dentroDoPrazo = minutosDesdeAceite < PRAZO_CHEGADA_MIN;
               const minutosRestantes = Math.max(0, Math.ceil(PRAZO_CHEGADA_MIN - minutosDesdeAceite));
               return (
-                <div key={p.id} style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+                <div key={p.id} style={{background:"#0f172a",borderRadius:10,padding:"10px 12px",marginBottom:10,borderLeft:`6px solid ${cm.cor}`,opacity:finalizado?0.6:1}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
-                    <div>
-                      <div style={{color:"#60a5fa",fontSize:11,fontWeight:700,marginBottom:3}}>PEDIDO #{i+1} — {p.clienteNome}</div>
+                    <div style={{minWidth:0,flex:1}}>
+                      {/* Nome do cliente grande + de qual motoboy é (na cor dele) */}
+                      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                        <span style={{background:cm.cor,color:"#0a0f1a",fontWeight:900,fontSize:12,borderRadius:20,padding:"2px 9px"}}>#{i+1}</span>
+                        <span style={{color:"#ffffff",fontWeight:900,fontSize:19,lineHeight:1.2}}>{p.clienteNome}</span>
+                      </div>
+                      <div style={{color:cm.cor,fontSize:11,fontWeight:800,marginTop:3,letterSpacing:0.5}}>🏍️ {nomeCurto.toUpperCase()}</div>
                       <div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{p.rua}, {p.num} — {p.bairro}</div>
                       {p.ref && <div style={{color:"#fbbf24",fontSize:11,marginTop:2}}>📌 Ref: {p.ref}</div>}
                       {p.obs && <div style={{color:"#9ca3af",fontSize:11,marginTop:2}}>💬 Obs: {p.obs}</div>}
@@ -1594,13 +1679,12 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                             : `⏱️ Motoboy está ${formatarAtraso(minutosDesdeAceite - PRAZO_CHEGADA_MIN)} atrasado`}
                         </div>
                       )}
-                      {/* Adicionado em 30/09/2026 no site a pedido do Alessandro
-                          (replicado aqui em 03/10/2026): o Admin já mostrava
-                          "saiu do estabelecimento há Xm Ys" nessa fase —
-                          faltava a mesma informação aqui pro estabelecimento.
-                          Só aparece depois que o motoboy sai (é uma contagem
-                          diferente do cronômetro de prazo acima, que já sumiu
-                          nessa hora). */}
+                      {/* Adicionado em 30/09/2026 a pedido do Alessandro: o
+                          Admin já mostrava "saiu do estabelecimento há Xm Ys"
+                          nessa fase — faltava a mesma informação aqui pro
+                          estabelecimento. Só aparece depois que o motoboy sai
+                          (é uma contagem diferente do cronômetro de prazo
+                          acima, que já sumiu nessa hora). */}
                       {!finalizado && p.saiuEstabelecimentoEm && (
                         <div style={{marginTop:6,display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,background:"#12305a",color:"#60a5fa"}}>
                           🚀 A caminho do cliente há {formatTempo(Date.now() - new Date(p.saiuEstabelecimentoEm).getTime())}
@@ -1609,25 +1693,27 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
                       <div style={{color:"#34d399",fontWeight:800,fontSize:18}}>R${p.taxa}</div>
-                      <Tag label={`${pg.icon} ${pg.label}`} cor={pg.cor}/>
+                      {finalizado
+                        ? <Tag label="✅ Finalizado" cor="#34d399"/>
+                        : <Tag label={`${pg.icon} ${pg.label}`} cor={pg.cor}/>}
                     </div>
                   </div>
+                  {!finalizado && (<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>
                   {p.clienteTel && (
-                    <button onClick={()=>abrirWhatsCliente(p)} style={{marginTop:10,width:"100%",padding:"9px",borderRadius:8,background:"#0d3d2e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,fontSize:12,cursor:"pointer"}}>
-                      📲 Avisar cliente que o pedido saiu
+                    <button onClick={()=>abrirWhatsCliente(p)} style={{flex:"1 1 auto",padding:"7px 10px",borderRadius:8,background:"#0d3d2e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                      📲 Avisar cliente
                     </button>
                   )}
-                  <button onClick={()=>setModalEditar(p)} style={{marginTop:8,width:"100%",padding:"9px",borderRadius:8,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:12,cursor:"pointer"}}>
-                    ✏️ Editar este pedido
+                  <button onClick={()=>setModalEditar(p)} style={{flex:"1 1 auto",padding:"7px 10px",borderRadius:8,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                    ✏️ Editar
                   </button>
                   <button onClick={async()=>{
-                    // CORRIGIDO em 24/09/2026 no site a pedido do Alessandro
-                    // (replicado aqui em 03/10/2026): agora SEMPRE pede
-                    // motivo, antes ou depois do prazo — a diferença é só na
-                    // frase. Antes do prazo, avisa que o motoboy ainda está no
-                    // tempo dele. Depois do prazo, só pergunta o motivo, sem
-                    // falar nada sobre atraso (porque aí já é óbvio que ele
-                    // está atrasado de verdade).
+                    // CORRIGIDO em 24/09/2026 a pedido do Alessandro: agora
+                    // SEMPRE pede motivo, antes ou depois do prazo — a
+                    // diferença é só na frase. Antes do prazo, avisa que o
+                    // motoboy ainda está no tempo dele. Depois do prazo, só
+                    // pergunta o motivo, sem falar nada sobre atraso (porque
+                    // aí já é óbvio que ele está atrasado de verdade).
                     let pergunta;
                     if (aindaNoEstabelecimento && dentroDoPrazo) {
                       pergunta = `O motoboy ainda está no tempo dele pra chegar (faltam ${minutosRestantes} min). Por que você quer cancelar a entrega de ${p.clienteNome} mesmo assim?`;
@@ -1645,16 +1731,17 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                       cancelado_em: new Date().toISOString(),
                     }).eq("id", p.id);
                     await onRecarregar();
-                  }} style={{marginTop:8,width:"100%",padding:"9px",borderRadius:8,background:"#3d1010",border:"1px solid #ef444466",color:"#f87171",fontWeight:700,fontSize:12,cursor:"pointer"}}>
-                    ❌ Cancelar este pedido
+                  }} style={{flex:"1 1 auto",padding:"7px 10px",borderRadius:8,background:"#3d1010",border:"1px solid #ef444466",color:"#f87171",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                    ❌ Cancelar
                   </button>
+                  </div>)}
                 </div>
               );
             })}
 
             {/* Botão cancelar TODOS os pedidos da corrida de uma vez — diferente do
                 cancelar individual acima, que cancela só um cliente por vez. */}
-            <div style={{marginTop:8,marginBottom:8}}>
+            <div style={{marginTop:6,marginBottom:10,textAlign:"right"}}>
               <button onClick={async()=>{
                 const motivo = window.prompt("Por que está cancelando TODOS os pedidos ainda não entregues desta corrida? (o motoboy vai ver esse motivo)", "");
                 if (motivo === null) return;
@@ -1667,12 +1754,14 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                   }).eq("id", p.id);
                 }
                 await onRecarregar();
-              }} style={{width:"100%",padding:"10px",borderRadius:8,background:"#3d1010",border:"1px solid #ef4444",color:"#f87171",fontWeight:700,fontSize:13,cursor:"pointer"}}>
-                ❌ Cancelar TODOS os pedidos desta corrida
+              }} style={{padding:"7px 12px",borderRadius:8,background:"transparent",border:"1px solid #ef444466",color:"#f87171",fontWeight:700,fontSize:12,cursor:"pointer"}}>
+                ❌ Cancelar todos desta corrida
               </button>
             </div>
 
-            {/* Adicionar pedido extra à mesma corrida (máx MAX_PEDIDOS_POR_CORRIDA) ou aviso de limite —
+            {/* Adicionar pedido extra à mesma corrida (máx MAX_PEDIDOS_POR_CORRIDA, contando
+                só as entregas que o motoboy ainda está levando — as já entregues
+                liberam vaga) ou aviso de limite —
                 também travado quando o estabelecimento já bateu o limite mensal de
                 entregas, exatamente como a aba "Nova Entrega". Sem essa checagem
                 aqui, dava pra "furar" o bloqueio adicionando pedidos numa corrida
@@ -1681,22 +1770,23 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
               <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px"}}>
                 <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>🔒 Limite de {LIMITE_ENTREGAS_MES} entregas do mês atingido. Vá na aba "Nova Entrega" pra ver como regularizar.</div>
               </div>
-            ) : corrida.pedidos.length<MAX_PEDIDOS_POR_CORRIDA ? (
+            ) : pendentes<MAX_PEDIDOS_POR_CORRIDA ? (
               <Btn small cor="azul" full onClick={()=>setModalAddCorrida({
                 corridaId: corrida.corridaId,
                 motoboyId: primeiro.motoboyId,
                 motoboyNome: primeiro.motoboyNome,
                 motoboyTel: primeiro.motoboyTel,
-                vagaNum: corrida.pedidos.length+1,
+                vagaNum: pendentes+1,
               })}>
-                ➕ Adicionar pedido a esta corrida (vaga {corrida.pedidos.length+1}/{MAX_PEDIDOS_POR_CORRIDA})
+                ➕ Adicionar pedido a esta corrida (vaga {pendentes+1}/{MAX_PEDIDOS_POR_CORRIDA})
               </Btn>
             ) : (
               <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px"}}>
                 <div style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⚠️ Esse motoboy já está com {MAX_PEDIDOS_POR_CORRIDA} entregas ao mesmo tempo (o máximo). Quando ele entregar alguma, libera vaga — ou use "Nova Entrega" pra chamar outro motoboy.</div>
               </div>
             )}
-          </Card>
+            </div>
+          </div>
         );
       })}
 
@@ -2727,7 +2817,30 @@ export default function Empresario() {
     if (error) { console.error("Erro ao carregar pedidos:", error); return; }
 
     if (pedidosDB) {
-      setPedidos(pedidosDB.map(p=>({
+      // Adicionado em 20/09/2026 no site a pedido do Alessandro (replicado
+      // aqui em 03/10/2026): assim como o Admin já mostra "Finalizado" pedido
+      // por pedido dentro de uma corrida com várias entregas, o
+      // estabelecimento também precisa ver isso — pra saber que já pode
+      // confiar mais uma entrega pro mesmo motoboy. Busca também os pedidos
+      // "entregue" que ainda pertencem a uma corrida com pelo menos um pedido
+      // ativo (a corrida inteira só sai da tela quando TODOS terminarem).
+      const corridaIdsAtivas = [...new Set(pedidosDB.map(p => p.corrida_id).filter(Boolean))];
+      let entreguesDaCorridaAtiva = [];
+      if (corridaIdsAtivas.length > 0) {
+        const { data: entreguesDB, error: erroEntregues } = await supabase
+          .from("pedidos")
+          .select("*, motoboys!pedidos_motoboy_id_fkey(nome_completo, telefone)")
+          .eq("empresario_id", empresaId)
+          .eq("status", "entregue")
+          .in("corrida_id", corridaIdsAtivas);
+        if (erroEntregues) {
+          console.error("Erro ao carregar entregas finalizadas da mesma corrida (não bloqueia a lista de pedidos):", erroEntregues);
+        } else {
+          entreguesDaCorridaAtiva = entreguesDB || [];
+        }
+      }
+
+      setPedidos([...pedidosDB, ...entreguesDaCorridaAtiva].map(p=>({
         id: p.id,
         clienteNome: p.cliente_nome,
         clienteTel: p.cliente_telefone,
