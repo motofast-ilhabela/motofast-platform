@@ -673,10 +673,16 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
               </div>
             )}
 
+            {/* CORRIGIDO em 03/10/2026 no site a pedido do Alessandro
+                (replicado aqui no mesmo dia): esse botão estava quase
+                invisível (texto cinza pequeno, sem fundo, sem borda) —
+                vários motoboys não conseguiam achar ele e achavam que só
+                dava pra cancelar a corrida inteira. Agora tem cor, borda e
+                um nome direto, igual qualquer outro botão da tela. */}
             {!entregue && corrida.pedidos.length > 1 && (
               <button onClick={()=>{setModalCancelarItem(p.id);setMotivoItem("");}}
-                style={{width:"100%",padding:"8px",marginTop:8,borderRadius:8,background:"transparent",border:"none",color:"#6b7280",fontWeight:600,fontSize:12,cursor:"pointer",textDecoration:"underline"}}>
-                Pedido duplicado ou errado? Cancelar só este
+                style={{width:"100%",padding:"10px",marginTop:8,borderRadius:8,background:"#3d1010",border:"1px solid #ef444466",color:"#f87171",fontWeight:700,fontSize:13,cursor:"pointer"}}>
+                ❌ Cancelar esta entrega
               </button>
             )}
           </Card>
