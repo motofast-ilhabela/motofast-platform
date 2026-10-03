@@ -1,11 +1,11 @@
-// Função de servidor — dispara notificação push real via OneSignal.
-// A chave secreta (ONESIGNAL_REST_API_KEY) fica só aqui no servidor,
-// nunca é enviada para o navegador do motoboy ou do empresário.
+import { createClient } from '@supabase/supabase-js';
+
+const CONTAS_MONITORAMENTO_IDS = [
+  "c98107a7-1fd1-4429-9502-d8496501347d",
+  "a8cc6740-ca4d-4bb1-9292-0b81ce8f18be",
+];
+
 export default async function handler(req, res) {
-  // CORS — adicionado em 07/09/2026 pra permitir chamadas vindas do app
-  // nativo (Capacitor/WebView), que faz preflight OPTIONS antes do POST de
-  // verdade. Sem isso, o navegador do app bloqueava a chamada com 405 antes
-  // mesmo dela chegar aqui. Não muda nada do comportamento pro site.
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
@@ -22,11 +22,62 @@ export default async function handler(req, res) {
   }
   const REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
   const APP_ID = "df32f4f0-4280-4127-9d84-ec8a0a05328c";
+  const SUPABASE_URL = "https://eynpjqhjkwwdpemsospy.supabase.co";
+  const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!REST_API_KEY) {
     console.error("ONESIGNAL_REST_API_KEY não configurada nas variáveis de ambiente da Vercel");
     return res.status(500).json({ error: "Chave do OneSignal não configurada no servidor" });
   }
+  if (!SERVICE_ROLE_KEY) {
+    console.error("SUPABASE_SERVICE_ROLE_KEY não configurada nas variáveis de ambiente da Vercel");
+    return res.status(500).json({ error: "Chave do Supabase não configurada no servidor" });
+  }
   try {
+    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+    // CORRIGIDO em 02/10/2026: antes esse endpoint mandava o push pra "Total
+    // Subscriptions" — todo aparelho que já autorizou notificação alguma
+    // vez no OneSignal, sem filtro nenhum. Isso fazia o alarme de corrida
+    // nova tocar em motoboy offline, bloqueado, já ocupado em outra
+    // entrega, e até em celular que já foi de um motoboy e depois deslogou.
+    // Agora busca no banco quem realmente pode receber: online, ativo, não
+    // banido, não bloqueado, e sem outra entrega em andamento (exceto as
+    // contas de monitoramento, que podem acumular mais de uma).
+    const { data: candidatosDB, error: erroCandidatos } = await supabaseAdmin
+      .from("motoboys")
+      .select("id")
+      .eq("online", true)
+      .eq("ativo", true)
+      .eq("banido", false)
+      .eq("bloqueado", false);
+    if (erroCandidatos) {
+      console.error("[notificar-motoboys] Erro ao buscar candidatos:", erroCandidatos);
+      return res.status(400).json({ error: erroCandidatos.message });
+    }
+    const idsCandidatos = (candidatosDB || []).map(m => m.id);
+
+    let idsElegiveis = idsCandidatos;
+    if (idsCandidatos.length > 0) {
+      const { data: ocupadosDB, error: erroOcupados } = await supabaseAdmin
+        .from("pedidos")
+        .select("motoboy_id")
+        .in("motoboy_id", idsCandidatos)
+        .in("status", ["aceito", "saiu_estabelecimento"]);
+      if (erroOcupados) {
+        console.error("[notificar-motoboys] Erro ao buscar ocupados:", erroOcupados);
+        return res.status(400).json({ error: erroOcupados.message });
+      }
+      const idsOcupados = new Set((ocupadosDB || []).map(p => p.motoboy_id));
+      idsElegiveis = idsCandidatos.filter(id =>
+        !idsOcupados.has(id) || CONTAS_MONITORAMENTO_IDS.includes(id)
+      );
+    }
+
+    if (idsElegiveis.length === 0) {
+      console.log("[notificar-motoboys] Nenhum motoboy elegível agora — nada enviado.");
+      return res.status(200).json({ success: true, recipients: 0, elegiveis: 0 });
+    }
+
     const response = await fetch("https://api.onesignal.com/notifications", {
       method: "POST",
       headers: {
@@ -35,41 +86,24 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         app_id: APP_ID,
-        // CORRIGIDO em 13/08/2026: o nome de segmento "Subscribed Users" não
-        // existe mais nesta conta do OneSignal (contas mais novas usam nomes
-        // diferentes para os segmentos padrão) — por isso 0 notificações
-        // estavam saindo, mesmo com o pedido sendo aceito com sucesso (200).
-        // "Total Subscriptions" é o nome interno correto, correspondente ao
-        // segmento "Total de assinaturas" (marcado como Padrão no painel),
-        // que inclui TODOS os inscritos, sem filtro de atividade recente.
-        included_segments: ["Total Subscriptions"],
+        include_external_user_ids: idsElegiveis.map(String),
+        channel_for_external_user_ids: "push",
+        target_channel: "push",
         headings: { en: titulo },
         contents: { en: corpo },
         url: "https://motofast-platform.vercel.app/motoboy",
-        // Adicionado em 18/09/2026: manda o ID do pedido junto, opcional —
-        // não quebra quem já chama sem mandar isso.
         data: pedidoId ? { pedidoId: String(pedidoId) } : undefined,
-        // Prioridade máxima no Android (FCM) — força a entrega mesmo
-        // com o celular em modo de economia de energia (Doze Mode).
-        // Sem isso o sistema pode atrasar ou segurar a notificação
-        // até o app ser reaberto.
+        ttl: 600,
         priority: 10,
-        // Garante que a notificação aparece na tela bloqueada.
         android_visibility: 1,
-        // Força som e vibração padrão do sistema mesmo em segundo plano.
         android_channel_id: "21ab798f-74a5-45ee-9f18-7958bc765933",
         ios_sound: "default",
       }),
     });
     const data = await response.json();
 
-    // LOG DE DIAGNÓSTICO — mostra SEMPRE a resposta completa do OneSignal no
-    // painel de Logs do Vercel, mesmo quando o status HTTP volta 200 (sucesso).
-    // Isso é essencial porque o OneSignal pode aceitar o pedido (200 OK) e ainda
-    // assim reportar 0 destinatários reais (campo "recipients") — nesse caso, a
-    // chamada "funciona" tecnicamente, mas nenhuma notificação de verdade sai.
     console.log("[notificar-motoboys] Resposta completa do OneSignal:", JSON.stringify(data));
-    console.log(`[notificar-motoboys] Destinatários alcançados (recipients): ${data.recipients ?? "não informado"}`);
+    console.log(`[notificar-motoboys] Elegíveis: ${idsElegiveis.length} · Destinatários alcançados (recipients): ${data.recipients ?? "não informado"}`);
     if (data.errors) {
       console.error("[notificar-motoboys] OneSignal retornou erros mesmo com status 200:", JSON.stringify(data.errors));
     }
@@ -78,7 +112,7 @@ export default async function handler(req, res) {
       console.error("Erro ao enviar notificação OneSignal:", data);
       return res.status(response.status).json({ error: data });
     }
-    return res.status(200).json({ success: true, data });
+    return res.status(200).json({ success: true, data, elegiveis: idsElegiveis.length });
   } catch (err) {
     console.error("Erro ao enviar push:", err);
     return res.status(500).json({ error: err.message });
