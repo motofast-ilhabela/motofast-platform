@@ -1,6 +1,8 @@
 import { HashRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabaseClient.js'
+import { lembrarEmail } from './loginLembrado.js'
+import EmailsRecentes from './EmailsRecentes.jsx'
 import Cadastro from './screens/Cadastro.jsx'
 import Motoboy from './screens/Motoboy.jsx'
 import Empresario from './screens/Empresario.jsx'
@@ -22,14 +24,18 @@ function LoginAdmin() {
   const [senha, setSenha] = useState("")
   const [erro, setErro] = useState("")
   const [carregando, setCarregando] = useState(false)
+  const senhaRef = useRef(null)
 
-  async function entrar() {
+  async function entrar(e) {
+    if (e) e.preventDefault()
     if (!email || !senha) { setErro("Preencha email e senha."); return; }
     setCarregando(true)
     setErro("")
     const { error } = await supabase.auth.signInWithPassword({ email, password: senha })
     if (error) {
       setErro("Email ou senha incorretos.")
+    } else {
+      await lembrarEmail("admin", email)
     }
     setCarregando(false)
   }
@@ -48,13 +54,23 @@ function LoginAdmin() {
           </div>
         )}
 
+        {/* <form> de verdade + autoComplete nos campos: é isso que faz o
+            gerenciador de senhas do aparelho (Google / Chaveiro do iCloud)
+            oferecer "Salvar senha?" e preencher sozinho da próxima vez — o
+            app nunca guarda a senha (ver loginLembrado.js). */}
+        <form onSubmit={entrar} autoComplete="on">
+        <EmailsRecentes tipo="admin" onEscolher={em => { setEmail(em); senhaRef.current?.focus() }}/>
+
         <div style={{marginBottom:14}}>
           <div style={{color:"#9ca3af",fontSize:12,marginBottom:6,fontWeight:600}}>Email</div>
           <input
             type="email"
+            name="email"
+            id="admin-email"
+            autoComplete="username"
+            autoCapitalize="none"
             value={email}
             onChange={e=>setEmail(e.target.value)}
-            onKeyDown={e=>e.key==="Enter"&&entrar()}
             placeholder="seu@email.com"
             style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"11px 14px",width:"100%",fontSize:14,outline:"none",boxSizing:"border-box"}}
           />
@@ -63,22 +79,26 @@ function LoginAdmin() {
         <div style={{marginBottom:24}}>
           <div style={{color:"#9ca3af",fontSize:12,marginBottom:6,fontWeight:600}}>Senha</div>
           <input
+            ref={senhaRef}
             type="password"
+            name="password"
+            id="admin-senha"
+            autoComplete="current-password"
             value={senha}
             onChange={e=>setSenha(e.target.value)}
-            onKeyDown={e=>e.key==="Enter"&&entrar()}
             placeholder="••••••••"
             style={{background:"#0f172a",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"11px 14px",width:"100%",fontSize:14,outline:"none",boxSizing:"border-box"}}
           />
         </div>
 
         <button
-          onClick={entrar}
+          type="submit"
           disabled={carregando}
           style={{width:"100%",padding:"13px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:800,fontSize:15,cursor:carregando?"not-allowed":"pointer",opacity:carregando?0.6:1}}
         >
           {carregando ? "Entrando..." : "🔐 Entrar no Admin"}
         </button>
+        </form>
 
         <div style={{textAlign:"center",marginTop:16}}>
           <span onClick={()=>navigate("/")} style={{color:"#4b5563",fontSize:12,textDecoration:"none",cursor:"pointer"}}>← Voltar para o início</span>

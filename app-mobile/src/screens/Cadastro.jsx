@@ -1,6 +1,8 @@
 import { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient.js";
+import { lembrarEmail } from "../loginLembrado.js";
+import EmailsRecentes from "../EmailsRecentes.jsx";
 
 // Cópia adaptada de Cadastro.jsx da plataforma web (ver CLAUDE.md — mudanças de
 // regra de negócio precisam ser replicadas manualmente entre as duas versões).
@@ -30,13 +32,17 @@ function validarEmail(email) {
 }
 
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
-function Inp({ label, value, onChange, placeholder="", type="text", hint, erro, obrigatorio }) {
+// name/autoComplete/inputRef adicionados em 03/10/2026 pro "lembrar login"
+// (ver loginLembrado.js): o gerenciador de senhas do aparelho só reconhece
+// os campos de login quando eles vêm marcados assim.
+function Inp({ label, value, onChange, placeholder="", type="text", hint, erro, obrigatorio, name, autoComplete, inputRef }) {
   return (
     <div style={{marginBottom:12}}>
       <div style={{color:"#9ca3af",fontSize:12,marginBottom:4,fontWeight:600}}>
         {label}{obrigatorio && <span style={{color:"#ef4444",marginLeft:3}}>*</span>}
       </div>
       <input type={type} value={value} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
+        name={name} autoComplete={autoComplete} ref={inputRef} autoCapitalize={type==="email"?"none":undefined}
         style={{background:"#0f172a",border:`1px solid ${erro?"#ef4444":"#374151"}`,borderRadius:8,color:"#f9fafb",padding:"10px 14px",width:"100%",fontSize:14,outline:"none",boxSizing:"border-box"}}/>
       {hint && !erro && <div style={{color:"#4b5563",fontSize:11,marginTop:3}}>{hint}</div>}
       {erro && <div style={{color:"#f87171",fontSize:11,marginTop:3}}>⚠️ {erro}</div>}
@@ -44,11 +50,11 @@ function Inp({ label, value, onChange, placeholder="", type="text", hint, erro, 
   );
 }
 
-function Btn({ children, onClick, cor="verde", full, disabled, loading }) {
+function Btn({ children, onClick, cor="verde", full, disabled, loading, type="button" }) {
   const cores = {verde:{bg:"#10b981",c:"#fff"},cinza:{bg:"#1f2937",c:"#d1d5db"},azul:{bg:"#3b82f6",c:"#fff"}};
   const c = cores[cor]||cores.verde;
   return (
-    <button onClick={onClick} disabled={disabled||loading}
+    <button type={type} onClick={onClick} disabled={disabled||loading}
       style={{background:c.bg,color:c.c,border:"none",borderRadius:10,padding:"13px 20px",fontSize:15,fontWeight:700,cursor:(disabled||loading)?"not-allowed":"pointer",opacity:(disabled||loading)?0.5:1,width:full?"100%":"auto",transition:"opacity 0.2s"}}>
       {loading?"Aguarde...":children}
     </button>
@@ -361,9 +367,9 @@ function CadastroEmpresario({ onVoltar, onSucesso }) {
           <Inp label="E-mail" obrigatorio value={form.email} onChange={v=>set("email",v)} placeholder="seuemail@exemplo.com" type="email" erro={erros.email}/>
           <Inp label="Confirmar e-mail" obrigatorio value={form.emailConfirm} onChange={v=>set("emailConfirm",v)} placeholder="Digite o e-mail novamente" type="email" erro={erros.emailConfirm}/>
           <Divider/>
-          <Inp label="Senha" obrigatorio value={form.senha} onChange={v=>set("senha",v)} placeholder="Crie uma senha forte" type="password" erro={erros.senha}/>
+          <Inp label="Senha" obrigatorio value={form.senha} onChange={v=>set("senha",v)} placeholder="Crie uma senha forte" type="password" erro={erros.senha} name="new-password" autoComplete="new-password"/>
           <SenhaForca senha={form.senha}/>
-          <Inp label="Confirmar senha" obrigatorio value={form.senhaConfirm} onChange={v=>set("senhaConfirm",v)} placeholder="Digite a senha novamente" type="password" erro={erros.senhaConfirm}/>
+          <Inp label="Confirmar senha" obrigatorio value={form.senhaConfirm} onChange={v=>set("senhaConfirm",v)} placeholder="Digite a senha novamente" type="password" erro={erros.senhaConfirm} autoComplete="new-password"/>
 
           {/* Termos expansíveis do Empresário — leitura obrigatória antes do checkbox */}
           <TermosExpandiveis tipo="empresario"/>
@@ -566,9 +572,9 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
           <Inp label="E-mail" obrigatorio value={form.email} onChange={v=>set("email",v)} placeholder="seuemail@exemplo.com" type="email" erro={erros.email}/>
           <Inp label="Confirmar e-mail" obrigatorio value={form.emailConfirm} onChange={v=>set("emailConfirm",v)} placeholder="Digite o e-mail novamente" type="email" erro={erros.emailConfirm}/>
           <Divider/>
-          <Inp label="Senha" obrigatorio value={form.senha} onChange={v=>set("senha",v)} placeholder="Crie uma senha forte" type="password" erro={erros.senha}/>
+          <Inp label="Senha" obrigatorio value={form.senha} onChange={v=>set("senha",v)} placeholder="Crie uma senha forte" type="password" erro={erros.senha} name="new-password" autoComplete="new-password"/>
           <SenhaForca senha={form.senha}/>
-          <Inp label="Confirmar senha" obrigatorio value={form.senhaConfirm} onChange={v=>set("senhaConfirm",v)} placeholder="Digite a senha novamente" type="password" erro={erros.senhaConfirm}/>
+          <Inp label="Confirmar senha" obrigatorio value={form.senhaConfirm} onChange={v=>set("senhaConfirm",v)} placeholder="Digite a senha novamente" type="password" erro={erros.senhaConfirm} autoComplete="new-password"/>
 
           {/* Termos expansíveis do Motoboy — leitura obrigatória antes do checkbox */}
           <TermosExpandiveis tipo="motoboy"/>
@@ -600,6 +606,7 @@ function TelaLogin({ tipo, onCadastrar }) {
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
+  const senhaRef = useRef(null);
 
   const config = {
     empresario: { emoji:"🏪", label:"Empresário", cor:"#60a5fa", desc:"Acesse para solicitar entregas" },
@@ -607,7 +614,8 @@ function TelaLogin({ tipo, onCadastrar }) {
   };
   const c = config[tipo];
 
-  async function entrar() {
+  async function entrar(e) {
+    if (e) e.preventDefault();
     if (!email || !senha) { setErro("Preencha e-mail e senha."); return; }
     if (!validarEmail(email)) { setErro("E-mail inválido."); return; }
     setErro("");
@@ -660,6 +668,7 @@ function TelaLogin({ tipo, onCadastrar }) {
       return;
     }
 
+    await lembrarEmail(tipo, email);
     navigate(tipo === "motoboy" ? "/motoboy" : "/empresario");
   }
 
@@ -673,14 +682,22 @@ function TelaLogin({ tipo, onCadastrar }) {
 
       {erro && <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#f87171",fontSize:13}}>{erro}</div>}
 
-      <Inp label="E-mail" value={email} onChange={setEmail} placeholder="seuemail@exemplo.com" type="email"/>
-      <Inp label="Senha" value={senha} onChange={setSenha} placeholder="Sua senha" type="password"/>
+      {/* <form> de verdade + autoComplete nos campos: é isso que faz o
+          gerenciador de senhas do aparelho (Google / Chaveiro do iCloud)
+          oferecer "Salvar senha?" e preencher sozinho da próxima vez — o app
+          nunca guarda a senha (ver loginLembrado.js). */}
+      <form onSubmit={entrar} autoComplete="on">
+      <EmailsRecentes tipo={tipo} cor={c.cor} onEscolher={em => { setEmail(em); senhaRef.current?.focus(); }}/>
+
+      <Inp label="E-mail" value={email} onChange={setEmail} placeholder="seuemail@exemplo.com" type="email" name="email" autoComplete="username"/>
+      <Inp label="Senha" value={senha} onChange={setSenha} placeholder="Sua senha" type="password" name="password" autoComplete="current-password" inputRef={senhaRef}/>
 
       <div style={{textAlign:"right",marginBottom:14}}>
         <span style={{color:"#60a5fa",fontSize:12,cursor:"pointer"}} onClick={async()=>{const em=window.prompt("Digite o e-mail cadastrado nessa conta:");if(!em)return;const{error}=await supabase.auth.resetPasswordForEmail(em,{redirectTo:WEB_APP_URL+"/redefinir-senha"});alert(error?"Erro: "+error.message:"Se esse e-mail estiver cadastrado, você vai receber um link por e-mail pra trocar a senha (abre no navegador). Confira o spam também.")}}>Esqueci minha senha</span>
       </div>
 
-      <Btn onClick={entrar} full loading={loading}>Entrar</Btn>
+      <Btn type="submit" full loading={loading}>Entrar</Btn>
+      </form>
 
       <Divider label="Não tem conta?"/>
 
