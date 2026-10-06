@@ -62,7 +62,7 @@ O Claude Code não edita `/api` nem a `main`.
 
 - ✅ **Motivo do cancelamento no histórico do Empresário (site).** Resolvido no site em 06/10/2026 (commit `7499c51` da `main`), com a mesma linha do app.
 
-- **"Sair" do Motoboy no site não marca offline.** O botão do site (`Motoboy.jsx`) só faz `signOut`. Precisa da mesma correção que entrou no app em 06/10: gravar `online: false` antes do `signOut`.
+- ✅ **"Sair" do Motoboy no site não marcava offline.** Corrigido no site em 06/10/2026 (commit `1f59bc0` da `main`), com a mesma lógica do app. Validado pelo Alessandro no site: ao sair, o Admin mostrou a conta offline.
 
 ## Divergências site × app já trazidas
 
@@ -81,9 +81,8 @@ O Claude Code não edita `/api` nem a `main`.
 
 ## Outros problemas encontrados
 
-- ✅ **"Sair" não marcava o motoboy offline no banco.** Corrigido no app em 06/10/2026: o "Sair" do Motoboy grava `online: false` antes do `signOut`.
+- ✅ **"Sair" não marcava o motoboy offline no banco.** Corrigido no app (`76d8d1a`) e no site (`1f59bc0`) em 06/10/2026, e **validado nos dois** pelo Alessandro: ao tocar em Sair, o Admin mostra a conta offline.
   - Empresário e Admin não têm status online, então não são afetados.
-  - No site ainda falta (ver "Depende do chat do site").
 - **Admin forçando offline não chega no celular do motoboy.** O app só percebe na hora o bloqueio/banimento, não a mudança do `online`. Ele continua achando que está online e toca pelo tempo real, mas para de receber o push dos pedidos reais até o motoboy mexer no botão.
 
 ## Futuro: iPhone
