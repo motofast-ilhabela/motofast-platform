@@ -6,7 +6,9 @@ Atualizado em 04/10/2026. Antes de mexer em qualquer item que tenha versão no s
 
 Da varredura site × nativo:
 
-1. 🔴 **Item 4: histórico do Empresário com JOIN ambíguo.** É o mesmo bug já corrigido no Admin.
+1. ✅ **Item 4: histórico do Empresário com JOIN ambíguo.** Feito em 06/10/2026.
+   - O JOIN ambíguo em si já tinha sido corrigido no app em 12/09 (commit `28eeada`, relação explícita `motoboys!pedidos_motoboy_id_fkey`).
+   - Em 06/10, o `carregarHistorico` foi igualado ao site: pedidos sem JOIN e nomes dos motoboys numa segunda consulta separada. Se ela falhar, o histórico continua na tela, com "—" no nome.
 2. 🔴 **Item 6: "marcar como pago" mirando a semana errada.**
 3. 🟡 **Item 9: motivo do cancelamento não aparece no histórico do Empresário.**
 4. 🟡 **Item 10: ranking não atualiza a cada entrega individual.**
@@ -17,6 +19,12 @@ Da varredura site × nativo:
 O Claude Code não edita `/api` nem a `main`.
 
 - **Aviso de endereço impreciso.** O app e o site já mostram "Confere o endereço do cliente", mas o `api/calcular-distancia.js` em produção só devolve `{ ok, km }`. Faltam os campos `enderecoImpreciso` e `enderecoEncontrado`, então o aviso não aparece em lugar nenhum. A Routes API do Google informa quando o endereço foi achado só por aproximação. Quando o servidor mandar os campos, o app já funciona sem mudança.
+
+## Melhorias futuras
+
+- **Lista de pedidos em andamento do Empresário (`carregarPedidos`) ainda usa JOIN com motoboys.** Hoje funciona, porque a relação é explícita. Mas se o JOIN falhar algum dia, a lista inteira some da tela. O site já usa duas consultas separadas (pedidos sem JOIN e nomes dos motoboys à parte), igual ao que foi feito no histórico em 06/10.
+  - Deixado de fora de propósito: essa lista alimenta o card novo de corridas, que já foi testado e aprovado.
+  - Se for mexer, testar o card de novo: cores por motoboy, resumo, entregas finalizadas e limite de vagas.
 
 ## Outros problemas encontrados
 

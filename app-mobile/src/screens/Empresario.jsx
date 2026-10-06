@@ -2886,9 +2886,15 @@ export default function Empresario() {
   async function carregarHistorico(mesChave) {
     if (!empresa?.id) return;
     setCarregandoHistorico(true);
+    // CORRIGIDO em 07/09/2026 no site (replicado aqui em 06/10/2026): a busca
+    // não traz mais o nome do motoboy embutido (JOIN). Os pedidos vêm
+    // sozinhos e os nomes numa segunda consulta separada, logo abaixo — se ela
+    // falhar por qualquer motivo, o Histórico (e os valores devidos, que
+    // dependem dele) continua na tela, só com "—" no lugar do nome. Antes, uma
+    // falha no JOIN derrubava a busca inteira e o Histórico sumia.
     let query = supabase
       .from("pedidos")
-      .select("*, motoboys!pedidos_motoboy_id_fkey(nome_completo, telefone)")
+      .select("*")
       .eq("empresario_id", empresa.id)
       .in("status", ["entregue","cancelado"])
       .order("criado_em", { ascending: false });
@@ -2905,11 +2911,29 @@ export default function Empresario() {
     const { data, error } = await query;
     if (error) { console.error("Erro ao carregar histórico:", error); setCarregandoHistorico(false); return; }
 
+    let mapaMotoboys = {};
+    const idsMotoboys = [...new Set((data||[]).map(p=>p.motoboy_id).filter(Boolean))];
+    if (idsMotoboys.length > 0) {
+      try {
+        const { data: motoboysDB, error: erroMotoboys } = await supabase
+          .from("motoboys")
+          .select("id, nome_completo, telefone")
+          .in("id", idsMotoboys);
+        if (erroMotoboys) {
+          console.error("Erro ao carregar nomes dos motoboys no histórico (não bloqueia o histórico):", erroMotoboys);
+        } else {
+          (motoboysDB || []).forEach(m => { mapaMotoboys[m.id] = m; });
+        }
+      } catch (e) {
+        console.error("Erro inesperado ao carregar nomes dos motoboys no histórico (não bloqueia o histórico):", e);
+      }
+    }
+
     setHistoricoData((data||[]).map(p=>({
       id: p.id, clienteNome: p.cliente_nome, bairro: p.bairro,
       pagamento: p.forma_pagamento, taxa: p.taxa,
       status: p.status==="entregue" ? "Entregue" : "Cancelada",
-      motoboyNome: p.motoboys?.nome_completo || "—",
+      motoboyNome: mapaMotoboys[p.motoboy_id]?.nome_completo || "—",
       data: new Date(p.criado_em).toLocaleDateString("pt-BR"),
       dataISO: dataLocalISO(new Date(p.criado_em)),
       hora: new Date(p.criado_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
