@@ -2268,7 +2268,24 @@ export default function Motoboy() {
             }} style={{flex:1,padding:"8px 14px",borderRadius:20,cursor:"pointer",fontWeight:700,fontSize:12,border:"none",background:online?"#0d3d2e":"#1f2937",color:online?"#34d399":"#6b7280",transition:"all 0.2s"}}>
               {online?"🟢 Online":"⚫ Offline"}
             </button>
-            <button onClick={async()=>{ await supabase.auth.signOut(); navigate("/"); }}
+            <button onClick={async()=>{
+              // CORRIGIDO em 06/10/2026: "Sair" só encerrava a sessão — a conta
+              // continuava online:true no banco e seguia contando como
+              // disponível pro turno fixo/prioridade e pro push de corrida nova,
+              // mesmo sem ninguém logado. Agora grava offline ANTES do signOut
+              // (depois dele a sessão já não tem permissão de gravar). Se a
+              // gravação falhar, sai do mesmo jeito — nunca prende o motoboy
+              // logado.
+              if (motoboyId) {
+                try {
+                  const { error } = await supabase.from("motoboys").update({ online: false }).eq("id", motoboyId);
+                  if (error) console.log("Erro ao marcar offline ao sair (sai mesmo assim):", error);
+                } catch (e) {
+                  console.log("Erro ao marcar offline ao sair (sai mesmo assim):", e);
+                }
+              }
+              await supabase.auth.signOut(); navigate("/");
+            }}
               style={{background:"transparent",border:"1px solid #374151",color:"#9ca3af",padding:"8px 16px",borderRadius:8,cursor:"pointer",fontSize:11,fontWeight:700,whiteSpace:"nowrap"}}>
               🚪 Sair
             </button>
