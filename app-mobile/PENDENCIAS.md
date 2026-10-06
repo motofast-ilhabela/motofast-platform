@@ -11,7 +11,9 @@ Da varredura site × nativo:
    - Em 06/10, o `carregarHistorico` foi igualado ao site: pedidos sem JOIN e nomes dos motoboys numa segunda consulta separada. Se ela falhar, o histórico continua na tela, com "—" no nome.
 2. ✅ **Item 6: "marcar como pago" mirando a semana errada.** Feito em 06/10/2026.
    - O card "Taxa semanal" do Admin (estabelecimento no plano semanal) marcava a semana ATUAL, ainda em andamento. Agora marca a semana ANTERIOR, já fechada, igual ao site desde 20/09.
-3. 🟡 **Item 9: motivo do cancelamento não aparece no histórico do Empresário.**
+3. ✅ **Item 9: motivo do cancelamento não aparece no histórico do Empresário.** Feito em 06/10/2026.
+   - Trazido o bloco "Motivo do cancelamento" do site, que existe lá desde 24/09.
+   - Além do site: o `carregarHistorico` agora preenche `motivo` com o `motivo_cancelamento` do banco. No site esse campo nunca é preenchido, então lá o bloco não aparece (ver "Depende do chat do site").
 4. 🟡 **Item 10: ranking não atualiza a cada entrega individual.**
 5. 🟠 **Item 12: guard antigo perto do `RideAlert.stopAlert()`/`startAlert()`** que o site já removeu. **Só investigar e mostrar ao Alessandro, sem aplicar.** Encosta no alarme, e nada do alarme (`RideAlertService`, `RideAlertNotificationExtension`, `RideAlertPlugin`) muda sem confirmação dele.
 
@@ -20,6 +22,16 @@ Da varredura site × nativo:
 O Claude Code não edita `/api` nem a `main`.
 
 - **Aviso de endereço impreciso.** O app e o site já mostram "Confere o endereço do cliente", mas o `api/calcular-distancia.js` em produção só devolve `{ ok, km }`. Faltam os campos `enderecoImpreciso` e `enderecoEncontrado`, então o aviso não aparece em lugar nenhum. A Routes API do Google informa quando o endereço foi achado só por aproximação. Quando o servidor mandar os campos, o app já funciona sem mudança.
+
+- **Motivo do cancelamento no histórico do Empresário (site).** O site mostra `e.motivo` no card de cancelado desde 24/09, mas o `carregarHistorico` do site não preenche esse campo. Falta lá a mesma linha que entrou no app em 06/10: `motivo: p.motivo_cancelamento || null,` no mapeamento do histórico.
+
+## Divergência site × app ainda não trazida
+
+- 🔴 **Paginação acima de 1.000 linhas (site, 28/09).** O Supabase devolve no máximo 1.000 linhas por consulta, sem avisar. O site criou `buscarTodasPaginado` e usa em consultas que podem passar disso:
+  - no Empresário, o total pendente dos últimos 120 dias (no `HistoricoEmp`) e mais um ponto;
+  - possivelmente no Admin e no Motoboy, que também têm a função.
+
+  No app essas consultas ainda param em 1.000 linhas: valores devidos e totais podem sair contados a menos.
 
 ## Melhorias futuras
 

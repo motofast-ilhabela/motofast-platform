@@ -2290,6 +2290,17 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
               </div>
               {/* Linha 3: Motoboy */}
               {e.motoboyNome && <div style={{color:"#9ca3af",fontSize:12,marginBottom:6}}>🏍️ {e.motoboyNome}</div>}
+              {/* Adicionado em 24/09/2026 no site a pedido do Alessandro
+                  (replicado aqui em 06/10/2026): mostra o motivo do
+                  cancelamento pro estabelecimento consultar depois — antes só
+                  aparecia num aviso rápido na hora, sem ficar registrado pra
+                  consulta posterior. */}
+              {!entregue && e.motivo && (
+                <div style={{background:"#3d1010",borderRadius:8,padding:"6px 10px",marginBottom:6}}>
+                  <div style={{color:"#f87171",fontSize:11,fontWeight:700}}>Motivo do cancelamento:</div>
+                  <div style={{color:"#fca5a5",fontSize:12,marginTop:1}}>{e.motivo}</div>
+                </div>
+              )}
               {/* Linha 4: Datas e horários */}
               <div style={{display:"flex",gap:12,flexWrap:"wrap",borderTop:"1px solid #1f2937",paddingTop:8,marginTop:4}}>
                 <div style={{fontSize:11,color:"#6b7280"}}>📅 {e.data}</div>
@@ -2934,6 +2945,11 @@ export default function Empresario() {
       pagamento: p.forma_pagamento, taxa: p.taxa,
       status: p.status==="entregue" ? "Entregue" : "Cancelada",
       motoboyNome: mapaMotoboys[p.motoboy_id]?.nome_completo || "—",
+      // Adicionado em 06/10/2026 (item 9): o card de pedido cancelado do
+      // HistoricoEmp mostra e.motivo desde 24/09 no site, mas o campo nunca
+      // era preenchido aqui — então o motivo não aparecia nunca. ATENÇÃO: o
+      // site tem a mesma falta nessa função (precisa da mesma linha lá).
+      motivo: p.motivo_cancelamento || null,
       data: new Date(p.criado_em).toLocaleDateString("pt-BR"),
       dataISO: dataLocalISO(new Date(p.criado_em)),
       hora: new Date(p.criado_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
