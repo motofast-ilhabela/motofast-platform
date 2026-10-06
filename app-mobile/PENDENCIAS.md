@@ -9,7 +9,8 @@ Da varredura site × nativo:
 1. ✅ **Item 4: histórico do Empresário com JOIN ambíguo.** Feito em 06/10/2026.
    - O JOIN ambíguo em si já tinha sido corrigido no app em 12/09 (commit `28eeada`, relação explícita `motoboys!pedidos_motoboy_id_fkey`).
    - Em 06/10, o `carregarHistorico` foi igualado ao site: pedidos sem JOIN e nomes dos motoboys numa segunda consulta separada. Se ela falhar, o histórico continua na tela, com "—" no nome.
-2. 🔴 **Item 6: "marcar como pago" mirando a semana errada.**
+2. ✅ **Item 6: "marcar como pago" mirando a semana errada.** Feito em 06/10/2026.
+   - O card "Taxa semanal" do Admin (estabelecimento no plano semanal) marcava a semana ATUAL, ainda em andamento. Agora marca a semana ANTERIOR, já fechada, igual ao site desde 20/09.
 3. 🟡 **Item 9: motivo do cancelamento não aparece no histórico do Empresário.**
 4. 🟡 **Item 10: ranking não atualiza a cada entrega individual.**
 5. 🟠 **Item 12: guard antigo perto do `RideAlert.stopAlert()`/`startAlert()`** que o site já removeu. **Só investigar e mostrar ao Alessandro, sem aplicar.** Encosta no alarme, e nada do alarme (`RideAlertService`, `RideAlertNotificationExtension`, `RideAlertPlugin`) muda sem confirmação dele.
