@@ -3022,6 +3022,10 @@ export default function AppEmpresario() {
       pagamento: p.forma_pagamento, taxa: p.taxa,
       status: p.status==="entregue" ? "Entregue" : "Cancelada",
       motoboyNome: mapaMotoboys[p.motoboy_id]?.nome_completo || "—",
+      // Adicionado em 06/10/2026: o card de cancelada do histórico já lia
+      // e.motivo, mas este mapeamento nunca preenchia esse campo — então o
+      // motivo do cancelamento nunca aparecia pro estabelecimento.
+      motivo: p.motivo_cancelamento || null,
       data: new Date(p.criado_em).toLocaleDateString("pt-BR"),
       dataISO: dataLocalISO(new Date(p.criado_em)),
       hora: new Date(p.criado_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
