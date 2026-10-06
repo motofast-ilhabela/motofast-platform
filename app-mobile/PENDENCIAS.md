@@ -1,10 +1,25 @@
 # Pendências do app nativo (app-mobile)
 
-Atualizado em 04/10/2026. Antes de mexer em qualquer item que tenha versão no site, comparar com o código atual da `main` (regra do CLAUDE.md: as telas do site e do app não se sincronizam sozinhas).
+Atualizado em 06/10/2026. Antes de mexer em qualquer item que tenha versão no site, comparar com o código atual da `main` (regra do CLAUDE.md: as telas do site e do app não se sincronizam sozinhas).
 
-## Próximos itens, nesta ordem
+## Varredura site × nativo (12 itens): situação
 
-Da varredura site × nativo:
+| # | Item | Situação | Commit |
+|---|---|---|---|
+| 1 | Fórmula de preço por km progressiva | ✅ Feito | `8e51ac3` |
+| 2 | Bairro fora da busca de endereço no Google | ✅ Feito | `b7af7a3` |
+| 3 | Aviso de endereço impreciso | ✅ Feito no app. ⏳ Só aparece quando o servidor mandar os campos (ver "Depende do chat do site") | `93277c4` |
+| 4 | Histórico do Empresário com JOIN ambíguo | ✅ Feito | `f129c36` |
+| 5 | Corrida do Empresário sumindo inteira quando 1 pedido é entregue | ✅ Feito, junto com o card novo de corridas | `c0e6d82` |
+| 6 | "Marcar como pago" mirando a semana errada | ✅ Feito | `42262db` |
+| 7 | Cronômetro de chegada ao estabelecimento | ✅ Feito | `abd742a` |
+| 8 | Limite de pedidos por corrida 3 → 4 | ✅ Feito | `62531ce` |
+| 9 | Motivo do cancelamento no histórico do Empresário | ✅ Feito | `01e4d38` |
+| 10 | Ranking por entrega individual | ✅ Feito | `65f912d` |
+| 11 | Pedido cancelado reaparecendo na resincronização | ✅ Feito | `f12326e` |
+| 12 | Guard antigo perto do `RideAlert` | 🟠 Investigado, não aplicado (detalhes abaixo) | — |
+
+Detalhes dos itens feitos em 06/10 e do item 12:
 
 1. ✅ **Item 4: histórico do Empresário com JOIN ambíguo.** Feito em 06/10/2026.
    - O JOIN ambíguo em si já tinha sido corrigido no app em 12/09 (commit `28eeada`, relação explícita `motoboys!pedidos_motoboy_id_fkey`).
@@ -16,7 +31,28 @@ Da varredura site × nativo:
    - Além do site: o `carregarHistorico` agora preenche `motivo` com o `motivo_cancelamento` do banco. No site esse campo nunca é preenchido, então lá o bloco não aparece (ver "Depende do chat do site").
 4. ✅ **Item 10: ranking não atualiza a cada entrega individual.** Feito em 06/10/2026.
    - O `entregarItemIndividual` do Motoboy agora soma a entrega no Ranking e reordena na hora, igual ao site desde 23/09. Antes, a posição só mudava ao reabrir o app.
-5. 🟠 **Item 12: guard antigo perto do `RideAlert.stopAlert()`/`startAlert()`** que o site já removeu. **Só investigar e mostrar ao Alessandro, sem aplicar.** Encosta no alarme, e nada do alarme (`RideAlertService`, `RideAlertNotificationExtension`, `RideAlertPlugin`) muda sem confirmação dele.
+5. 🟠 **Item 12: guard antigo perto do `RideAlert.stopAlert()`/`startAlert()`.** **Investigado em 06/10/2026, NÃO aplicado** (decisão do Alessandro). **Aplicar só se incomodar, e com teste nos dois aparelhos antes e depois.**
+   - **O que é:** no `Motoboy.jsx`, no começo do efeito que procura pedido novo (o que termina com `},[online, corridaAtiva, motoboyId, ehContaMonitoramento]);`), ainda existe a linha `if (pedidoRef.current) return;`. O site removeu essa linha em 28/09.
+   - **Quando dá problema:** só com **conta de monitoramento (Alessandro/Alencar) com corrida em andamento e uma oferta nova tocando**.
+     - A sincronização da corrida (a cada 3s) reinicia o efeito, e a trava encerra ele antes de qualquer coisa. A checagem a cada 2s, que para o alarme quando o pedido já foi pego, deixa de rodar.
+     - Se outro motoboy aceitar, o card da oferta fica preso na tela, e o ciclo de 30s chama `RideAlert.startAlert()` de novo para um pedido já aceito, até 10 vezes (~5 min).
+   - **Por que é pouco grave no app:** as proteções nativas calam o som. São elas o push `cancelar_oferta`, a checagem do `RideAlertService` a cada 3s e o teto de 9 min. Sobra um toque curto (até ~3s) a cada 30s e o card preso. Aceitar esse card não faz nada de errado, porque o aceite exige o pedido ainda "aguardando". Motoboys comuns não são afetados.
+   - **Teste para reproduzir:** Samsung (monitoramento) numa corrida, chega uma oferta nova, outro aparelho (emulador) aceita essa oferta. Observar se o Samsung volta a tocar a cada 30s com o card preso. Repetir depois de aplicar.
+   - **Diff proposto (não aplicado):**
+     ```diff
+          if (corridaAtiva && !ehContaMonitoramento) return;
+     -    if (pedidoRef.current) return;
+     +    // CORRIGIDO em 28/09/2026 no site: aqui existia um "if (pedidoRef.current) return;"
+     +    // que fazia esta busca NÃO recomeçar quando já havia uma oferta na tela.
+     +    // Pras contas de monitoramento com corrida ativa, a sincronização da corrida
+     +    // (a cada 3s) faz este efeito recomeçar o tempo todo — com uma oferta
+     +    // tocando, ele saía cedo, a verificação "esse pedido ainda está disponível?"
+     +    // morria, e o ciclo de 30s religava o alarme de um pedido já aceito por
+     +    // outra pessoa. A trava era desnecessária: a própria buscarPedidoReal já
+     +    // trata "tem oferta na tela" verificando o status dela e saindo, sem criar
+     +    // oferta duplicada.
+     ```
+     Não muda nenhuma chamada do `RideAlert`. Só deixa a verificação que **para** o alarme voltar a rodar.
 
 ## Depende do chat do site (claude.ai)
 
