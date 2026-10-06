@@ -14,7 +14,8 @@ Da varredura site × nativo:
 3. ✅ **Item 9: motivo do cancelamento não aparece no histórico do Empresário.** Feito em 06/10/2026.
    - Trazido o bloco "Motivo do cancelamento" do site, que existe lá desde 24/09.
    - Além do site: o `carregarHistorico` agora preenche `motivo` com o `motivo_cancelamento` do banco. No site esse campo nunca é preenchido, então lá o bloco não aparece (ver "Depende do chat do site").
-4. 🟡 **Item 10: ranking não atualiza a cada entrega individual.**
+4. ✅ **Item 10: ranking não atualiza a cada entrega individual.** Feito em 06/10/2026.
+   - O `entregarItemIndividual` do Motoboy agora soma a entrega no Ranking e reordena na hora, igual ao site desde 23/09. Antes, a posição só mudava ao reabrir o app.
 5. 🟠 **Item 12: guard antigo perto do `RideAlert.stopAlert()`/`startAlert()`** que o site já removeu. **Só investigar e mostrar ao Alessandro, sem aplicar.** Encosta no alarme, e nada do alarme (`RideAlertService`, `RideAlertNotificationExtension`, `RideAlertPlugin`) muda sem confirmação dele.
 
 ## Depende do chat do site (claude.ai)

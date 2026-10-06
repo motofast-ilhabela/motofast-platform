@@ -2059,6 +2059,19 @@ export default function Motoboy() {
         semana: segundaFeiraDaSemana(agora), mes: agora.getMonth()+1,
         repasePago: false,
       }]);
+      // CORRIGIDO em 23/09/2026 no site (replicado aqui em 06/10/2026, item
+      // 10): o Ranking só era calculado ao abrir a tela, então a entrega
+      // recém-confirmada não mudava a posição do motoboy até ele reabrir o
+      // app. Agora atualiza a posição na hora, localmente (soma essa entrega
+      // e reordena), sem precisar de nova busca no banco.
+      setRankingGeral(prev => {
+        if (!prev || prev.length === 0) return prev;
+        const jaEsta = prev.some(m => m.id === motoboyId);
+        const atualizado = jaEsta
+          ? prev.map(m => m.id === motoboyId ? { ...m, qtd: m.qtd + 1, ganhos: m.ganhos + (Number(pedido.taxa) || 0) } : m)
+          : [...prev, { id: motoboyId, nome: motoboy?.nomeCompleto || "Você", qtd: 1, ganhos: Number(pedido.taxa) || 0 }];
+        return atualizado.slice().sort((a, b) => b.qtd - a.qtd);
+      });
     }
   }
 
