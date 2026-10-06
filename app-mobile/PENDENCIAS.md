@@ -26,13 +26,14 @@ O Claude Code não edita `/api` nem a `main`.
 
 - **Motivo do cancelamento no histórico do Empresário (site).** O site mostra `e.motivo` no card de cancelado desde 24/09, mas o `carregarHistorico` do site não preenche esse campo. Falta lá a mesma linha que entrou no app em 06/10: `motivo: p.motivo_cancelamento || null,` no mapeamento do histórico.
 
-## Divergência site × app ainda não trazida
+## Divergências site × app já trazidas
 
-- 🔴 **Paginação acima de 1.000 linhas (site, 28/09).** O Supabase devolve no máximo 1.000 linhas por consulta, sem avisar. O site criou `buscarTodasPaginado` e usa em consultas que podem passar disso:
-  - no Empresário, o total pendente dos últimos 120 dias (no `HistoricoEmp`) e mais um ponto;
-  - possivelmente no Admin e no Motoboy, que também têm a função.
-
-  No app essas consultas ainda param em 1.000 linhas: valores devidos e totais podem sair contados a menos.
+- ✅ **Paginação acima de 1.000 linhas (site, 28/09).** Feito em 06/10/2026.
+  - `buscarTodasPaginado` foi trazida para o Admin, o Empresário e o Motoboy, e aplicada nas mesmas 5 consultas que o site pagina:
+    - Admin: clientes e pedidos;
+    - Empresário: total pendente de 120 dias e valor pendente do bloqueio;
+    - Motoboy: ranking do mês.
+  - Teste em 06/10: o banco tinha 1.489 pedidos, e a consulta sem paginar trazia só 1.000.
 
 ## Melhorias futuras
 

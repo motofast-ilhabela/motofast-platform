@@ -80,6 +80,27 @@ const ONESIGNAL_APP_ID = "df32f4f0-4280-4127-9d84-ec8a0a05328c";
 
 const WEB_APP_URL = "https://motofast-platform.vercel.app";
 
+// Busca TODAS as linhas de uma consulta do Supabase, em páginas de 1.000.
+// Adicionado em 28/09/2026 no site (replicado aqui em 06/10/2026): o Supabase
+// devolve no MÁXIMO 1.000 linhas por consulta e não avisa quando corta. Quando
+// a tabela de pedidos passou de 1.000, as linhas mais antigas simplesmente
+// pararam de chegar — sumiu um mês inteiro do Dashboard (e podia errar ranking
+// e totais em dinheiro). Esta função pede página por página até acabar.
+// "montarConsulta" precisa devolver a consulta COM ordem fixa (incluindo
+// desempate por id), senão as páginas podem repetir ou pular linhas.
+async function buscarTodasPaginado(montarConsulta, tamanhoPagina = 1000) {
+  const todas = [];
+  for (let pagina = 0; pagina < 200; pagina++) {
+    const inicio = pagina * tamanhoPagina;
+    const { data, error } = await montarConsulta().range(inicio, inicio + tamanhoPagina - 1);
+    if (error) { console.error("Erro ao buscar página de dados:", error); return { data: null, error }; }
+    if (!data || data.length === 0) break;
+    todas.push(...data);
+    if (data.length < tamanhoPagina) break;
+  }
+  return { data: todas, error: null };
+}
+
 function dataLocalISO(date = new Date()) {
   const y = date.getFullYear();
   const m = String(date.getMonth()+1).padStart(2,"0");
@@ -1260,11 +1281,17 @@ export default function Motoboy() {
           const mesAtualRank = new Date().getMonth()+1;
           const anoAtualRank = new Date().getFullYear();
           const inicioMes = new Date(anoAtualRank, mesAtualRank-1, 1).toISOString();
-          const { data: pedidosMes, error: pedidosMesErr } = await supabase
+          // Paginada desde 28/09/2026 no site (replicado aqui em 06/10/2026):
+          // as entregas do mês de TODOS os motoboys passam de 1.000, e acima
+          // disso o Supabase cortava sem avisar e o ranking saía errado (ver
+          // buscarTodasPaginado lá em cima).
+          const { data: pedidosMes, error: pedidosMesErr } = await buscarTodasPaginado(() => supabase
             .from("pedidos")
             .select("motoboy_id, taxa, motoboys!pedidos_motoboy_id_fkey(nome_completo)")
             .eq("status", "entregue")
-            .gte("criado_em", inicioMes);
+            .gte("criado_em", inicioMes)
+            .order("criado_em", { ascending: true })
+            .order("id", { ascending: true }));
 
           if (pedidosMesErr) console.error("Erro ao carregar ranking:", pedidosMesErr);
 

@@ -150,6 +150,27 @@ const PIX_MOTOFAST = {
 // IMPORTANTE: nunca usar date.toISOString().split("T")[0] pra pegar "a data de hoje"
 // ou "a data de um pedido" — toISOString() converte pra UTC e desloca a data em
 // horários próximos da meia-noite (ex: pedido às 21h no Brasil vira dia seguinte em UTC).
+// Busca TODAS as linhas de uma consulta do Supabase, em páginas de 1.000.
+// Adicionado em 28/09/2026 no site (replicado aqui em 06/10/2026): o Supabase
+// devolve no MÁXIMO 1.000 linhas por consulta e não avisa quando corta. Quando
+// a tabela de pedidos passou de 1.000, as linhas mais antigas simplesmente
+// pararam de chegar — sumiu um mês inteiro do Dashboard (e podia errar ranking
+// e totais em dinheiro). Esta função pede página por página até acabar.
+// "montarConsulta" precisa devolver a consulta COM ordem fixa (incluindo
+// desempate por id), senão as páginas podem repetir ou pular linhas.
+async function buscarTodasPaginado(montarConsulta, tamanhoPagina = 1000) {
+  const todas = [];
+  for (let pagina = 0; pagina < 200; pagina++) {
+    const inicio = pagina * tamanhoPagina;
+    const { data, error } = await montarConsulta().range(inicio, inicio + tamanhoPagina - 1);
+    if (error) { console.error("Erro ao buscar página de dados:", error); return { data: null, error }; }
+    if (!data || data.length === 0) break;
+    todas.push(...data);
+    if (data.length < tamanhoPagina) break;
+  }
+  return { data: todas, error: null };
+}
+
 function dataLocalISO(date = new Date()) {
   const y = date.getFullYear();
   const m = String(date.getMonth()+1).padStart(2,"0");
@@ -2018,12 +2039,17 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
       const inicioObj = new Date();
       inicioObj.setDate(inicioObj.getDate()-120);
       const inicio = inicioObj.toISOString();
-      const { data, error } = await supabase
+      // Paginada desde 28/09/2026 no site (replicado aqui em 06/10/2026): com
+      // mais de 1.000 entregas no período, o Supabase cortava sem avisar e o
+      // total pendente saía a menos (ver buscarTodasPaginado lá em cima).
+      const { data, error } = await buscarTodasPaginado(() => supabase
         .from("pedidos")
         .select("taxa, criado_em")
         .eq("empresario_id", empresa.id)
         .eq("status", "entregue")
-        .gte("criado_em", inicio);
+        .gte("criado_em", inicio)
+        .order("criado_em", { ascending: true })
+        .order("id", { ascending: true }));
       if (cancelado) return;
       if (error) { console.error("Erro ao carregar total pendente:", error); setCarregandoSemana(false); return; }
       setSemanaEntregasRaw((data||[]).map(p=>({
@@ -2603,12 +2629,16 @@ export default function Empresario() {
     (async()=>{
       const inicioObj = new Date();
       inicioObj.setDate(inicioObj.getDate()-120);
-      const { data, error } = await supabase
+      // Paginada desde 28/09/2026 no site (replicado aqui em 06/10/2026) —
+      // mesmo motivo da busca do total pendente no HistoricoEmp.
+      const { data, error } = await buscarTodasPaginado(() => supabase
         .from("pedidos")
         .select("taxa, criado_em")
         .eq("empresario_id", empresa.id)
         .eq("status", "entregue")
-        .gte("criado_em", inicioObj.toISOString());
+        .gte("criado_em", inicioObj.toISOString())
+        .order("criado_em", { ascending: true })
+        .order("id", { ascending: true }));
       if (cancelado || error || !data) return;
       let total = 0;
       if (empresa.planoPagamentoMotoboy === "diario") {
