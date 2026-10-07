@@ -29,6 +29,7 @@ const RideAlert = registerPlugin("RideAlert");
 // de import/export.
 import "onesignal-cordova-plugin";
 import { supabase } from "../supabaseClient.js";
+import ExcluirConta from "../ExcluirConta.jsx";
 
 function getOneSignal() {
   return typeof window !== "undefined" ? window.plugins?.OneSignal : undefined;
@@ -2523,6 +2524,21 @@ export default function Motoboy() {
         })()}
 
         {aba==="ganhos" && <Ganhos historico={historico} motoboyId={motoboyId} todosHistorico={historico} rankingGeral={rankingGeral} motoboy={motoboy}/>}
+
+        {/* Adicionado em 06/10/2026: exclusão de conta, exigência da Play
+            Store (ver ExcluirConta.jsx). Link discreto no rodapé de todas as
+            abas. Com corrida em andamento, não deixa pedir — o pedido ficaria
+            sem ninguém pra entregar. */}
+        {motoboyId && (
+          <ExcluirConta
+            tipo="motoboy"
+            perfilId={motoboyId}
+            bloqueio={corridaAtiva ? "Você tem uma corrida em andamento. Termine ou cancele a corrida antes de pedir a exclusão da conta." : null}
+            antesDeSair={async () => {
+              await supabase.from("motoboys").update({ online: false }).eq("id", motoboyId);
+            }}
+          />
+        )}
       </div>
 
 

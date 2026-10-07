@@ -68,9 +68,43 @@ Algumas etapas demoram dias e não dependem de código. Comece por elas.
 - um caminho **dentro do app** para pedir a exclusão da conta e dos dados;
 - um **link na web** onde a pessoa pede a exclusão sem precisar do app (é informado no Play Console).
 
-**Hoje o app não tem nenhum dos dois.**
+**Situação em 06/10/2026:**
+- **App:** feito.
+  - Link "Excluir minha conta" no rodapé das telas de Motoboy e Empresário (`src/ExcluirConta.jsx`).
+  - Aba "🗑️ Exclusões" no Admin.
+- **Banco, servidor e página web:** rascunhos prontos, **ainda não aplicados**, em `C:\Projetos\para-o-site\excluir-conta\` (fora do repositório, com um LEIA-ME da ordem dos passos).
+- **Até a tabela existir no banco:** o app mostra "não foi possível registrar, fale com o suporte" e **não** sai da conta.
 
-**Proposta, respeitando a regra do CLAUDE.md** (banco só com mudanças aditivas):
+**SQL da tabela nova** (você roda no editor SQL do Supabase). É estritamente aditiva: tabela nova, sem `REFERENCES`.
+```sql
+create table public.solicitacoes_exclusao (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null,          -- sem REFERENCES, de propósito
+  tipo text not null check (tipo in ('motoboy','empresario')),
+  perfil_id uuid,                 -- id em motoboys/empresarios, sem REFERENCES
+  email text,
+  motivo text,
+  origem text not null default 'app' check (origem in ('app','web')),
+  status text not null default 'pendente' check (status in ('pendente','concluida','recusada')),
+  solicitado_em timestamptz not null default now(),
+  concluido_em timestamptz
+);
+alter table public.solicitacoes_exclusao enable row level security;
+create policy "registra o proprio pedido" on public.solicitacoes_exclusao
+  for insert to authenticated with check (auth.uid() = user_id);
+create policy "ve o proprio pedido" on public.solicitacoes_exclusao
+  for select to authenticated using (auth.uid() = user_id);
+create policy "admin ve todos" on public.solicitacoes_exclusao
+  for select to authenticated using ((auth.jwt() ->> 'email') = 'botdahora@gmail.com');
+```
+
+**O que é apagado e o que é mantido** (proposta aprovada em 06/10; nome/CPF do motoboy dependem do contador):
+- A linha do motoboy ou do estabelecimento **não é apagada, é anonimizada**. `pedidos.motoboy_id`/`empresario_id` são `ON DELETE SET NULL`, e `pedidos.prioridade_motoboy_id` não tem regra, então apagar a linha quebraria ou travaria o histórico.
+- O login é **bloqueado e o e-mail trocado**, não apagado. `motoboys.user_id` e `empresarios.user_id` apontam para ele sem `ON DELETE`, então o banco recusaria apagar.
+- Só os **clientes salvos** do estabelecimento são apagados de verdade. Nenhuma tabela aponta para `clientes`.
+- Pedidos, valores, corridas, fechamentos do turno fixo, ofertas e ações **não mudam**.
+
+**Proposta original, respeitando a regra do CLAUDE.md** (banco só com mudanças aditivas):
 - **No app:** botão "Excluir minha conta" nas telas de Motoboy e Empresário, com confirmação e explicação clara.
   - Grava um pedido numa **tabela nova** (ex.: `solicitacoes_exclusao`), deixa o motoboy offline e sai da conta.
   - Tabela nova, sem `REFERENCES` para não criar caminho de JOIN, e sem alterar nada que a web já usa.

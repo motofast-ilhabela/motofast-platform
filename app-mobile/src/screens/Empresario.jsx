@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../supabaseClient.js";
+import ExcluirConta from "../ExcluirConta.jsx";
 
 // Adicionado em 24/09/2026 no site a pedido do Alessandro (replicado aqui em
 // 03/10/2026): detecta sozinho se está no verão (alta temporada em
@@ -3261,6 +3262,19 @@ export default function Empresario() {
         {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes} empresa={empresa} onRecarregar={()=>carregarPedidos(empresa.id)} limiteAtingido={limiteAtingido}/>}
         {aba==="historico" && <HistoricoEmp historico={historicoData} carregando={carregandoHistorico} mesSelecionado={mesHistorico} setMesSelecionado={setMesHistorico} mesesDisponiveis={gerarMesesDisponiveis()} empresa={empresa}/>}
         {aba==="clientes"  && <ClientesSalvos clientes={clientes} setClientes={setClientes} empresaId={empresa.id}/>}
+
+        {/* Adicionado em 06/10/2026: exclusão de conta, exigência da Play
+            Store (ver ExcluirConta.jsx). Link discreto no rodapé de todas as
+            abas. Com pedido aguardando motoboy ou em rota, não deixa pedir. */}
+        {empresa?.id && (
+          <ExcluirConta
+            tipo="empresario"
+            perfilId={empresa.id}
+            bloqueio={pedidos.some(p => p.status === "aguardando" || p.status === "em_rota")
+              ? "Você tem pedidos em andamento. Conclua ou cancele esses pedidos antes de pedir a exclusão da conta."
+              : null}
+          />
+        )}
       </div>
 
 

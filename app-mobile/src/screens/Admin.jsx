@@ -2996,6 +2996,116 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
   );
 }
 
+// ─── PEDIDOS DE EXCLUSÃO DE CONTA ─────────────────────────────────────────────
+// Adicionado em 06/10/2026 (exigência da Play Store — ver ExcluirConta.jsx e
+// app-mobile/PUBLICACAO-PLAY-STORE.md). Lista os pedidos registrados pelos
+// motoboys/estabelecimentos na tabela nova solicitacoes_exclusao. O botão
+// "Concluir exclusão" chama /api/excluir-conta no site, que roda no servidor
+// com a chave de administrador: anonimiza os dados pessoais, apaga os
+// clientes salvos do estabelecimento e bloqueia o login. Pedidos, valores e
+// histórico NUNCA são apagados. Daqui o Admin não grava nada direto no banco
+// (sem permissão — mesmo motivo do bloquear-motoboy.js).
+function ExclusoesConta({ motoboys, empresarios, historico }) {
+  const [lista, setLista] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [erroTabela, setErroTabela] = useState("");
+  const [concluindoId, setConcluindoId] = useState(null);
+
+  async function carregar() {
+    setCarregando(true);
+    const { data, error } = await supabase.from("solicitacoes_exclusao")
+      .select("*").order("solicitado_em", { ascending: false });
+    if (error) {
+      console.log("Erro ao carregar pedidos de exclusão:", error);
+      setErroTabela("Não foi possível carregar os pedidos de exclusão. Se a tabela solicitacoes_exclusao ainda não foi criada no Supabase, crie com o SQL da seção 4.1 do PUBLICACAO-PLAY-STORE.md.");
+      setLista([]);
+    } else {
+      setErroTabela("");
+      setLista(data || []);
+    }
+    setCarregando(false);
+  }
+  useEffect(() => { carregar(); }, []);
+
+  function nomeDoPerfil(s) {
+    if (s.tipo === "motoboy") return (motoboys || []).find(m => m.id === s.perfil_id)?.nomeCompleto || "Motoboy (não encontrado)";
+    return (empresarios || []).find(e => e.id === s.perfil_id)?.nome || "Estabelecimento (não encontrado)";
+  }
+
+  async function concluir(s) {
+    const nome = nomeDoPerfil(s);
+    if (s.tipo === "motoboy") {
+      const pendentes = (historico || []).filter(e => e.motoboyId === s.perfil_id && e.status === "Entregue" && !e.repasePago).length;
+      if (pendentes > 0 && !window.confirm(`${nome} ainda tem ${pendentes} entrega(s) com repasse NÃO marcado como pago. O ideal é acertar o pagamento antes, porque depois a chave PIX é apagada. Concluir mesmo assim?`)) return;
+    }
+    if (!window.confirm(`Concluir a exclusão da conta de ${nome}?\n\nOs dados pessoais serão apagados e o login bloqueado. Pedidos, valores e histórico continuam. Não dá pra desfazer.`)) return;
+    setConcluindoId(s.id);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const resp = await fetch(`${WEB_APP_URL}/api/excluir-conta`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session?.access_token || ""}` },
+        body: JSON.stringify({ solicitacaoId: s.id }),
+      });
+      if (resp.status === 404) {
+        alert("O servidor ainda não tem a função de exclusão (/api/excluir-conta). Ela precisa ser publicada no site pelo chat do site.");
+      } else {
+        const r = await resp.json().catch(() => ({}));
+        if (!resp.ok) alert("Erro ao concluir a exclusão: " + (r.error || resp.status));
+        else alert("Exclusão concluída.");
+      }
+    } catch (e) {
+      alert("Erro ao concluir a exclusão: " + e.message);
+    }
+    setConcluindoId(null);
+    await carregar();
+  }
+
+  const pendentes = lista.filter(s => s.status === "pendente");
+  const outros = lista.filter(s => s.status !== "pendente");
+
+  return (
+    <div>
+      <SectionTitle>🗑️ Pedidos de exclusão de conta</SectionTitle>
+      <div style={{color:"#6b7280",fontSize:12,marginBottom:14}}>
+        Prazo combinado com o usuário: até 15 dias a partir do pedido. Pedidos, valores e histórico são mantidos; só os dados pessoais saem.
+      </div>
+      {erroTabela && <Card style={{border:"1px solid #f59e0b",color:"#fbbf24",fontSize:13}}>{erroTabela}</Card>}
+      {carregando && <div style={{color:"#6b7280",fontSize:13}}>Carregando...</div>}
+      {!carregando && !erroTabela && pendentes.length === 0 && (
+        <div style={{color:"#4b5563",fontSize:13,marginBottom:14}}>Nenhum pedido de exclusão pendente.</div>
+      )}
+      {pendentes.map(s => {
+        const dias = Math.floor((Date.now() - new Date(s.solicitado_em).getTime()) / 86400000);
+        return (
+          <Card key={s.id} style={{marginBottom:10,border:`1px solid ${dias>=12?"#ef4444":"#374151"}`}}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:8,flexWrap:"wrap",alignItems:"flex-start"}}>
+              <div>
+                <div style={{color:"#f9fafb",fontWeight:800,fontSize:15}}>{s.tipo==="motoboy"?"🏍️":"🏪"} {nomeDoPerfil(s)}</div>
+                <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>{s.email || "—"} · pedido pelo {s.origem==="web"?"site":"app"} em {new Date(s.solicitado_em).toLocaleDateString("pt-BR")} ({dias} dia{dias!==1?"s":""})</div>
+                {s.motivo && <div style={{color:"#d1d5db",fontSize:12,marginTop:4}}>Motivo: {s.motivo}</div>}
+              </div>
+              <Btn small cor="perigo" disabled={concluindoId===s.id} onClick={()=>concluir(s)}>
+                {concluindoId===s.id ? "Concluindo..." : "Concluir exclusão"}
+              </Btn>
+            </div>
+          </Card>
+        );
+      })}
+      {outros.length > 0 && (
+        <div style={{marginTop:18}}>
+          <div style={{color:"#6b7280",fontSize:12,fontWeight:700,marginBottom:6}}>Já tratados</div>
+          {outros.map(s => (
+            <div key={s.id} style={{color:"#6b7280",fontSize:12,padding:"4px 0",borderBottom:"1px solid #1f2937"}}>
+              {s.tipo==="motoboy"?"🏍️":"🏪"} {s.email || s.perfil_id} · {s.status} {s.concluido_em ? `em ${new Date(s.concluido_em).toLocaleDateString("pt-BR")}` : ""}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── TURNO FIXO ───────────────────────────────────────────────────────────────
 // Tela criada em 30/08/2026, pro plano de "motoboys de plantão" com piso
 // garantido semanal. Usa duas tabelas novas e isoladas (sem FK, sem risco de
@@ -3703,6 +3813,7 @@ export default function Admin() {
     {id:"clientes",label:"👤 Clientes"},
     {id:"historico",label:"📋 Histórico"},
     {id:"avaliacoes",label:"⭐ Avaliações"},
+    {id:"exclusoes",label:"🗑️ Exclusões"},
   ];
 
   if (carregando) return (
@@ -3867,6 +3978,7 @@ export default function Admin() {
         {aba==="clientes"         && <Clientes clientes={clientes} setClientes={setClientes} historico={historico} empresarios={empresarios}/>}
         {aba==="historico"        && <Historico historico={historico} motoboys={motoboys} empresarios={empresarios}/>}
         {aba==="avaliacoes"        && <Avaliacoes avaliacoes={avaliacoes} motoboys={motoboys}/>}
+        {aba==="exclusoes"         && <ExclusoesConta motoboys={motoboys} empresarios={empresarios} historico={historico}/>}
       </div>
     </div>
   );
