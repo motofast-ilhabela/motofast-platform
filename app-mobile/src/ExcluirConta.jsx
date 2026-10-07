@@ -15,7 +15,8 @@ import { supabase } from './supabaseClient.js'
 //   /api/excluir-conta, disparada pelo Admin na aba "Exclusões". Pelo app o
 //   Admin não tem permissão pra isso (mesmo motivo do bloquear-motoboy.js).
 // - Pedidos, valores e histórico NUNCA são apagados: continuam existindo pros
-//   estabelecimentos e pra contabilidade, só sem os dados pessoais.
+//   estabelecimentos e pra contabilidade. O que acontece com nome e CPF do
+//   motoboy depende de MANTER_NOME_CPF_MOTOBOY (logo abaixo).
 //
 // Enquanto a tabela solicitacoes_exclusao não existir no banco, o registro
 // falha e a tela manda falar com o suporte — nunca sai da conta sem ter
@@ -24,16 +25,33 @@ import { supabase } from './supabaseClient.js'
 const SUPORTE_TEL = "5512991213656"
 const PRAZO_DIAS = 15
 
+// TEM QUE SER IGUAL à constante de mesmo nome no api/excluir-conta.js do site
+// (e na página web ExcluirContaWeb.jsx). Decide se nome e CPF do motoboy são
+// guardados depois da exclusão (decisão do contador, pendente em 06/10/2026).
+// O texto abaixo muda conforme ela — se as duas ficarem diferentes, o app
+// promete uma coisa e o servidor faz outra.
+const MANTER_NOME_CPF_MOTOBOY = true
+
 const TEXTOS = {
-  motoboy: {
+  motoboy: MANTER_NOME_CPF_MOTOBOY ? {
     apaga: [
       "Telefone, chave PIX, RG, data de nascimento, nome do pai e da mãe, endereço e bairro base",
       "Sua última localização registrada",
       "Seu acesso: você não consegue mais entrar com esse e-mail",
     ],
     mantem: [
-      "As entregas que você fez, com datas e valores, sem seus dados pessoais — os estabelecimentos e a contabilidade precisam desses registros",
-      "Os dados que a lei obriga a guardar por um prazo (ex.: registros fiscais de pagamentos)",
+      "Seu nome completo e CPF, guardados pelo prazo exigido pela legislação fiscal e contábil (registro dos pagamentos que você recebeu). Eles deixam de aparecer no app e no site",
+      "As entregas que você fez, com datas e valores — os estabelecimentos e a contabilidade precisam desses registros",
+    ],
+  } : {
+    apaga: [
+      "Nome completo e CPF",
+      "Telefone, chave PIX, RG, data de nascimento, nome do pai e da mãe, endereço e bairro base",
+      "Sua última localização registrada",
+      "Seu acesso: você não consegue mais entrar com esse e-mail",
+    ],
+    mantem: [
+      "As entregas que você fez, com datas e valores, sem os seus dados pessoais — os estabelecimentos e a contabilidade precisam desses registros",
     ],
   },
   empresario: {
@@ -43,7 +61,7 @@ const TEXTOS = {
       "Seu acesso: você não consegue mais entrar com esse e-mail",
     ],
     mantem: [
-      "Nome e CNPJ do estabelecimento, os pedidos já feitos, valores e pagamentos — a contabilidade precisa desses registros",
+      "Nome e CNPJ do estabelecimento, os pedidos já feitos (com os dados de entrega de cada um), valores e pagamentos — a contabilidade precisa desses registros",
       "Valores em aberto continuam devidos, mesmo depois da exclusão",
     ],
   },

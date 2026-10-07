@@ -3051,7 +3051,9 @@ function ExclusoesConta({ motoboys, empresarios, historico }) {
         alert("O servidor ainda não tem a função de exclusão (/api/excluir-conta). Ela precisa ser publicada no site pelo chat do site.");
       } else {
         const r = await resp.json().catch(() => ({}));
-        if (!resp.ok) alert("Erro ao concluir a exclusão: " + (r.error || resp.status));
+        if (resp.status === 409) alert("Exclusão não concluída: " + (r.error || "ainda há pedido em andamento."));
+        else if (!resp.ok) alert("Erro ao concluir a exclusão: " + (r.error || resp.status));
+        else if (r.avisos && r.avisos.length) alert("Exclusão concluída, com avisos:\n\n• " + r.avisos.join("\n• "));
         else alert("Exclusão concluída.");
       }
     } catch (e) {
