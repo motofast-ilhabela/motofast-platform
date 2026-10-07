@@ -3099,7 +3099,9 @@ function ExclusoesConta({ motoboys, empresarios, historico }) {
           <div style={{color:"#6b7280",fontSize:12,fontWeight:700,marginBottom:6}}>Já tratados</div>
           {outros.map(s => (
             <div key={s.id} style={{color:"#6b7280",fontSize:12,padding:"4px 0",borderBottom:"1px solid #1f2937"}}>
-              {s.tipo==="motoboy"?"🏍️":"🏪"} {s.email || s.perfil_id} · {s.status} {s.concluido_em ? `em ${new Date(s.concluido_em).toLocaleDateString("pt-BR")}` : ""}
+              {/* Nome em vez do e-mail: ao concluir, o api/excluir-conta.js do
+                  site apaga o e-mail e o motivo do pedido (ajuste de 07/10/2026). */}
+              {s.tipo==="motoboy"?"🏍️":"🏪"} {nomeDoPerfil(s)} · {s.status} {s.concluido_em ? `em ${new Date(s.concluido_em).toLocaleDateString("pt-BR")}` : ""}
             </div>
           ))}
         </div>
