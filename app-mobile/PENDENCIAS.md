@@ -85,6 +85,14 @@ O Claude Code não edita `/api` nem a `main`.
   - Empresário e Admin não têm status online, então não são afetados.
 - **Admin forçando offline não chega no celular do motoboy.** O app só percebe na hora o bloqueio/banimento, não a mudança do `online`. Ele continua achando que está online e toca pelo tempo real, mas para de receber o push dos pedidos reais até o motoboy mexer no botão.
 
+## Publicação na Play Store
+
+Guia completo, com ordem das etapas, quem faz cada uma e checklist, em [PUBLICACAO-PLAY-STORE.md](PUBLICACAO-PLAY-STORE.md). Os itens de código que bloqueiam a publicação:
+
+- **Exclusão de conta** no app (+ página na web e remoção final, com o chat do site). É obrigatória para apps com cadastro.
+- **Assinatura de lançamento + AAB.** Hoje só existe o APK de teste.
+- **Cláusula de geolocalização nos Termos do Motoboy:** diz que o app coleta localização, mas ele não coleta.
+
 ## Futuro: iPhone
 
 - **Contas salvas ("lembrar login") no iOS.** No Android, isso usa o `CredenciaisPlugin.java` (Gerenciador de Credenciais). No iPhone vai precisar de:
