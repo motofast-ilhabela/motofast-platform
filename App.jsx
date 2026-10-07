@@ -9,6 +9,7 @@ import Rastreio from './Rastreio.jsx'
 import RedefinirSenha from './RedefinirSenha.jsx'
 import TermosMotoboy from './TermosMotoboy.jsx'
 import TermosEmpresario from './TermosEmpresario.jsx'
+import ExcluirContaWeb from './ExcluirContaWeb.jsx'
 
 // ─── TELA DE LOGIN DO ADMIN ───────────────────────────────────────────────────
 function LoginAdmin() {
@@ -268,6 +269,8 @@ export default function App() {
         <Route path="/termos-empresario" element={<TermosEmpresario />} />
 
         {/* Qualquer outro link redireciona pra tela inicial */}
+        <Route path="/excluir-conta" element={<ExcluirContaWeb />} />
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
