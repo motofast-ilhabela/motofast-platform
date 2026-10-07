@@ -99,7 +99,7 @@ export default function TermosMotoboy() {
 
 9.2. A PLATAFORMA não comercializará dados pessoais do MOTOBOY a terceiros, exceto quando exigido por lei.
 
-9.3. O MOTOBOY autoriza a coleta de dados de geolocalização durante as entregas, para fins de rastreamento em tempo real pelos clientes e estabelecimentos.`
+9.3. Durante as corridas em andamento, a PLATAFORMA coleta a localização do aparelho do MOTOBOY em intervalos curtos, com o único objetivo de permitir o acompanhamento da entrega em tempo real pelo cliente e pelo estabelecimento. A localização não é coletada quando o MOTOBOY está sem corrida em andamento. A PLATAFORMA mantém apenas a última posição registrada.`
     },
     {
       titulo: "CLÁUSULA 10 — DA VIGÊNCIA E ALTERAÇÕES",
