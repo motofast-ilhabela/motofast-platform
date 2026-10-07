@@ -91,7 +91,12 @@ Guia completo, com ordem das etapas, quem faz cada uma e checklist, em [PUBLICAC
 
 - **Exclusão de conta** no app (+ página na web e remoção final, com o chat do site). É obrigatória para apps com cadastro.
 - **Assinatura de lançamento + AAB.** Hoje só existe o APK de teste.
-- **Localização do motoboy no app (decisão pendente).** O site grava a posição do motoboy a cada 5s durante a corrida, e o Rastreio do cliente mostra essa posição. O app tem o mesmo código, mas não declara a permissão de localização no Android, então nele a coleta falha e o Rastreio não mostra quem usa o app. Opções: adicionar a permissão (paridade com o site, declarada ao Google) ou remover o código. A cláusula 9 dos Termos do Motoboy está correta; só vale deixá-la mais precisa (texto sugerido em 06/10).
+- **Localização do motoboy no app (decisão pendente).** O site grava a posição do motoboy a cada 5s durante a corrida, e o Rastreio do cliente mostra essa posição. O app tem o mesmo código, mas não declara a permissão de localização no Android, então nele a coleta falha e o Rastreio não mostra quem usa o app. Opções: adicionar a permissão (paridade com o site, declarada ao Google) ou remover o código.
+  - ✅ **Cláusula 9 dos Termos do Motoboy: verificada e publicada** no site em 06/10/2026. A frase "mantém apenas a última posição registrada" é 100% verdadeira no site e no app:
+    - a coleta só roda com corrida em andamento, a cada 5s;
+    - cada envio sobrescreve a linha do motoboy;
+    - a tabela `motoboys` não tem gatilho que guarde histórico (consulta em `pg_trigger` sem resultados).
+  - ⚠️ **Play Console, formulário "Segurança dos dados":** a declaração de localização tem que ser **conferida de novo contra o APK que vai ser enviado**, e não assumida. Em 06/10/2026 o app **não tem** a permissão de localização (nem no manifesto final, nem no app instalado), então **não coleta**. Se a permissão for adicionada, a declaração muda. Ver seção 6 do [PUBLICACAO-PLAY-STORE.md](PUBLICACAO-PLAY-STORE.md).
 
 ## Futuro: iPhone
 

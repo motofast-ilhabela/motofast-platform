@@ -139,7 +139,11 @@ create policy "admin ve todos" on public.solicitacoes_exclusao
     - **ou** adicionar a permissão de localização "com o app em uso" no app (paridade com o site, e entra na declaração ao Google);
     - **ou** remover esse código do app.
 
-    Nos dois casos, o formulário de segurança dos dados tem que declarar localização, porque o site coleta.
+    O formulário "Segurança dos dados" do Play Console declara o que **o app** coleta, não o site. Na hora de preencher, a declaração de localização tem que ser **conferida de novo contra o que o app faz naquele momento**, e não copiada deste guia (ver seção 6).
+  - **Verificado em 06/10/2026:**
+    - **Sem a permissão (hoje):** o APK final, já com todas as bibliotecas, e o app instalado não têm nenhuma permissão de localização. O app **não coleta**.
+    - **Se a permissão for adicionada:** a coleta roda só com corrida em andamento (`if (!motoboyId || !corridaAtiva) return;` no `Motoboy.jsx`), a cada 5s, e cada envio **sobrescreve** a linha do motoboy (`update` em `motoboys`, sem histórico).
+    - **No banco:** a tabela `motoboys` não tem nenhum gatilho (consulta em `pg_trigger` sem resultados). Então só a última posição fica guardada, no site e no app.
 
 ---
 
@@ -166,6 +170,9 @@ create policy "admin ve todos" on public.solicitacoes_exclusao
 Preenchidas por você. Posso ajudar com as respostas de cada formulário.
 
 - **Segurança dos dados (Data safety):** lista do que é coletado, para quê, se é compartilhado e se é criptografado.
+  - ⚠️ **Localização: conferir de novo na hora de preencher, contra o APK que vai ser enviado.** Não assumir nada deste guia. Veja se o manifesto final tem `ACCESS_FINE_LOCATION`/`ACCESS_COARSE_LOCATION`:
+    - **não tem** (situação de 06/10/2026): o app não coleta localização e ela não entra na declaração do app;
+    - **tem:** declarar localização precisa, coletada só com corrida em andamento, compartilhada com o cliente e o estabelecimento (Rastreio), só a última posição guardada.
   - Tem que bater com a política de privacidade e com o app.
   - O tráfego com o Supabase é criptografado (HTTPS).
   - Informar que existe pedido de exclusão de conta, com o link da web.
@@ -220,7 +227,7 @@ Preenchidas por você. Posso ajudar com as respostas de cada formulário.
 - [ ] Criar conta Google da empresa
 - [ ] Criar conta de organização no Play Console (US$ 25) e passar na verificação
 - [ ] Escrever a política de privacidade (com revisão jurídica) e publicar no site
-- [ ] Deixar a cláusula de geolocalização dos Termos do Motoboy mais precisa (ela está correta: o site coleta)
+- [x] Deixar a cláusula de geolocalização dos Termos do Motoboy mais precisa: publicada no site e verificada contra o site e o app em 06/10/2026
 - [ ] Decidir sobre localização no app: adicionar a permissão (paridade com o site) ou remover o código
 - [ ] Exclusão de conta: botão no app + tela no Admin
 - [ ] Exclusão de conta: página na web + remoção final
@@ -230,6 +237,6 @@ Preenchidas por você. Posso ajudar com as respostas de cada formulário.
 - [ ] Gerar o AAB assinado
 - [ ] Criar a conta de demonstração (motoboy + estabelecimento) para a revisão
 - [ ] Preparar ícone 512, imagem de destaque, capturas de tela e textos
-- [ ] Preencher Segurança dos dados, Acesso ao app, Serviço em primeiro plano, Classificação, Público-alvo e Anúncios
+- [ ] Preencher Segurança dos dados (conferir localização de novo contra o APK enviado, ver seção 6), Acesso ao app, Serviço em primeiro plano, Classificação, Público-alvo e Anúncios
 - [ ] Teste interno pela Play Store
 - [ ] Enviar para produção
