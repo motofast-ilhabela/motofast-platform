@@ -98,7 +98,14 @@ Algumas etapas demoram dias e não dependem de código. Comece por elas.
 
 ### 4.4 Revisões de conformidade
 - **Logs:** no build de teste, o Capacitor mostra no Logcat o conteúdo lido do armazenamento, inclusive o **token de sessão**, como vimos no teste do emulador. No build de lançamento esses logs ficam desligados por padrão, mas convém deixar isso explícito na configuração (`loggingBehavior: "none"`).
-- **Localização:** os Termos do Motoboy (cláusula 9) dizem que o motoboy "autoriza coleta de geolocalização durante as entregas", mas **o app não pede nem coleta localização**. Ou se ajusta o texto dos Termos, ou isso vira uma funcionalidade nova. O que for declarado ao Google precisa bater com o que o app faz.
+- **Localização (corrigido em 06/10/2026):** o sistema **coleta** a localização do motoboy.
+  - Durante uma corrida ativa, a cada 5 segundos, o site grava `latitude`, `longitude` e `ultima_localizacao` em `motoboys`, e a página de Rastreio mostra essa posição ao cliente. A cláusula 9 dos Termos está correta.
+  - O app tem o mesmo código, mas **não declara a permissão de localização no Android**, então nele a coleta falha e o Rastreio não mostra motoboys que usam o app.
+  - **Decisão pendente:**
+    - **ou** adicionar a permissão de localização "com o app em uso" no app (paridade com o site, e entra na declaração ao Google);
+    - **ou** remover esse código do app.
+
+    Nos dois casos, o formulário de segurança dos dados tem que declarar localização, porque o site coleta.
 
 ---
 
@@ -108,7 +115,7 @@ Algumas etapas demoram dias e não dependem de código. Comece por elas.
 - O link é informado no Play Console e deve ficar acessível **dentro do app** também, por exemplo no cadastro e no menu.
 - Hoje só existe a cláusula 9 dos Termos, com duas linhas. Isso **não basta**.
 - **O que a política precisa cobrir**, com base no que o app coleta de verdade:
-  - **Motoboy:** nome completo, e-mail, telefone, CPF, RG, data de nascimento, nome do pai e da mãe, endereço, bairro base, chave PIX, status online e histórico de entregas e ganhos.
+  - **Motoboy:** nome completo, e-mail, telefone, CPF, RG, data de nascimento, nome do pai e da mãe, endereço, bairro base, chave PIX, status online, histórico de entregas e ganhos, e **localização durante as corridas** (a cada 5s, mostrada ao cliente no Rastreio; a última posição fica gravada).
   - **Empresário:** dados do estabelecimento (nome, endereço, CNPJ/CPF, telefone, e-mail) e histórico de pedidos e pagamentos.
   - **Clientes finais dos estabelecimentos:** nome, telefone e endereço de entrega. Esses são **dados de terceiros**, cadastrados pelo estabelecimento, e precisam ser citados.
   - **Do aparelho:** identificador de notificação push (OneSignal/Firebase).
@@ -179,7 +186,8 @@ Preenchidas por você. Posso ajudar com as respostas de cada formulário.
 - [ ] Criar conta Google da empresa
 - [ ] Criar conta de organização no Play Console (US$ 25) e passar na verificação
 - [ ] Escrever a política de privacidade (com revisão jurídica) e publicar no site
-- [ ] Ajustar a cláusula de geolocalização dos Termos do Motoboy (ou decidir coletar)
+- [ ] Deixar a cláusula de geolocalização dos Termos do Motoboy mais precisa (ela está correta: o site coleta)
+- [ ] Decidir sobre localização no app: adicionar a permissão (paridade com o site) ou remover o código
 - [ ] Exclusão de conta: botão no app + tela no Admin
 - [ ] Exclusão de conta: página na web + remoção final
 - [ ] Definir o que é apagado e o que é mantido após a exclusão
