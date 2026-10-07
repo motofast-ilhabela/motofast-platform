@@ -142,7 +142,11 @@ export default async function handler(req, res) {
         telefone: null, pix: null, rg: null, nascimento: null,
         nome_pai: null, nome_mae: null, endereco: null, bairro_base: null,
         latitude: null, longitude: null, ultima_localizacao: null,
-        online: false, ativo: false,
+        // bloqueado: true acrescentado em 07/10/2026: o aceitar() do app do
+        // motoboy só barra quem está bloqueado ou banido (não olha "ativo"),
+        // então sem isso um app ainda aberto conseguiria aceitar corrida
+        // depois da exclusão.
+        online: false, ativo: false, bloqueado: true,
       };
       if (!MANTER_NOME_CPF_MOTOBOY) { anon.nome_completo = "Motoboy excluído"; anon.cpf = null; }
       const r1 = await atualizarComFallback(supabaseAdmin, "motoboys", anon, { id: sol.perfil_id });
