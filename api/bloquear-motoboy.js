@@ -49,6 +49,15 @@ export default async function handler(req, res) {
 
   const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
+  // Só o Admin pode usar esta rota: confere o login de quem chamou.
+  // (Trava adicionada em 08/10/2026 — antes qualquer pessoa conseguia chamar.)
+  const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  if (!token) return res.status(401).json({ error: "Sem autorização" });
+  const { data: quem, error: erroQuem } = await supabaseAdmin.auth.getUser(token);
+  if (erroQuem || quem?.user?.email !== "botdahora@gmail.com") {
+    return res.status(403).json({ error: "Só o Admin pode usar esta função" });
+  }
+
   let update = {};
   if (acao === "bloquear") update = { bloqueado: true, online: false };
   if (acao === "desbloquear") update = { bloqueado: false };
