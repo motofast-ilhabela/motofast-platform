@@ -1,6 +1,17 @@
 import { useState, useEffect } from "react";
 import { supabase } from "./supabaseClient.js";
 
+// Trava de segurança (08/10/2026): as rotas /api/bloquear-motoboy,
+// /api/redefinir-senha e /api/confirmar-email só aceitam quem está logado
+// como Admin. Isto manda o "crachá" (token do login) junto com o pedido.
+async function headersAdmin() {
+  const { data } = await supabase.auth.getSession();
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${data?.session?.access_token || ""}`,
+  };
+}
+
 // Adicionado em 24/09/2026 a pedido do Alessandro: detecta sozinho se está
 // no verão (alta temporada em Ilhabela), sem precisar lembrar de avisar
 // ninguém. Verão no Brasil = 21/dez a 20/mar (datas praticamente fixas todo
@@ -697,7 +708,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
     try {
       const resp = await fetch("/api/bloquear-motoboy", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await headersAdmin(),
         body: JSON.stringify({ id, acao }),
       });
       const result = await resp.json();
@@ -718,7 +729,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
     try {
       const resp = await fetch("/api/bloquear-motoboy", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await headersAdmin(),
         body: JSON.stringify({ id, acao: "banir", motivo }),
       });
       const result = await resp.json();
@@ -737,7 +748,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
     try {
       const resp = await fetch("/api/bloquear-motoboy", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await headersAdmin(),
         body: JSON.stringify({ id, acao: "desbanir" }),
       });
       const result = await resp.json();
@@ -904,7 +915,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
                 if (senha.length < 6) { alert("A senha precisa ter pelo menos 6 caracteres."); return; }
                 const resp = await fetch("/api/redefinir-senha", {
                   method: "POST",
-                  headers: {"Content-Type":"application/json"},
+                  headers: await headersAdmin(),
                   body: JSON.stringify({ userId: mbDet.userId, novaSenha: senha }),
                 });
                 const data = await resp.json();
@@ -1580,7 +1591,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                     if (senha.length < 6) { alert("A senha precisa ter pelo menos 6 caracteres."); return; }
                     const resp = await fetch("/api/redefinir-senha", {
                       method: "POST",
-                      headers: {"Content-Type":"application/json"},
+                      headers: await headersAdmin(),
                       body: JSON.stringify({ userId: empSel.userId, novaSenha: senha }),
                     });
                     const data = await resp.json();
@@ -3616,7 +3627,7 @@ export default function App() {
       try {
         await fetch("/api/confirmar-email", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: await headersAdmin(),
           body: JSON.stringify({ userId }),
         });
       } catch (e) {
