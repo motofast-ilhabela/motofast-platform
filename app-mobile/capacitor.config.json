@@ -1,5 +1,6 @@
 {
   "appId": "com.motofast.app",
   "appName": "MotoFast",
-  "webDir": "dist"
+  "webDir": "dist",
+  "loggingBehavior": "none"
 }

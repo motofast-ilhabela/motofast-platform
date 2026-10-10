@@ -494,7 +494,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         const resp = await fetch(`${WEB_APP_URL}/api/calcular-distancia`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ origem: enderecoOrigem, destino: enderecoDestino }),
+          body: JSON.stringify({ origem: enderecoOrigem, destino: enderecoDestino, destinoAlt: bairro ? `${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil` : undefined, bairro }),
         });
         const data = await resp.json();
 
@@ -507,7 +507,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
             setMetodoCalculoKm("Google Maps — ⚠️ endereço não bateu exatamente");
             setAvisoEnderecoImpreciso(data.enderecoEncontrado || null);
           } else {
-            setMetodoCalculoKm("Google Maps — endereço completo");
+            setMetodoCalculoKm(data.usouBairro ? "Google Maps — endereço com bairro (rua repetida em outro bairro)" : "Google Maps — endereço completo");
             setAvisoEnderecoImpreciso(null);
           }
           return;
@@ -991,7 +991,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         const resp = await fetch(`${WEB_APP_URL}/api/calcular-distancia`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ origem: enderecoOrigem, destino: enderecoDestino }),
+          body: JSON.stringify({ origem: enderecoOrigem, destino: enderecoDestino, destinoAlt: bairro ? `${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil` : undefined, bairro }),
         });
         const data = await resp.json();
 
@@ -1004,7 +1004,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
             setMetodoCalculoKm("Google Maps — ⚠️ endereço não bateu exatamente");
             setAvisoEnderecoImpreciso(data.enderecoEncontrado || null);
           } else {
-            setMetodoCalculoKm("Google Maps — endereço completo");
+            setMetodoCalculoKm(data.usouBairro ? "Google Maps — endereço com bairro (rua repetida em outro bairro)" : "Google Maps — endereço completo");
             setAvisoEnderecoImpreciso(null);
           }
           return;

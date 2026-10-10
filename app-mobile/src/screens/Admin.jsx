@@ -10,6 +10,18 @@ import { supabase } from "../supabaseClient.js";
 // não tem /api próprio).
 const WEB_APP_URL = "https://motofast-platform.vercel.app";
 
+// Trava de segurança (08/10/2026, trazida do site): as rotas
+// /api/bloquear-motoboy, /api/redefinir-senha e /api/confirmar-email só
+// aceitam quem está logado como Admin. Isto manda o "crachá" (token do
+// login) junto com o pedido.
+async function headersAdmin() {
+  const { data } = await supabase.auth.getSession();
+  return {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${data?.session?.access_token || ""}`,
+  };
+}
+
 const SUPORTE_TEL = "5512991213656";
 const BAIRROS = ["Perequê","Vila","Barra Velha","Itaquanduba","Água Branca","Zabumba","Sul","Centro","Armação","Curral"];
 const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -708,7 +720,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
     try {
       const resp = await fetch(`${WEB_APP_URL}/api/bloquear-motoboy`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await headersAdmin(),
         body: JSON.stringify({ id, acao }),
       });
       const result = await resp.json();
@@ -729,7 +741,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
     try {
       const resp = await fetch(`${WEB_APP_URL}/api/bloquear-motoboy`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await headersAdmin(),
         body: JSON.stringify({ id, acao: "banir", motivo }),
       });
       const result = await resp.json();
@@ -748,7 +760,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
     try {
       const resp = await fetch(`${WEB_APP_URL}/api/bloquear-motoboy`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await headersAdmin(),
         body: JSON.stringify({ id, acao: "desbanir" }),
       });
       const result = await resp.json();
@@ -915,7 +927,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
                 if (senha.length < 6) { alert("A senha precisa ter pelo menos 6 caracteres."); return; }
                 const resp = await fetch(`${WEB_APP_URL}/api/redefinir-senha`, {
                   method: "POST",
-                  headers: {"Content-Type":"application/json"},
+                  headers: await headersAdmin(),
                   body: JSON.stringify({ userId: mbDet.userId, novaSenha: senha }),
                 });
                 const data = await resp.json();
@@ -1118,7 +1130,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
           : `${empSel.bairro||""}, Ilhabela, SP, Brasil`;
         const resp = await fetch(`${WEB_APP_URL}/api/calcular-distancia`, {
           method: "POST", headers: {"Content-Type":"application/json"},
-          body: JSON.stringify({ origem: enderecoOrigem, destino: enderecoDestino }),
+          body: JSON.stringify({ origem: enderecoOrigem, destino: enderecoDestino, destinoAlt: bairro ? `${rua}, ${num||""}, ${bairro}, Ilhabela, SP, Brasil` : undefined, bairro }),
         });
         const data = await resp.json();
         if (!cancelado && data.ok) {
@@ -1591,7 +1603,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                     if (senha.length < 6) { alert("A senha precisa ter pelo menos 6 caracteres."); return; }
                     const resp = await fetch(`${WEB_APP_URL}/api/redefinir-senha`, {
                       method: "POST",
-                      headers: {"Content-Type":"application/json"},
+                      headers: await headersAdmin(),
                       body: JSON.stringify({ userId: empSel.userId, novaSenha: senha }),
                     });
                     const data = await resp.json();
@@ -3769,7 +3781,7 @@ export default function Admin() {
       try {
         await fetch(`${WEB_APP_URL}/api/confirmar-email`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: await headersAdmin(),
           body: JSON.stringify({ userId }),
         });
       } catch (e) {

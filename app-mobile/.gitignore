@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Chave de assinatura do app e senhas — NUNCA vão pro Git. Se esse arquivo
+# for perdido, não dá mais pra atualizar o app de quem já instalou.
+*.jks
+*.keystore
+keystore.properties
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

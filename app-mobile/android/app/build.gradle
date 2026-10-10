@@ -1,5 +1,15 @@
 apply plugin: 'com.android.application'
 
+// Assinatura de lançamento: lê a chave e as senhas de um arquivo LOCAL
+// (android/keystore.properties), que está no .gitignore e nunca vai pro Git.
+// Se o arquivo não existir, o build de teste (debug) continua funcionando
+// normal, e o de lançamento sai SEM assinatura (não instala em celular).
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+
 android {
     namespace = "com.motofast.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +17,11 @@ android {
         applicationId "com.motofast.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // A cada APK novo que for pros motoboys, o versionCode TEM que ser
+        // maior que o anterior (1, 2, 3...) — senão o Android recusa a
+        // atualização por cima. O versionName é só o texto que aparece.
+        versionCode 2
+        versionName "1.0.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +29,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (keystorePropertiesFile.exists()) {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
+            if (keystorePropertiesFile.exists()) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
