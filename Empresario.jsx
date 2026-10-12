@@ -2226,12 +2226,22 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
         <Card style={{marginBottom:14}}>
           <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Entregas de {dataFmt}</div>
           {entregasDia.map(e=>(
-            <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1f2937"}}>
-              <div>
-                <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
-                <span style={{color:"#34d399",fontSize:12,marginLeft:8}}>{e.bairro}</span>
+            <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid #1f2937"}}>
+              {/* Atualizado em 12/10/2026: o histórico passou a mostrar QUAL
+                  MOTOBOY fez a entrega e a hora do pedido — antes só tinha
+                  cliente e bairro, e quando surgia dúvida sobre uma entrega o
+                  estabelecimento não conseguia ver quem tinha feito. */}
+              <div style={{minWidth:0,flex:1}}>
+                <div>
+                  <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
+                  <span style={{color:"#34d399",fontSize:12,marginLeft:8}}>📍 {e.bairro}</span>
+                </div>
+                <div style={{color:"#9ca3af",fontSize:12,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  🏍️ <span style={{color:"#d1d5db",fontWeight:600}}>{e.motoboyNome && e.motoboyNome!=="—" ? e.motoboyNome : "Motoboy não identificado"}</span>
+                  {e.hora && <span style={{color:"#6b7280"}}> · pedido às {e.hora}</span>}
+                </div>
               </div>
-              <span style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>R${e.taxa}</span>
+              <span style={{color:"#60a5fa",fontWeight:700,fontSize:13,flexShrink:0}}>R${e.taxa}</span>
             </div>
           ))}
         </Card>
