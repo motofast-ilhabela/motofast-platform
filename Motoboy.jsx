@@ -681,6 +681,21 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
   );
 }
 
+// Adicionado em 12/10/2026 — ajuda a mostrar, no histórico, a hora que o
+// motoboy ACEITOU e a hora que ele ENTREGOU, e quanto tempo levou entre uma
+// e outra (o tempo de espera do pedido antes de alguém aceitar NÃO é culpa
+// do motoboy, por isso o tempo dele só conta a partir do aceite).
+function horaCurta(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return isNaN(d) ? null : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+function minutosEntre(inicio, fim) {
+  if (!inicio || !fim) return null;
+  const diff = (new Date(fim).getTime() - new Date(inicio).getTime()) / 60000;
+  return isNaN(diff) ? null : Math.max(0, Math.round(diff));
+}
+
 function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy }) {
   const [verTudo, setVerTudo] = useState(false);
   const [dataSelecionada, setDataSelecionada] = useState(dataLocalISO());
@@ -773,10 +788,15 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
                   <span style={{color:"#6b7280",fontSize:12,margin:"0 6px"}}>·</span>
                   <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
                 </div>
+                {(e.horaAceite || e.horaEntrega) && (
+                  <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>
+                    ⏱️ {e.horaAceite && <>aceitou {e.horaAceite}</>}{e.horaAceite && e.horaEntrega && " · "}{e.horaEntrega && <>entregou {e.horaEntrega}</>}{e.minutosEntrega!=null && <> · <b style={{color:"#d1d5db"}}>{e.minutosEntrega} min</b></>}
+                  </div>
+                )}
               </div>
               <div style={{textAlign:"right",flexShrink:0}}>
                 <div style={{color:"#fbbf24",fontWeight:700,fontSize:13}}>R${e.taxa}</div>
-                {e.hora && <div style={{color:"#6b7280",fontSize:11,marginTop:2}}>{e.hora}</div>}
+                {e.horaEntrega && <div style={{color:"#9ca3af",fontSize:11,marginTop:2}}>entregue {e.horaEntrega}</div>}
               </div>
             </div>
           ))}
@@ -1144,6 +1164,14 @@ export default function AppMotoboy() {
                 hora: d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
                 semana: segundaFeiraDaSemana(d), mes: d.getMonth()+1,
                 repasePago: p.repasse_pago || false,
+                horaAceite: horaCurta(p.aceito_em),
+                horaEntrega: horaCurta(p.entregue_em),
+                // O tempo do motoboy conta do aceite (ou da criação do pedido,
+                // se ele foi adicionado depois a uma corrida já em andamento).
+                minutosEntrega: minutosEntre(
+                  p.aceito_em && new Date(p.aceito_em) > new Date(p.criado_em) ? p.aceito_em : p.criado_em,
+                  p.entregue_em
+                ),
               };
             }));
           }
@@ -1764,6 +1792,12 @@ export default function AppMotoboy() {
         data: agoraData.toLocaleDateString("pt-BR"), dataISO: dataLocalISO(agoraData),
         hora: agoraData.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
         semana: segundaFeiraDaSemana(agoraData), mes: agoraData.getMonth() + 1, repasePago: false,
+        horaAceite: horaCurta(pedido.aceitoEm),
+        horaEntrega: horaCurta(agoraData.toISOString()),
+        minutosEntrega: minutosEntre(
+          pedido.aceitoEm && pedido.criadoEm && new Date(pedido.aceitoEm).getTime() > pedido.criadoEm ? pedido.aceitoEm : (pedido.criadoEm || pedido.aceitoEm),
+          agoraData.toISOString()
+        ),
       }]);
       // CORRIGIDO em 23/09/2026: antes chamava uma função (carregarRankingGeral)
       // que não existia no arquivo — não fazia nada e ainda gerava erro no

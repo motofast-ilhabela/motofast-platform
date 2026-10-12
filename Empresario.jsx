@@ -1962,6 +1962,20 @@ function ModalEditarPedido({ pedido, onSalvar, onFechar }) {
     </Overlay>
   );
 }
+// Adicionado em 12/10/2026 — separa, no histórico, o tempo que o pedido ficou
+// esperando um motoboy aceitar (não é culpa do motoboy) do tempo que o motoboy
+// levou DEPOIS de aceitar até entregar (esse sim conta pra cobrar do motoboy).
+function minutosEntreHist(inicio, fim) {
+  if (!inicio || !fim) return null;
+  const diff = (new Date(fim).getTime() - new Date(inicio).getTime()) / 60000;
+  return isNaN(diff) ? null : Math.max(0, Math.round(diff));
+}
+function horaCurtaHist(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return isNaN(d) ? null : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
 function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado, mesesDisponiveis, empresa }) {
   const [filtro, setFiltro] = useState("Todos");
   const [dataSelecionada, setDataSelecionada] = useState(dataLocalISO());
@@ -2238,8 +2252,19 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
                 </div>
                 <div style={{color:"#9ca3af",fontSize:12,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                   🏍️ <span style={{color:"#d1d5db",fontWeight:600}}>{e.motoboyNome && e.motoboyNome!=="—" ? e.motoboyNome : "Motoboy não identificado"}</span>
-                  {e.hora && <span style={{color:"#6b7280"}}> · pedido às {e.hora}</span>}
                 </div>
+                <div style={{color:"#6b7280",fontSize:11,marginTop:3,lineHeight:1.5}}>
+                  {e.hora && <>🕐 chamou {e.hora}</>}
+                  {e.horaAceite && <> · aceitou {e.horaAceite}</>}
+                  {e.horaEntrega && <> · entregou {e.horaEntrega}</>}
+                </div>
+                {(e.minutosEspera!=null || e.minutosMotoboy!=null) && (
+                  <div style={{color:"#6b7280",fontSize:11,lineHeight:1.5}}>
+                    {e.minutosEspera!=null && <>⏳ esperou motoboy <b style={{color:"#d1d5db"}}>{e.minutosEspera} min</b></>}
+                    {e.minutosEspera!=null && e.minutosMotoboy!=null && " · "}
+                    {e.minutosMotoboy!=null && <>🏍️ aceite → entrega <b style={{color:"#d1d5db"}}>{e.minutosMotoboy} min</b></>}
+                  </div>
+                )}
               </div>
               <span style={{color:"#60a5fa",fontWeight:700,fontSize:13,flexShrink:0}}>R${e.taxa}</span>
             </div>
@@ -3041,6 +3066,16 @@ export default function AppEmpresario() {
       hora: new Date(p.criado_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
       horaSaida: p.saiu_estabelecimento_em ? new Date(p.saiu_estabelecimento_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
       horaEntrega: p.entregue_em ? new Date(p.entregue_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
+      horaAceite: horaCurtaHist(p.aceito_em),
+      // Espera = do pedido até alguém aceitar. Se o pedido foi adicionado numa
+      // corrida que já estava andando, o aceite é anterior ao pedido: espera 0.
+      minutosEspera: minutosEntreHist(p.criado_em, p.aceito_em),
+      // Tempo do motoboy = do aceite (ou do pedido, se foi adicionado depois)
+      // até a entrega.
+      minutosMotoboy: minutosEntreHist(
+        p.aceito_em && new Date(p.aceito_em) > new Date(p.criado_em) ? p.aceito_em : p.criado_em,
+        p.entregue_em
+      ),
     })));
     setCarregandoHistorico(false);
   }
