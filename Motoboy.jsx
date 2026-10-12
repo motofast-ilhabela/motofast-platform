@@ -761,12 +761,23 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
         <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"14px 16px",marginBottom:14}}>
           <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Entregas de {dataDoDiaFmt}</div>
           {entregasDoDia.map(e=>(
-            <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #1f2937"}}>
-              <div>
-                <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
-                <span style={{color:"#34d399",fontSize:12,marginLeft:8}}>{e.bairro}</span>
+            <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid #1f2937"}}>
+              {/* Atualizado em 12/10/2026: o histórico passou a mostrar o
+                  ESTABELECIMENTO, o bairro e o cliente — antes só tinha cliente
+                  e bairro, e quando alguém perguntava "você entregou pra tal
+                  loja nesse dia?" o motoboy não tinha como conferir. */}
+              <div style={{minWidth:0,flex:1}}>
+                <div style={{color:"#60a5fa",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>🏪 {e.empresaNome || "Estabelecimento"}</div>
+                <div style={{marginTop:2}}>
+                  <span style={{color:"#34d399",fontSize:12,fontWeight:600}}>📍 {e.bairro}</span>
+                  <span style={{color:"#6b7280",fontSize:12,margin:"0 6px"}}>·</span>
+                  <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
+                </div>
               </div>
-              <span style={{color:"#fbbf24",fontWeight:700,fontSize:13}}>R${e.taxa}</span>
+              <div style={{textAlign:"right",flexShrink:0}}>
+                <div style={{color:"#fbbf24",fontWeight:700,fontSize:13}}>R${e.taxa}</div>
+                {e.hora && <div style={{color:"#6b7280",fontSize:11,marginTop:2}}>{e.hora}</div>}
+              </div>
             </div>
           ))}
         </div>
