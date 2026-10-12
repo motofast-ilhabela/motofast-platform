@@ -1965,6 +1965,18 @@ function ModalEditarPedido({ pedido, onSalvar, onFechar }) {
 // Adicionado em 12/10/2026 — separa, no histórico, o tempo que o pedido ficou
 // esperando um motoboy aceitar (não é culpa do motoboy) do tempo que o motoboy
 // levou DEPOIS de aceitar até entregar (esse sim conta pra cobrar do motoboy).
+// Formata uma duração em minutos: abaixo de 1h fica "45 min"; de 1h pra cima
+// vira horas e minutos ("1h 05min", "2h 06min", "3h") — pra bater o olho e
+// entender sem fazer conta.
+function formatarDuracaoHist(min) {
+  if (min == null || isNaN(min)) return "";
+  const m = Math.max(0, Math.round(min));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const resto = m % 60;
+  return resto === 0 ? `${h}h` : `${h}h ${String(resto).padStart(2, "0")}min`;
+}
+
 function minutosEntreHist(inicio, fim) {
   if (!inicio || !fim) return null;
   const diff = (new Date(fim).getTime() - new Date(inicio).getTime()) / 60000;
@@ -2260,9 +2272,9 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
                 </div>
                 {(e.minutosEspera!=null || e.minutosMotoboy!=null) && (
                   <div style={{color:"#6b7280",fontSize:11,lineHeight:1.5}}>
-                    {e.minutosEspera!=null && <>⏳ esperou motoboy <b style={{color:"#d1d5db"}}>{e.minutosEspera} min</b></>}
+                    {e.minutosEspera!=null && <>⏳ esperou motoboy <b style={{color:"#d1d5db"}}>{formatarDuracaoHist(e.minutosEspera)}</b></>}
                     {e.minutosEspera!=null && e.minutosMotoboy!=null && " · "}
-                    {e.minutosMotoboy!=null && <>🏍️ aceite → entrega <b style={{color:"#d1d5db"}}>{e.minutosMotoboy} min</b></>}
+                    {e.minutosMotoboy!=null && <>🏍️ aceite → entrega <b style={{color:"#d1d5db"}}>{formatarDuracaoHist(e.minutosMotoboy)}</b></>}
                   </div>
                 )}
               </div>

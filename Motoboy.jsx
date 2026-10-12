@@ -685,6 +685,18 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
 // motoboy ACEITOU e a hora que ele ENTREGOU, e quanto tempo levou entre uma
 // e outra (o tempo de espera do pedido antes de alguém aceitar NÃO é culpa
 // do motoboy, por isso o tempo dele só conta a partir do aceite).
+// Formata uma duração em minutos: abaixo de 1h fica "45 min"; de 1h pra cima
+// vira horas e minutos ("1h 05min", "2h 06min", "3h") — pra bater o olho e
+// entender sem fazer conta.
+function formatarDuracao(min) {
+  if (min == null || isNaN(min)) return "";
+  const m = Math.max(0, Math.round(min));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const resto = m % 60;
+  return resto === 0 ? `${h}h` : `${h}h ${String(resto).padStart(2, "0")}min`;
+}
+
 function horaCurta(iso) {
   if (!iso) return null;
   const d = new Date(iso);
@@ -790,7 +802,7 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
                 </div>
                 {(e.horaAceite || e.horaEntrega) && (
                   <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>
-                    ⏱️ {e.horaAceite && <>aceitou {e.horaAceite}</>}{e.horaAceite && e.horaEntrega && " · "}{e.horaEntrega && <>entregou {e.horaEntrega}</>}{e.minutosEntrega!=null && <> · <b style={{color:"#d1d5db"}}>{e.minutosEntrega} min</b></>}
+                    ⏱️ {e.horaAceite && <>aceitou {e.horaAceite}</>}{e.horaAceite && e.horaEntrega && " · "}{e.horaEntrega && <>entregou {e.horaEntrega}</>}{e.minutosEntrega!=null && <> · <b style={{color:"#d1d5db"}}>{formatarDuracao(e.minutosEntrega)}</b></>}
                   </div>
                 )}
               </div>
