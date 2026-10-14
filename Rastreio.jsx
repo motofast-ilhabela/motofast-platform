@@ -227,7 +227,6 @@ export default function Rastreio() {
   const [etapa, setEtapa] = useState(1);
   const [motoboyLat, setMotoboyLat] = useState(null);
   const [motoboyLng, setMotoboyLng] = useState(null);
-  const [motoboyIdRastreio, setMotoboyIdRastreio] = useState(null);
 
   // Avaliação
   const [avaliacaoEnviada, setAvaliacaoEnviada] = useState(false);
@@ -235,52 +234,37 @@ export default function Rastreio() {
   const [notaMotofast, setNotaMotofast] = useState(0);
   const [enviandoAvaliacao, setEnviandoAvaliacao] = useState(false);
 
-  // Busca status real do pedido no banco a cada 5s
+  // Busca status do pedido e posição do motoboy a cada 5s, pelo servidor
+  // (/api/rastreio-pedido devolve só status e localização, nada mais).
   useEffect(()=>{
     if (!pedidoId) return;
+    let ativo = true;
 
-    async function verificarStatus() {
-      const { data } = await supabase
-        .from("pedidos")
-        .select("status, motoboy_id")
-        .eq("id", pedidoId)
-        .maybeSingle();
+    async function atualizar() {
+      try {
+        const resp = await fetch("/api/rastreio-pedido", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pedidoId }),
+        });
+        const data = await resp.json();
+        if (!ativo || !data || !data.ok) return;
 
-      if (!data) return;
+        if (data.status === "entregue") setEtapa(2);
+        else if (data.status === "saiu_estabelecimento" || data.status === "aceito") setEtapa(1);
+        else if (data.status === "aguardando") setEtapa(0);
 
-      if (data.status === "entregue") setEtapa(2);
-      else if (data.status === "saiu_estabelecimento" || data.status === "aceito") setEtapa(1);
-      else if (data.status === "aguardando") setEtapa(0);
-
-      if (data.motoboy_id) setMotoboyIdRastreio(data.motoboy_id);
+        if (data.latitude && data.longitude) {
+          setMotoboyLat(data.latitude);
+          setMotoboyLng(data.longitude);
+        }
+      } catch(e) {}
     }
 
-    verificarStatus();
-    const intervalo = setInterval(verificarStatus, 5000);
-    return () => clearInterval(intervalo);
+    atualizar();
+    const intervalo = setInterval(atualizar, 5000);
+    return () => { ativo = false; clearInterval(intervalo); };
   },[pedidoId]);
-
-  // Busca localização do motoboy a cada 5s enquanto pedido está em andamento
-  useEffect(()=>{
-    if (!motoboyIdRastreio || etapa >= 2) return;
-
-    async function buscarLocalizacao() {
-      const { data } = await supabase
-        .from("motoboys")
-        .select("latitude, longitude")
-        .eq("id", motoboyIdRastreio)
-        .maybeSingle();
-
-      if (data && data.latitude && data.longitude) {
-        setMotoboyLat(data.latitude);
-        setMotoboyLng(data.longitude);
-      }
-    }
-
-    buscarLocalizacao();
-    const intervalo = setInterval(buscarLocalizacao, 5000);
-    return () => clearInterval(intervalo);
-  },[motoboyIdRastreio, etapa]);
 
   async function enviarAvaliacao() {
     if (notaMotoboy === 0 || notaMotofast === 0) return;

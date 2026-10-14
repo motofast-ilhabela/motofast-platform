@@ -261,19 +261,31 @@ function CadastroEmpresario({ onVoltar, onSucesso }) {
       return;
     }
 
-    const { error: dbError } = await supabase.from("empresarios").insert({
-      user_id: authData.user?.id,
-      nome: form.nomeEstab,
-      cnpj: form.cnpj,
-      endereco_estabelecimento: form.enderecoEstab,
-      bairro: form.bairro,
-      telefone: form.tel,
-      horario_funcionamento: form.horarioFuncionamento,
-      nome_dono: form.nomeDono,
-      tel_dono: form.whatsappDono,
-      nome_socio: form.nomeSocio || null,
-      tel_socio: form.whatsappSocio || null,
-    });
+    // O perfil agora é gravado pelo servidor (que confere tudo e força aprovado=false etc.)
+    let dbError = null;
+    try {
+      const resp = await fetch("/api/cadastro-perfil", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tipo: "empresario",
+          userId: authData.user?.id,
+          dados: {
+            nome: form.nomeEstab,
+            cnpj: form.cnpj,
+            endereco_estabelecimento: form.enderecoEstab,
+            bairro: form.bairro,
+            telefone: form.tel,
+            horario_funcionamento: form.horarioFuncionamento,
+            nome_dono: form.nomeDono,
+            tel_dono: form.whatsappDono,
+            nome_socio: form.nomeSocio || null,
+            tel_socio: form.whatsappSocio || null,
+          },
+        }),
+      });
+      if (!resp.ok) dbError = true;
+    } catch(e) { dbError = true; }
 
     setLoading(false);
 
@@ -465,24 +477,36 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
       return `${ano}-${mes.padStart(2,"0")}-${dia.padStart(2,"0")}`;
     }
 
-    const { error: dbError } = await supabase.from("motoboys").insert({
-      user_id: authData.user?.id,
-      nome_completo: form.nomeCompleto,
-      cpf: form.cpf,
-      rg: form.rg,
-      nascimento: converterData(form.nascimento),
-      nome_pai: form.nomePai,
-      nome_mae: form.nomeMae,
-      endereco: form.endereco,
-      bairro_base: form.bairro,
-      telefone: form.tel,
-      pix: form.pix,
-    });
+    // O perfil agora é gravado pelo servidor (que confere tudo e força aprovado=false etc.)
+    let dbError = null;
+    try {
+      const resp = await fetch("/api/cadastro-perfil", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tipo: "motoboy",
+          userId: authData.user?.id,
+          dados: {
+            nome_completo: form.nomeCompleto,
+            cpf: form.cpf,
+            rg: form.rg,
+            nascimento: converterData(form.nascimento),
+            nome_pai: form.nomePai,
+            nome_mae: form.nomeMae,
+            endereco: form.endereco,
+            bairro_base: form.bairro,
+            telefone: form.tel,
+            pix: form.pix,
+          },
+        }),
+      });
+      if (!resp.ok) dbError = true;
+    } catch(e) { dbError = true; }
 
     setLoading(false);
 
     if (dbError) {
-      console.error("Erro ao salvar motoboy:", dbError);
+      console.error("Erro ao salvar motoboy");
       setErros({ tel: "Conta criada, mas houve um erro ao salvar seus dados. Fale com o suporte." });
       setStep(2);
       return;
