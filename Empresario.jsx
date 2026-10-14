@@ -2267,7 +2267,9 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
                 </div>
                 <div style={{color:"#6b7280",fontSize:11,marginTop:3,lineHeight:1.5}}>
                   {e.hora && <>🕐 chamou {e.hora}</>}
-                  {e.horaAceite && <> · aceitou {e.horaAceite}</>}
+                  {e.horaAceite && (e.adicionadoCorrida
+                    ? <> · entrou numa corrida que o motoboy já estava fazendo</>
+                    : <> · aceitou {e.horaAceite}</>)}
                   {e.horaEntrega && <> · entregou {e.horaEntrega}</>}
                 </div>
                 {(e.minutosEspera!=null || e.minutosMotoboy!=null) && (
@@ -3079,6 +3081,9 @@ export default function AppEmpresario() {
       horaSaida: p.saiu_estabelecimento_em ? new Date(p.saiu_estabelecimento_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
       horaEntrega: p.entregue_em ? new Date(p.entregue_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
       horaAceite: horaCurtaHist(p.aceito_em),
+      // Só texto: se o aceite é ANTERIOR ao pedido, ele foi adicionado a uma
+      // corrida que o motoboy já tinha aceitado (herda o aceito_em da corrida).
+      adicionadoCorrida: !!(p.aceito_em && new Date(p.aceito_em) < new Date(p.criado_em)),
       // Espera = do pedido até alguém aceitar. Se o pedido foi adicionado numa
       // corrida que já estava andando, o aceite é anterior ao pedido: espera 0.
       minutosEspera: minutosEntreHist(p.criado_em, p.aceito_em),
