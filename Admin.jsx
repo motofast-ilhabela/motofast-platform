@@ -97,6 +97,72 @@ function segundaFeiraDaSemana(date) {
   return dataLocalISO(segunda);
 }
 
+// ─── NASCIMENTO / IDADE (cadastros) ──────────────────────────────────────────
+// Lê a data de nascimento vinda do banco (AAAA-MM-DD) ou digitada (DD/MM/AAAA).
+// Devolve { vazio, valido, texto, idade }:
+//  - vazio: não tem nada preenchido
+//  - valido: data real, ano >= 1900, não futura
+//  - texto: data no formato DD/MM/AAAA (ou o texto original se for inválida)
+//  - idade: idade em anos hoje (só se valido)
+function lerNascimento(v) {
+  const bruto = (v === null || v === undefined) ? "" : String(v).trim();
+  if (!bruto) return { vazio:true, valido:false, texto:"", idade:null };
+  let dia, mes, ano;
+  let m = /^(\d{4})-(\d{2})-(\d{2})/.exec(bruto);
+  if (m) { ano=+m[1]; mes=+m[2]; dia=+m[3]; }
+  else {
+    m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(bruto);
+    if (m) { dia=+m[1]; mes=+m[2]; ano=+m[3]; }
+  }
+  if (!m) return { vazio:false, valido:false, texto:bruto, idade:null };
+  const d = new Date(ano, mes-1, dia);
+  const real = ano>=1900 && mes>=1 && mes<=12 && dia>=1 &&
+    d.getFullYear()===ano && d.getMonth()===mes-1 && d.getDate()===dia;
+  const hoje = new Date();
+  const hA = hoje.getFullYear(), hM = hoje.getMonth()+1, hD = hoje.getDate();
+  const futura = ano>hA || (ano===hA && (mes>hM || (mes===hM && dia>hD)));
+  const texto = String(dia).padStart(2,"0")+"/"+String(mes).padStart(2,"0")+"/"+ano;
+  if (!real || futura) return { vazio:false, valido:false, texto, idade:null };
+  let idade = hA - ano;
+  if (hM < mes || (hM === mes && hD < dia)) idade--;
+  return { vazio:false, valido:true, texto, idade };
+}
+
+// Pode aprovar? Só quem tem data válida e 18+ anos.
+function nascimentoPermiteAprovar(v) {
+  const n = lerNascimento(v);
+  return n.valido && n.idade >= 18;
+}
+
+// Máscara pra digitar data: 15031995 -> 15/03/1995
+function mascaraDataBR(v) {
+  const n = (v || "").replace(/\D/g, "").slice(0, 8);
+  if (n.length <= 2) return n;
+  if (n.length <= 4) return n.slice(0,2) + "/" + n.slice(2);
+  return n.slice(0,2) + "/" + n.slice(2,4) + "/" + n.slice(4);
+}
+
+// Pega o token de login do Admin pra provar ao servidor quem está chamando
+async function tokenDoAdmin() {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return data?.session?.access_token || "";
+  } catch (e) { return ""; }
+}
+
+// Linha "Rótulo: valor" do card de cadastro pendente. Vazio -> NÃO INFORMADO em vermelho.
+function CampoCadastro({ rotulo, valor, largura }) {
+  const vazio = valor === null || valor === undefined || String(valor).trim() === "";
+  return (
+    <div style={{flex: largura ? "1 1 "+largura : "1 1 220px", minWidth:0}}>
+      <div style={{color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>{rotulo}</div>
+      {vazio
+        ? <div style={{color:"#ef4444",fontSize:13,fontWeight:800}}>NÃO INFORMADO</div>
+        : <div style={{color:"#e5e7eb",fontSize:13,wordBreak:"break-word"}}>{valor}</div>}
+    </div>
+  );
+}
+
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
 function Card({ children, style={} }) {
   return <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"18px 22px",...style}}>{children}</div>;
@@ -665,6 +731,17 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
 
   async function cadastrar() {
     if (!form.nomeCompleto.trim()) return;
+    // Data de nascimento obrigatória (DD/MM/AAAA), real e com 18+ anos — mesma regra do cadastro público.
+    const nascForm = lerNascimento(form.nascimento);
+    if (nascForm.vazio || !/^\d{2}\/\d{2}\/\d{4}$/.test(form.nascimento.trim()) || !nascForm.valido) {
+      alert("⚠️ Informe a data de nascimento válida no formato DD/MM/AAAA (ex: 15/03/1995).");
+      return;
+    }
+    if (nascForm.idade < 18) {
+      alert("⛔ É necessário ter 18 anos ou mais para se cadastrar.");
+      return;
+    }
+    const nascimentoISO = form.nascimento.trim().split("/").reverse().join("-");
     const { data, error } = await supabase.from("motoboys").insert({
       nome_completo: form.nomeCompleto,
       telefone: form.tel,
@@ -672,7 +749,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
       bairro_base: form.bairroBase,
       cpf: form.cpf,
       rg: form.rg,
-      nascimento: form.nascimento,
+      nascimento: nascimentoISO,
       nome_pai: form.nomePai,
       nome_mae: form.nomeMae,
       endereco: form.endereco,
@@ -680,6 +757,10 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
       online: false,
       banido: false,
     }).select().single();
+    if (error) {
+      alert("⚠️ Não consegui cadastrar o motoboy: " + error.message);
+      return;
+    }
     if (!error && data) {
       setMotoboys(p=>[...p,{
         id:data.id, nomeCompleto:form.nomeCompleto, tel:form.tel, pix:form.pix,
@@ -956,7 +1037,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
             <div style={{flex:1}}><Inp label="CPF" value={form.cpf} onChange={v=>setForm(f=>({...f,cpf:v}))} placeholder="000.000.000-00"/></div>
             <div style={{flex:1}}><Inp label="RG" value={form.rg} onChange={v=>setForm(f=>({...f,rg:v}))} placeholder="00.000.000-0"/></div>
           </div>
-          <Inp label="Data de nascimento" value={form.nascimento} onChange={v=>setForm(f=>({...f,nascimento:v}))} placeholder="Ex: 15/03/1995" hint="Digite no formato DD/MM/AAAA"/>
+          <Inp label="Data de nascimento * (obrigatória, 18+ anos)" value={form.nascimento} onChange={v=>setForm(f=>({...f,nascimento:mascaraDataBR(v)}))} placeholder="Ex: 15/03/1995" hint="Digite no formato DD/MM/AAAA"/>
           <div style={{display:"flex",gap:10}}>
             <div style={{flex:1}}><Inp label="Nome completo do pai" value={form.nomePai} onChange={v=>setForm(f=>({...f,nomePai:v}))} placeholder="Nome completo"/></div>
             <div style={{flex:1}}><Inp label="Nome completo da mãe" value={form.nomeMae} onChange={v=>setForm(f=>({...f,nomeMae:v}))} placeholder="Nome completo"/></div>
@@ -3309,6 +3390,7 @@ export default function App() {
   const [avaliacoes, setAvaliacoes] = useState([]);
   const [corridasAtivas, setCorridasAtivas] = useState([]);
   const [pendentes, setPendentes] = useState({motoboys:[], empresarios:[]});
+  const [emailsPend, setEmailsPend] = useState({});
   const [loadingPendentes, setLoadingPendentes] = useState(false);
   const [modalRejeitar, setModalRejeitar] = useState(null);
   const [motivoRejeicao, setMotivoRejeicao] = useState("");
@@ -3608,15 +3690,39 @@ export default function App() {
       empresarios: emp.data || [],
     });
     setLoadingPendentes(false);
+
+    // E-mail da conta de cada cadastro (fica no login do Supabase, então vem do servidor)
+    try {
+      const ids = [...(mb.data||[]), ...(emp.data||[])].map(x=>x.user_id).filter(Boolean);
+      if (ids.length>0) {
+        const token = await tokenDoAdmin();
+        const resp = await fetch("/api/emails-cadastros", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
+          body: JSON.stringify({ userIds: ids }),
+        });
+        const data = await resp.json();
+        if (resp.ok && data.ok) setEmailsPend(data.emails || {});
+      }
+    } catch (e) { console.log("Não consegui carregar os e-mails dos cadastros"); }
   }
 
   async function aprovar(tipo, id, userId) {
+    // Trava de segurança: motoboy sem data de nascimento válida, ou menor de 18, NÃO é aprovado.
+    if (tipo === "motoboys") {
+      const mbPend = pendentes.motoboys.find(x=>x.id===id);
+      if (!mbPend || !nascimentoPermiteAprovar(mbPend.nascimento)) {
+        alert("⛔ Este cadastro não pode ser aprovado: data de nascimento ausente/inválida ou menor de 18 anos. Use Rejeitar.");
+        return;
+      }
+    }
     await supabase.from(tipo).update({aprovado:true, aprovado_em: new Date().toISOString()}).eq("id", id);
     if (userId) {
       try {
+        const token = await tokenDoAdmin();
         await fetch("/api/confirmar-email", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "Authorization": "Bearer " + token },
           body: JSON.stringify({ userId }),
         });
       } catch (e) {
@@ -3733,30 +3839,58 @@ export default function App() {
             {pendentes.motoboys.length>0 && (
               <div style={{marginBottom:24}}>
                 <div style={{color:"#fbbf24",fontWeight:700,fontSize:14,marginBottom:12}}>🏍️ Motoboys aguardando aprovação ({pendentes.motoboys.length})</div>
-                {pendentes.motoboys.map(mb=>(
-                  <Card key={mb.id} style={{marginBottom:12,border:"1px solid #fbbf2444"}}>
+                {pendentes.motoboys.map(mb=>{
+                  const nasc = lerNascimento(mb.nascimento);
+                  const podeAprovar = nasc.valido && nasc.idade >= 18;
+                  const menor = nasc.valido && nasc.idade < 18;
+                  return (
+                  <Card key={mb.id} style={{marginBottom:12,border:podeAprovar?"1px solid #fbbf2444":"2px solid #ef4444"}}>
+                    {!podeAprovar && (
+                      <div style={{background:"#7f1d1d",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#fff",fontWeight:900,fontSize:14,lineHeight:1.4}}>
+                        {menor
+                          ? <>⛔ MENOR DE 18 ANOS ({nasc.idade} anos) — NÃO PODE ENTRAR NA PLATAFORMA. Só é possível rejeitar.</>
+                          : nasc.vazio
+                            ? <>⛔ DATA DE NASCIMENTO NÃO INFORMADA — não é possível aprovar. Só é possível rejeitar.</>
+                            : <>⛔ DATA DE NASCIMENTO INVÁLIDA ({nasc.texto}) — não é possível aprovar. Só é possível rejeitar.</>}
+                      </div>
+                    )}
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10}}>
-                      <div style={{flex:1}}>
-                        <div style={{color:"#f9fafb",fontWeight:700,fontSize:16,marginBottom:4}}>{mb.nome_completo}</div>
-                        <div style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:6}}>
-                          <span style={{color:"#9ca3af",fontSize:12}}>📞 {mb.telefone}</span>
-                          <span style={{color:"#9ca3af",fontSize:12}}>💠 PIX: {mb.pix||"—"}</span>
-                          <span style={{color:"#9ca3af",fontSize:12}}>📅 Nasc: {mb.nascimento||"—"}</span>
+                      <div style={{flex:1,minWidth:260}}>
+                        <div style={{color:"#f9fafb",fontWeight:700,fontSize:16,marginBottom:10}}>{mb.nome_completo || <span style={{color:"#ef4444",fontWeight:800}}>NÃO INFORMADO</span>}</div>
+                        <div style={{display:"flex",flexWrap:"wrap",gap:"10px 16px"}}>
+                          <CampoCadastro rotulo="Nome completo" valor={mb.nome_completo}/>
+                          <CampoCadastro rotulo="CPF" valor={mb.cpf}/>
+                          <CampoCadastro rotulo="RG" valor={mb.rg}/>
+                          <div style={{flex:"1 1 220px",minWidth:0}}>
+                            <div style={{color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5}}>Data de nascimento</div>
+                            {nasc.vazio
+                              ? <div style={{color:"#ef4444",fontSize:13,fontWeight:800}}>NÃO INFORMADO</div>
+                              : nasc.valido
+                                ? <div style={{color:nasc.idade<18?"#ef4444":"#e5e7eb",fontSize:13,fontWeight:nasc.idade<18?800:400}}>{nasc.texto} — {nasc.idade} {nasc.idade===1?"ano":"anos"}</div>
+                                : <div style={{color:"#ef4444",fontSize:13,fontWeight:800}}>{nasc.texto} — INVÁLIDA</div>}
+                          </div>
+                          <CampoCadastro rotulo="Nome do pai" valor={mb.nome_pai}/>
+                          <CampoCadastro rotulo="Nome da mãe" valor={mb.nome_mae}/>
+                          <CampoCadastro rotulo="Endereço residencial completo" valor={mb.endereco} largura="100%"/>
+                          <CampoCadastro rotulo="Bairro" valor={mb.bairro_base}/>
+                          <CampoCadastro rotulo="Telefone" valor={mb.telefone}/>
+                          <CampoCadastro rotulo="PIX" valor={mb.pix}/>
+                          <CampoCadastro rotulo="E-mail da conta" valor={emailsPend[mb.user_id]}/>
+                          <CampoCadastro rotulo="Cadastrado em" valor={mb.criado_em ? new Date(mb.criado_em).toLocaleString("pt-BR") : ""}/>
                         </div>
-                        <div style={{display:"flex",flexWrap:"wrap",gap:12}}>
-                          <span style={{color:"#9ca3af",fontSize:12}}>🪪 CPF: {mb.cpf||"—"}</span>
-                          <span style={{color:"#9ca3af",fontSize:12}}>🪪 RG: {mb.rg||"—"}</span>
-                        </div>
-                        {mb.endereco && <div style={{color:"#9ca3af",fontSize:12,marginTop:4}}>🏠 {mb.endereco}</div>}
-                        <div style={{color:"#4b5563",fontSize:11,marginTop:6}}>Cadastrado em: {new Date(mb.criado_em).toLocaleString("pt-BR")}</div>
                       </div>
                       <div style={{display:"flex",flexDirection:"column",gap:8,minWidth:120}}>
-                        <button onClick={()=>aprovar("motoboys",mb.id,mb.user_id)} style={{padding:"10px 16px",borderRadius:8,background:"#10b981",border:"none",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>✅ Aprovar</button>
-                        <button onClick={()=>{setModalRejeitar({tipo:"motoboys",id:mb.id,nome:mb.nome_completo});setMotivoRejeicao("");}} style={{padding:"10px 16px",borderRadius:8,background:"#1f2937",border:"1px solid #ef4444",color:"#f87171",fontWeight:700,fontSize:13,cursor:"pointer"}}>❌ Rejeitar</button>
+                        <button onClick={()=>aprovar("motoboys",mb.id,mb.user_id)} disabled={!podeAprovar}
+                          title={podeAprovar?"":"Bloqueado: data de nascimento ausente, inválida ou menor de 18 anos"}
+                          style={{padding:"10px 16px",borderRadius:8,background:podeAprovar?"#10b981":"#374151",border:"none",color:podeAprovar?"#fff":"#6b7280",fontWeight:700,fontSize:13,cursor:podeAprovar?"pointer":"not-allowed",opacity:podeAprovar?1:0.6}}>
+                          {podeAprovar?"✅ Aprovar":"🚫 Aprovar bloqueado"}
+                        </button>
+                        <button onClick={()=>{setModalRejeitar({tipo:"motoboys",id:mb.id,nome:mb.nome_completo});setMotivoRejeicao(menor?"Menor de 18 anos.":nasc.vazio?"Data de nascimento não informada.":"");}} style={{padding:"10px 16px",borderRadius:8,background:"#1f2937",border:"1px solid #ef4444",color:"#f87171",fontWeight:700,fontSize:13,cursor:"pointer"}}>❌ Rejeitar</button>
                       </div>
                     </div>
                   </Card>
-                ))}
+                  );
+                })}
               </div>
             )}
 
@@ -3766,15 +3900,22 @@ export default function App() {
                 {pendentes.empresarios.map(emp=>(
                   <Card key={emp.id} style={{marginBottom:12,border:"1px solid #3b82f644"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:10}}>
-                      <div style={{flex:1}}>
-                        <div style={{color:"#f9fafb",fontWeight:700,fontSize:16,marginBottom:4}}>{emp.nome}</div>
-                        <div style={{display:"flex",flexWrap:"wrap",gap:12,marginBottom:6}}>
-                          <span style={{color:"#9ca3af",fontSize:12}}>📞 {emp.telefone}</span>
-                          <span style={{color:"#9ca3af",fontSize:12}}>📍 {emp.bairro||"—"}</span>
+                      <div style={{flex:1,minWidth:260}}>
+                        <div style={{color:"#f9fafb",fontWeight:700,fontSize:16,marginBottom:10}}>{emp.nome || <span style={{color:"#ef4444",fontWeight:800}}>NÃO INFORMADO</span>}</div>
+                        <div style={{display:"flex",flexWrap:"wrap",gap:"10px 16px"}}>
+                          <CampoCadastro rotulo="Nome do estabelecimento" valor={emp.nome}/>
+                          <CampoCadastro rotulo="CNPJ" valor={emp.cnpj}/>
+                          <CampoCadastro rotulo="Endereço" valor={emp.endereco_estabelecimento} largura="100%"/>
+                          <CampoCadastro rotulo="Bairro" valor={emp.bairro}/>
+                          <CampoCadastro rotulo="Telefone" valor={emp.telefone}/>
+                          <CampoCadastro rotulo="Horário de funcionamento" valor={emp.horario_funcionamento}/>
+                          <CampoCadastro rotulo="Nome do dono" valor={emp.nome_dono}/>
+                          <CampoCadastro rotulo="Telefone do dono" valor={emp.tel_dono}/>
+                          <CampoCadastro rotulo="Nome do sócio" valor={emp.nome_socio}/>
+                          <CampoCadastro rotulo="Telefone do sócio" valor={emp.tel_socio}/>
+                          <CampoCadastro rotulo="E-mail da conta" valor={emailsPend[emp.user_id]}/>
+                          <CampoCadastro rotulo="Cadastrado em" valor={emp.criado_em ? new Date(emp.criado_em).toLocaleString("pt-BR") : ""}/>
                         </div>
-                        <span style={{color:"#9ca3af",fontSize:12}}>👤 Dono: {emp.nome_dono||"—"} · {emp.tel_dono||"—"}</span>
-                        {emp.nome_socio && <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>👥 Sócio: {emp.nome_socio} · {emp.tel_socio}</div>}
-                        <div style={{color:"#4b5563",fontSize:11,marginTop:6}}>Cadastrado em: {new Date(emp.criado_em).toLocaleString("pt-BR")}</div>
                       </div>
                       <div style={{display:"flex",flexDirection:"column",gap:8,minWidth:120}}>
                         <button onClick={()=>aprovar("empresarios",emp.id,emp.user_id)} style={{padding:"10px 16px",borderRadius:8,background:"#10b981",border:"none",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>✅ Aprovar</button>

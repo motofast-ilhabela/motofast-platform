@@ -19,6 +19,39 @@ function validarEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
+// Confere data de nascimento no formato estrito DD/MM/AAAA.
+// Regras: data real, ano >= 1900, não futura e idade mínima de 18 anos.
+// Devolve { ok:true, iso:"AAAA-MM-DD" } ou { ok:false, erro:"mensagem" }.
+function validarNascimentoBR(texto) {
+  const t = (texto || "").trim();
+  if (!t) return { ok:false, erro:"Campo obrigatório" };
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(t);
+  if (!m) return { ok:false, erro:"Data inválida. Use o formato DD/MM/AAAA (ex: 15/03/1995)." };
+  const dia = +m[1], mes = +m[2], ano = +m[3];
+  const d = new Date(ano, mes-1, dia);
+  if (ano < 1900 || mes < 1 || mes > 12 || dia < 1 ||
+      d.getFullYear() !== ano || d.getMonth() !== mes-1 || d.getDate() !== dia) {
+    return { ok:false, erro:"Data inválida. Confira o dia, o mês e o ano." };
+  }
+  const hoje = new Date();
+  const hA = hoje.getFullYear(), hM = hoje.getMonth()+1, hD = hoje.getDate();
+  if (ano > hA || (ano === hA && (mes > hM || (mes === hM && dia > hD)))) {
+    return { ok:false, erro:"A data de nascimento não pode ser no futuro." };
+  }
+  let idade = hA - ano;
+  if (hM < mes || (hM === mes && hD < dia)) idade--;
+  if (idade < 18) return { ok:false, erro:"É necessário ter 18 anos ou mais para se cadastrar." };
+  return { ok:true, iso:`${m[3]}-${m[2]}-${m[1]}` };
+}
+
+// Vai colocando as barras sozinho enquanto digita: 15031995 -> 15/03/1995
+function mascaraData(v) {
+  const n = (v || "").replace(/\D/g, "").slice(0, 8);
+  if (n.length <= 2) return n;
+  if (n.length <= 4) return n.slice(0,2) + "/" + n.slice(2);
+  return n.slice(0,2) + "/" + n.slice(2,4) + "/" + n.slice(4);
+}
+
 // ─── ATOMS ────────────────────────────────────────────────────────────────────
 function Inp({ label, value, onChange, placeholder="", type="text", hint, erro, obrigatorio }) {
   return (
@@ -418,7 +451,8 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
     if (!form.nomeCompleto.trim()) e.nomeCompleto = "Campo obrigatório";
     if (!form.cpf.trim()) e.cpf = "Campo obrigatório";
     if (!form.rg.trim()) e.rg = "Campo obrigatório";
-    if (!form.nascimento.trim()) e.nascimento = "Campo obrigatório";
+    const nasc = validarNascimentoBR(form.nascimento);
+    if (!nasc.ok) e.nascimento = nasc.erro;
     if (!form.nomePai.trim()) e.nomePai = "Campo obrigatório";
     if (!form.nomeMae.trim()) e.nomeMae = "Campo obrigatório";
     if (!form.endereco.trim()) e.endereco = "Campo obrigatório";
@@ -455,6 +489,16 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
 
   async function enviar() {
     if (!validarStep3()) return;
+
+    // Antes de criar a conta: a data de nascimento precisa estar válida e ser 18+.
+    // (Nunca mais grava nascimento vazio em silêncio.)
+    const nascCheck = validarNascimentoBR(form.nascimento);
+    if (!nascCheck.ok) {
+      setErros({ nascimento: nascCheck.erro });
+      setStep(1);
+      return;
+    }
+
     setLoading(true);
 
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -469,16 +513,9 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
       return;
     }
 
-    // Converte data de DD/MM/AAAA para AAAA-MM-DD (formato que o banco entende)
-    function converterData(dataBr) {
-      const partes = dataBr.split("/");
-      if (partes.length !== 3) return null;
-      const [dia, mes, ano] = partes;
-      return `${ano}-${mes.padStart(2,"0")}-${dia.padStart(2,"0")}`;
-    }
-
     // O perfil agora é gravado pelo servidor (que confere tudo e força aprovado=false etc.)
     let dbError = null;
+    let erroServidor = null;
     try {
       const resp = await fetch("/api/cadastro-perfil", {
         method: "POST",
@@ -490,7 +527,7 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
             nome_completo: form.nomeCompleto,
             cpf: form.cpf,
             rg: form.rg,
-            nascimento: converterData(form.nascimento),
+            nascimento: nascCheck.iso,
             nome_pai: form.nomePai,
             nome_mae: form.nomeMae,
             endereco: form.endereco,
@@ -500,15 +537,33 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
           },
         }),
       });
-      if (!resp.ok) dbError = true;
+      if (!resp.ok) {
+        dbError = true;
+        try { const j = await resp.json(); erroServidor = j; } catch(e2) {}
+      }
     } catch(e) { dbError = true; }
 
     setLoading(false);
 
     if (dbError) {
       console.error("Erro ao salvar motoboy");
-      setErros({ tel: "Conta criada, mas houve um erro ao salvar seus dados. Fale com o suporte." });
-      setStep(2);
+      // O servidor recusou (ex.: menor de 18, campo faltando) e já apagou a conta criada:
+      // desconecta e mostra a mensagem dele, no campo certo.
+      if (erroServidor?.contaRemovida) await supabase.auth.signOut();
+      const msg = erroServidor?.error || "Conta criada, mas houve um erro ao salvar seus dados. Fale com o suporte.";
+      const campoPorServidor = {
+        nome_completo:"nomeCompleto", cpf:"cpf", rg:"rg", nascimento:"nascimento",
+        nome_pai:"nomePai", nome_mae:"nomeMae", endereco:"endereco", bairro_base:"bairro",
+        telefone:"tel", pix:"pix",
+      };
+      const campo = campoPorServidor[erroServidor?.campo];
+      if (campo) {
+        setErros({ [campo]: msg });
+        setStep(["tel","pix"].includes(campo) ? 2 : 1);
+      } else {
+        setErros({ tel: msg });
+        setStep(2);
+      }
       return;
     }
 
@@ -547,7 +602,7 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
             <div style={{flex:1}}><Inp label="CPF" obrigatorio value={form.cpf} onChange={v=>set("cpf",v)} placeholder="000.000.000-00" erro={erros.cpf}/></div>
             <div style={{flex:1}}><Inp label="RG" obrigatorio value={form.rg} onChange={v=>set("rg",v)} placeholder="00.000.000-0" erro={erros.rg}/></div>
           </div>
-          <Inp label="Data de nascimento" obrigatorio value={form.nascimento} onChange={v=>set("nascimento",v)} placeholder="Ex: 15/03/1995" hint="Digite no formato DD/MM/AAAA" erro={erros.nascimento}/>
+          <Inp label="Data de nascimento" obrigatorio value={form.nascimento} onChange={v=>set("nascimento",mascaraData(v))} placeholder="Ex: 15/03/1995" hint="Digite no formato DD/MM/AAAA" erro={erros.nascimento}/>
           <Inp label="Nome completo do pai" obrigatorio value={form.nomePai} onChange={v=>set("nomePai",v)} placeholder="Ex: José Antônio Silva" erro={erros.nomePai}/>
           <Inp label="Nome completo da mãe" obrigatorio value={form.nomeMae} onChange={v=>set("nomeMae",v)} placeholder="Ex: Maria das Graças Silva" erro={erros.nomeMae}/>
           <Inp label="Endereço residencial completo" obrigatorio value={form.endereco} onChange={v=>set("endereco",v)} placeholder="Ex: Rua das Flores, 45, Perequê, Ilhabela/SP" erro={erros.endereco}/>
