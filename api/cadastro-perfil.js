@@ -39,6 +39,47 @@ const CAMPOS_MOTOBOY = {
 const FORCADOS_EMPRESARIO = { aprovado: false, rejeitado: false, bloqueado: false };
 const FORCADOS_MOTOBOY = { aprovado: false, rejeitado: false, online: false, banido: false };
 
+// Rótulos em português dos campos obrigatórios do motoboy (pra mensagem de erro)
+const ROTULOS_MOTOBOY = {
+  nome_completo: "nome completo",
+  cpf: "CPF",
+  rg: "RG",
+  nascimento: "data de nascimento",
+  nome_pai: "nome do pai",
+  nome_mae: "nome da mãe",
+  endereco: "endereço",
+  bairro_base: "bairro",
+  telefone: "telefone",
+  pix: "chave PIX",
+};
+
+// Data de hoje no fuso de Brasília, como "AAAA-MM-DD"
+function hojeSaoPaulo() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+}
+
+// Confere nascimento "AAAA-MM-DD": formato estrito, data real, ano >= 1900, não futura.
+// Devolve { ok:true, idade } ou { ok:false, motivo }.
+function conferirNascimento(valor) {
+  if (typeof valor !== "string") return { ok: false, motivo: "obrigatoria" };
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(valor.trim());
+  if (!m) return { ok: false, motivo: "invalida" };
+  const ano = +m[1], mes = +m[2], dia = +m[3];
+  if (ano < 1900 || mes < 1 || mes > 12 || dia < 1) return { ok: false, motivo: "invalida" };
+  const d = new Date(Date.UTC(ano, mes - 1, dia));
+  if (d.getUTCFullYear() !== ano || d.getUTCMonth() !== mes - 1 || d.getUTCDate() !== dia) {
+    return { ok: false, motivo: "invalida" };
+  }
+  const hoje = hojeSaoPaulo().split("-").map(Number);
+  const [hA, hM, hD] = hoje;
+  if (ano > hA || (ano === hA && (mes > hM || (mes === hM && dia > hD)))) {
+    return { ok: false, motivo: "futura" };
+  }
+  let idade = hA - ano;
+  if (hM < mes || (hM === mes && hD < dia)) idade--;
+  return { ok: true, idade };
+}
+
 export default async function handler(req, res) {
   // CORS — igual às outras funções, pra funcionar também no app nativo (Capacitor)
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -113,12 +154,57 @@ export default async function handler(req, res) {
         registro[permitidos[campo]] = null;
       }
     }
+    // 3.1) Regras extras do MOTOBOY: campos obrigatórios + maioridade (18 anos).
+    // Se algo falhar, apaga o usuário recém-criado (pra não sobrar conta sem perfil)
+    // e devolve 400 com a mensagem do motivo.
+    if (tipo === "motoboy") {
+      let recusa = null; // { mensagem, campo }
+
+      const faltando = Object.keys(ROTULOS_MOTOBOY).filter(
+        (c) => typeof registro[c] !== "string" || registro[c].trim() === ""
+      );
+      if (faltando.includes("nascimento")) {
+        recusa = { mensagem: "A data de nascimento é obrigatória (DD/MM/AAAA).", campo: "nascimento" };
+      } else if (faltando.length > 0) {
+        recusa = {
+          mensagem: "Preencha todos os campos obrigatórios. Faltando: " + faltando.map((c) => ROTULOS_MOTOBOY[c]).join(", ") + ".",
+          campo: faltando[0],
+        };
+      } else {
+        const nasc = conferirNascimento(registro.nascimento);
+        if (!nasc.ok) {
+          recusa = {
+            mensagem: nasc.motivo === "futura"
+              ? "A data de nascimento não pode ser no futuro."
+              : "Data de nascimento inválida. Use o formato DD/MM/AAAA.",
+            campo: "nascimento",
+          };
+        } else if (nasc.idade < 18) {
+          recusa = { mensagem: "É necessário ter 18 anos ou mais para se cadastrar.", campo: "nascimento" };
+        } else {
+          registro.nascimento = registro.nascimento.trim();
+        }
+      }
+
+      if (recusa) {
+        const { error: erroDel } = await supabaseAdmin.auth.admin.deleteUser(userId);
+        if (erroDel) console.error("Erro ao apagar usuário de cadastro recusado:", erroDel.message);
+        console.log("Cadastro de motoboy recusado:", recusa.campo);
+        return res.status(400).json({ error: recusa.mensagem, campo: recusa.campo, contaRemovida: !erroDel });
+      }
+    }
+
     Object.assign(registro, forcados);
 
     const { error: erroInsert } = await supabaseAdmin.from(tabela).insert(registro);
     if (erroInsert) {
       console.error("Erro ao salvar perfil (" + tipo + "):", erroInsert.message);
-      return res.status(400).json({ error: "Não foi possível salvar o cadastro" });
+      let contaRemovida = false;
+      if (tipo === "motoboy") {
+        const { error: erroDel } = await supabaseAdmin.auth.admin.deleteUser(userId);
+        contaRemovida = !erroDel;
+      }
+      return res.status(400).json({ error: "Não foi possível salvar o cadastro. Tente novamente.", contaRemovida });
     }
 
     console.log("Perfil criado:", tipo);
