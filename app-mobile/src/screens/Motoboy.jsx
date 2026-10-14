@@ -428,7 +428,10 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
       </div>
 
       <div style={{display:"flex",gap:10}}>
-        <button onClick={onRecusar} style={{flex:1,padding:"14px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:15,cursor:"pointer"}}>
+        <button onClick={()=>{
+          if (!window.confirm("Tem certeza que quer recusar essa corrida?")) return;
+          onRecusar();
+        }} style={{flex:1,padding:"14px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:15,cursor:"pointer"}}>
           ❌ Recusar
         </button>
         {aindaBloqueado ? (
@@ -683,7 +686,10 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                   </div>
                 )}
 
-                <button onClick={()=>marcarEntregue(p.id)} style={{width:"100%",padding:"14px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
+                <button onClick={()=>{
+                  if (!window.confirm(`Confirma que entregou pra ${p.clienteNome}?`)) return;
+                  marcarEntregue(p.id);
+                }} style={{width:"100%",padding:"14px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
                   ✅ Confirmar entrega
                 </button>
               </div>
@@ -804,6 +810,33 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
   );
 }
 
+// Adicionado em 12/10/2026 — ajuda a mostrar, no histórico, a hora que o
+// motoboy ACEITOU e a hora que ele ENTREGOU, e quanto tempo levou entre uma
+// e outra (o tempo de espera do pedido antes de alguém aceitar NÃO é culpa
+// do motoboy, por isso o tempo dele só conta a partir do aceite).
+// Formata uma duração em minutos: abaixo de 1h fica "45 min"; de 1h pra cima
+// vira horas e minutos ("1h 05min", "2h 06min", "3h") — pra bater o olho e
+// entender sem fazer conta.
+function formatarDuracao(min) {
+  if (min == null || isNaN(min)) return "";
+  const m = Math.max(0, Math.round(min));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const resto = m % 60;
+  return resto === 0 ? `${h}h` : `${h}h ${String(resto).padStart(2, "0")}min`;
+}
+
+function horaCurta(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return isNaN(d) ? null : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+function minutosEntre(inicio, fim) {
+  if (!inicio || !fim) return null;
+  const diff = (new Date(fim).getTime() - new Date(inicio).getTime()) / 60000;
+  return isNaN(diff) ? null : Math.max(0, Math.round(diff));
+}
+
 function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy }) {
   const [verTudo, setVerTudo] = useState(false);
   const [dataSelecionada, setDataSelecionada] = useState(dataLocalISO());
@@ -884,12 +917,28 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
         <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,padding:"14px 16px",marginBottom:14}}>
           <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Entregas de {dataDoDiaFmt}</div>
           {entregasDoDia.map(e=>(
-            <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #1f2937"}}>
-              <div>
-                <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
-                <span style={{color:"#34d399",fontSize:12,marginLeft:8}}>{e.bairro}</span>
+            <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid #1f2937"}}>
+              {/* Atualizado em 12/10/2026: o histórico passou a mostrar o
+                  ESTABELECIMENTO, o bairro e o cliente — antes só tinha cliente
+                  e bairro, e quando alguém perguntava "você entregou pra tal
+                  loja nesse dia?" o motoboy não tinha como conferir. */}
+              <div style={{minWidth:0,flex:1}}>
+                <div style={{color:"#60a5fa",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:0.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>🏪 {e.empresaNome || "Estabelecimento"}</div>
+                <div style={{marginTop:2}}>
+                  <span style={{color:"#34d399",fontSize:12,fontWeight:600}}>📍 {e.bairro}</span>
+                  <span style={{color:"#6b7280",fontSize:12,margin:"0 6px"}}>·</span>
+                  <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
+                </div>
+                {(e.horaAceite || e.horaEntrega) && (
+                  <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>
+                    ⏱️ {e.horaAceite && <>aceitou {e.horaAceite}</>}{e.horaAceite && e.horaEntrega && " · "}{e.horaEntrega && <>entregou {e.horaEntrega}</>}{e.minutosEntrega!=null && <> · <b style={{color:"#d1d5db"}}>{formatarDuracao(e.minutosEntrega)}</b></>}
+                  </div>
+                )}
               </div>
-              <span style={{color:"#fbbf24",fontWeight:700,fontSize:13}}>R${e.taxa}</span>
+              <div style={{textAlign:"right",flexShrink:0}}>
+                <div style={{color:"#fbbf24",fontWeight:700,fontSize:13}}>R${e.taxa}</div>
+                {e.horaEntrega && <div style={{color:"#9ca3af",fontSize:11,marginTop:2}}>entregue {e.horaEntrega}</div>}
+              </div>
             </div>
           ))}
         </div>
@@ -1275,6 +1324,14 @@ export default function Motoboy() {
                 hora: d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
                 semana: segundaFeiraDaSemana(d), mes: d.getMonth()+1,
                 repasePago: p.repasse_pago || false,
+                horaAceite: horaCurta(p.aceito_em),
+                horaEntrega: horaCurta(p.entregue_em),
+                // O tempo do motoboy conta do aceite (ou da criação do pedido,
+                // se ele foi adicionado depois a uma corrida já em andamento).
+                minutosEntrega: minutosEntre(
+                  p.aceito_em && new Date(p.aceito_em) > new Date(p.criado_em) ? p.aceito_em : p.criado_em,
+                  p.entregue_em
+                ),
               };
             }));
           }
@@ -2086,6 +2143,12 @@ export default function Motoboy() {
         hora: agora.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
         semana: segundaFeiraDaSemana(agora), mes: agora.getMonth()+1,
         repasePago: false,
+        horaAceite: horaCurta(pedido.aceitoEm),
+        horaEntrega: horaCurta(agora.toISOString()),
+        minutosEntrega: minutosEntre(
+          pedido.aceitoEm && pedido.criadoEm && new Date(pedido.aceitoEm).getTime() > pedido.criadoEm ? pedido.aceitoEm : (pedido.criadoEm || pedido.aceitoEm),
+          agora.toISOString()
+        ),
       }]);
       // CORRIGIDO em 23/09/2026 no site (replicado aqui em 06/10/2026, item
       // 10): o Ranking só era calculado ao abrir a tela, então a entrega

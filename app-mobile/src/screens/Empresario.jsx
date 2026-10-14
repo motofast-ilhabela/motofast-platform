@@ -1973,6 +1973,32 @@ function ModalEditarPedido({ pedido, onSalvar, onFechar }) {
     </Overlay>
   );
 }
+// Adicionado em 12/10/2026 — separa, no histórico, o tempo que o pedido ficou
+// esperando um motoboy aceitar (não é culpa do motoboy) do tempo que o motoboy
+// levou DEPOIS de aceitar até entregar (esse sim conta pra cobrar do motoboy).
+// Formata uma duração em minutos: abaixo de 1h fica "45 min"; de 1h pra cima
+// vira horas e minutos ("1h 05min", "2h 06min", "3h") — pra bater o olho e
+// entender sem fazer conta.
+function formatarDuracaoHist(min) {
+  if (min == null || isNaN(min)) return "";
+  const m = Math.max(0, Math.round(min));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const resto = m % 60;
+  return resto === 0 ? `${h}h` : `${h}h ${String(resto).padStart(2, "0")}min`;
+}
+
+function minutosEntreHist(inicio, fim) {
+  if (!inicio || !fim) return null;
+  const diff = (new Date(fim).getTime() - new Date(inicio).getTime()) / 60000;
+  return isNaN(diff) ? null : Math.max(0, Math.round(diff));
+}
+function horaCurtaHist(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return isNaN(d) ? null : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+
 function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado, mesesDisponiveis, empresa }) {
   const [filtro, setFiltro] = useState("Todos");
   const [dataSelecionada, setDataSelecionada] = useState(dataLocalISO());
@@ -2240,12 +2266,33 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
         <Card style={{marginBottom:14}}>
           <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>Entregas de {dataFmt}</div>
           {entregasDia.map(e=>(
-            <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1f2937"}}>
-              <div>
-                <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
-                <span style={{color:"#34d399",fontSize:12,marginLeft:8}}>{e.bairro}</span>
+            <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid #1f2937"}}>
+              {/* Atualizado em 12/10/2026: o histórico passou a mostrar QUAL
+                  MOTOBOY fez a entrega e a hora do pedido — antes só tinha
+                  cliente e bairro, e quando surgia dúvida sobre uma entrega o
+                  estabelecimento não conseguia ver quem tinha feito. */}
+              <div style={{minWidth:0,flex:1}}>
+                <div>
+                  <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
+                  <span style={{color:"#34d399",fontSize:12,marginLeft:8}}>📍 {e.bairro}</span>
+                </div>
+                <div style={{color:"#9ca3af",fontSize:12,marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  🏍️ <span style={{color:"#d1d5db",fontWeight:600}}>{e.motoboyNome && e.motoboyNome!=="—" ? e.motoboyNome : "Motoboy não identificado"}</span>
+                </div>
+                <div style={{color:"#6b7280",fontSize:11,marginTop:3,lineHeight:1.5}}>
+                  {e.hora && <>🕐 chamou {e.hora}</>}
+                  {e.horaAceite && <> · aceitou {e.horaAceite}</>}
+                  {e.horaEntrega && <> · entregou {e.horaEntrega}</>}
+                </div>
+                {(e.minutosEspera!=null || e.minutosMotoboy!=null) && (
+                  <div style={{color:"#6b7280",fontSize:11,lineHeight:1.5}}>
+                    {e.minutosEspera!=null && <>⏳ esperou motoboy <b style={{color:"#d1d5db"}}>{formatarDuracaoHist(e.minutosEspera)}</b></>}
+                    {e.minutosEspera!=null && e.minutosMotoboy!=null && " · "}
+                    {e.minutosMotoboy!=null && <>🏍️ aceite → entrega <b style={{color:"#d1d5db"}}>{formatarDuracaoHist(e.minutosMotoboy)}</b></>}
+                  </div>
+                )}
               </div>
-              <span style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>R${e.taxa}</span>
+              <span style={{color:"#60a5fa",fontWeight:700,fontSize:13,flexShrink:0}}>R${e.taxa}</span>
             </div>
           ))}
         </Card>
@@ -2986,6 +3033,16 @@ export default function Empresario() {
       hora: new Date(p.criado_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
       horaSaida: p.saiu_estabelecimento_em ? new Date(p.saiu_estabelecimento_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
       horaEntrega: p.entregue_em ? new Date(p.entregue_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
+      horaAceite: horaCurtaHist(p.aceito_em),
+      // Espera = do pedido até alguém aceitar. Se o pedido foi adicionado numa
+      // corrida que já estava andando, o aceite é anterior ao pedido: espera 0.
+      minutosEspera: minutosEntreHist(p.criado_em, p.aceito_em),
+      // Tempo do motoboy = do aceite (ou do pedido, se foi adicionado depois)
+      // até a entrega.
+      minutosMotoboy: minutosEntreHist(
+        p.aceito_em && new Date(p.aceito_em) > new Date(p.criado_em) ? p.aceito_em : p.criado_em,
+        p.entregue_em
+      ),
     })));
     setCarregandoHistorico(false);
   }
