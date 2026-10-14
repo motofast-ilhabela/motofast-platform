@@ -931,7 +931,7 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
                 </div>
                 {(e.horaAceite || e.horaEntrega) && (
                   <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>
-                    ⏱️ {e.horaAceite && <>aceitou {e.horaAceite}</>}{e.horaAceite && e.horaEntrega && " · "}{e.horaEntrega && <>entregou {e.horaEntrega}</>}{e.minutosEntrega!=null && <> · <b style={{color:"#d1d5db"}}>{formatarDuracao(e.minutosEntrega)}</b></>}
+                    ⏱️ {e.horaAceite && (e.adicionadoCorrida ? <>entrou na corrida que você já estava fazendo</> : <>aceitou {e.horaAceite}</>)}{e.horaAceite && e.horaEntrega && " · "}{e.horaEntrega && <>entregou {e.horaEntrega}</>}{e.minutosEntrega!=null && <> · <b style={{color:"#d1d5db"}}>{formatarDuracao(e.minutosEntrega)}</b></>}
                   </div>
                 )}
               </div>
@@ -1325,6 +1325,8 @@ export default function Motoboy() {
                 semana: segundaFeiraDaSemana(d), mes: d.getMonth()+1,
                 repasePago: p.repasse_pago || false,
                 horaAceite: horaCurta(p.aceito_em),
+                // Só texto: aceite anterior ao pedido = adicionado a uma corrida já aceita.
+                adicionadoCorrida: !!(p.aceito_em && new Date(p.aceito_em) < new Date(p.criado_em)),
                 horaEntrega: horaCurta(p.entregue_em),
                 // O tempo do motoboy conta do aceite (ou da criação do pedido,
                 // se ele foi adicionado depois a uma corrida já em andamento).
@@ -2144,6 +2146,7 @@ export default function Motoboy() {
         semana: segundaFeiraDaSemana(agora), mes: agora.getMonth()+1,
         repasePago: false,
         horaAceite: horaCurta(pedido.aceitoEm),
+        adicionadoCorrida: !!(pedido.aceitoEm && pedido.criadoEm && new Date(pedido.aceitoEm).getTime() < pedido.criadoEm),
         horaEntrega: horaCurta(agora.toISOString()),
         minutosEntrega: minutosEntre(
           pedido.aceitoEm && pedido.criadoEm && new Date(pedido.aceitoEm).getTime() > pedido.criadoEm ? pedido.aceitoEm : (pedido.criadoEm || pedido.aceitoEm),
