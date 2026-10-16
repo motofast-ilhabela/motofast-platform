@@ -83,6 +83,46 @@ function LoginAdmin() {
   )
 }
 
+// ─── LOGIN QUE NÃO CAI À TOA ──────────────────────────────────────────────
+// Corrigido em 16/10/2026: no iPhone, ao minimizar o app e voltar, a internet
+// demora um instante pra voltar e a verificação do login falhava na hora —
+// o sistema entendia "sem login" e mandava a pessoa pra tela de e-mail e senha.
+// Agora, se for só falha momentânea de rede, tenta de novo algumas vezes antes
+// de desistir. Só considera "sem login" quando realmente não existe sessão.
+const esperar = (ms) => new Promise(r => setTimeout(r, ms))
+
+async function obterUsuarioComTolerancia() {
+  for (let i = 0; i < 4; i++) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) return session.user
+      const { data: { user }, error } = await supabase.auth.getUser()
+      if (user) return user
+      // Sem sessão de verdade (nada guardado no aparelho): não adianta insistir
+      if (error && (error.name === "AuthSessionMissingError" || (error.status >= 400 && error.status < 500))) return null
+    } catch (e) { /* falha de rede: tenta de novo */ }
+    await esperar(700 * (i + 1))
+  }
+  return null
+}
+
+async function buscarPerfilComTolerancia(tabela) {
+  const user = await obterUsuarioComTolerancia()
+  if (!user) return { user: null, perfil: null }
+  for (let i = 0; i < 4; i++) {
+    try {
+      const { data, error } = await supabase
+        .from(tabela)
+        .select("id, aprovado")
+        .eq("user_id", user.id)
+        .maybeSingle()
+      if (!error) return { user, perfil: data }
+    } catch (e) { /* tenta de novo */ }
+    await esperar(700 * (i + 1))
+  }
+  return { user, perfil: undefined } // não conseguiu consultar: não derruba o login
+}
+
 // ─── PROTEÇÃO DE ROTA DO ADMIN ────────────────────────────────────────────────
 // Email autorizado como admin — só esse email tem acesso
 const ADMIN_EMAIL = "botdahora@gmail.com"
@@ -132,15 +172,9 @@ function RotaEmpresario() {
 
   useEffect(()=>{
     async function verificar() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const { user, perfil: emp } = await buscarPerfilComTolerancia("empresarios")
       if (!user) { setEstado("negado"); return; }
-
-      // Verifica se é um empresário aprovado
-      const { data: emp } = await supabase
-        .from("empresarios")
-        .select("id, aprovado")
-        .eq("user_id", user.id)
-        .maybeSingle()
+      if (emp === undefined) { setEstado("autorizado"); return; } // rede instável: mantém logado
 
       if (emp && emp.aprovado) {
         setEstado("autorizado")
@@ -190,15 +224,9 @@ function RotaMotoboy() {
 
   useEffect(()=>{
     async function verificar() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const { user, perfil: mb } = await buscarPerfilComTolerancia("motoboys")
       if (!user) { setEstado("negado"); return; }
-
-      // Verifica se é um motoboy aprovado
-      const { data: mb } = await supabase
-        .from("motoboys")
-        .select("id, aprovado")
-        .eq("user_id", user.id)
-        .maybeSingle()
+      if (mb === undefined) { setEstado("autorizado"); return; } // rede instável: mantém logado
 
       if (mb && mb.aprovado) {
         setEstado("autorizado")

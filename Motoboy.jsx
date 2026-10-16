@@ -389,7 +389,11 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
 
       {corrida.pedidos.map((p,i)=>{
         const entregue = pedidosEntregues.includes(p.id);
-        const saiu = saiuEstab[p.id];
+        // Corrigido em 16/10/2026: antes só lembrava do clique em "Saí do estabelecimento"
+        // na memória da tela — ao bloquear o celular ou trocar de app e voltar, a tela
+        // recarregava, esquecia o clique e mostrava o botão de novo. Agora também
+        // confere o status salvo no banco (saiu_estabelecimento).
+        const saiu = saiuEstab[p.id] || p.statusBanco === "saiu_estabelecimento";
         const pg = PG[p.pagamento]||{icon:"•",cor:"#9ca3af",label:p.pagamento};
         return (
           <Card key={p.id} style={{marginBottom:12,border:`1px solid ${entregue?"#34d399":saiu?"#fbbf24":"#3b82f6"}`,background:entregue?"#0a1f14":"#111827"}}>
