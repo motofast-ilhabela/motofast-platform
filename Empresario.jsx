@@ -468,8 +468,11 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         // errado — mais barata, sem avisar nada. Agora manda só rua +
         // número + cidade, sem bairro — a rua real decide o cálculo.
         const enderecoDestino = `${rua}, ${num||""}, Ilhabela, SP, Brasil`;
-        const enderecoOrigem = empresa.endereco
-          ? `${empresa.endereco}, Ilhabela, SP, Brasil`
+        // Origem do cálculo de km: o endereço "de taxas" (se o estabelecimento tiver
+        // um separado do de retirada) ou, se não tiver, o endereço normal.
+        const enderecoBaseTaxas = empresa.enderecoTaxas || empresa.endereco;
+        const enderecoOrigem = enderecoBaseTaxas
+          ? `${enderecoBaseTaxas}, Ilhabela, SP, Brasil`
           : `${empresa.bairro||""}, Ilhabela, SP, Brasil`;
 
         // Calcula pelo Google Maps (via nossa função no servidor, que protege a
@@ -968,8 +971,11 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         // errado — mais barata, sem avisar nada. Agora manda só rua +
         // número + cidade, sem bairro — a rua real decide o cálculo.
         const enderecoDestino = `${rua}, ${num||""}, Ilhabela, SP, Brasil`;
-        const enderecoOrigem = empresa.endereco
-          ? `${empresa.endereco}, Ilhabela, SP, Brasil`
+        // Origem do cálculo de km: o endereço "de taxas" (se o estabelecimento tiver
+        // um separado do de retirada) ou, se não tiver, o endereço normal.
+        const enderecoBaseTaxas = empresa.enderecoTaxas || empresa.endereco;
+        const enderecoOrigem = enderecoBaseTaxas
+          ? `${enderecoBaseTaxas}, Ilhabela, SP, Brasil`
           : `${empresa.bairro||""}, Ilhabela, SP, Brasil`;
 
         const resp = await fetch("/api/calcular-distancia", {
@@ -1397,11 +1403,44 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
     // estabelecimento desde que aceitou a corrida, o prazo de chegada dele
     // conta a partir desse aceite ORIGINAL — herda o horário do pedido mais
     // antigo da mesma corrida em vez de zerar o relógio agora.
+    // Proteção adicionada em 14/10/2026: se o pedido em andamento ficou SEM
+    // corrida registrada no banco (corrida_id vazio), a tela usava o id do
+    // próprio pedido como se fosse a corrida, e o banco recusava o novo pedido
+    // (erro "pedidos_corrida_id_fkey"). Agora confere se a corrida existe de
+    // verdade; se não existir, cria uma e liga os pedidos em andamento desse
+    // motoboy a ela antes de adicionar.
+    let corridaIdReal = novoPedido.corridaId;
+    const { data: corridaExiste } = await supabase
+      .from("corridas")
+      .select("id")
+      .eq("id", corridaIdReal)
+      .maybeSingle();
+    if (!corridaExiste) {
+      const { data: corridaNova, error: erroCorridaNova } = await supabase
+        .from("corridas")
+        .insert({ motoboy_id: novoPedido.motoboyId, status: "ativa" })
+        .select()
+        .single();
+      if (erroCorridaNova || !corridaNova) {
+        console.error("Erro ao criar a corrida que faltava:", erroCorridaNova);
+        alert("❌ Não foi possível adicionar o pedido a esta corrida." + (erroCorridaNova?.message ? "\n\n" + erroCorridaNova.message : " Tente de novo."));
+        return;
+      }
+      corridaIdReal = corridaNova.id;
+      await supabase
+        .from("pedidos")
+        .update({ corrida_id: corridaIdReal })
+        .eq("empresario_id", empresa.id)
+        .eq("motoboy_id", novoPedido.motoboyId)
+        .in("status", ["aceito", "saiu_estabelecimento"])
+        .is("corrida_id", null);
+    }
+
     let aceitoEmDaCorrida = new Date().toISOString();
     const { data: pedidoAnteriorDaCorrida } = await supabase
       .from("pedidos")
       .select("aceito_em")
-      .eq("corrida_id", novoPedido.corridaId)
+      .eq("corrida_id", corridaIdReal)
       .not("aceito_em", "is", null)
       .order("aceito_em", { ascending: true })
       .limit(1)
@@ -1411,7 +1450,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
     const { data: pedidoDB, error: erroAdicionar } = await supabase.from("pedidos").insert({
       empresario_id: empresa.id,
       motoboy_id: novoPedido.motoboyId,
-      corrida_id: novoPedido.corridaId,
+      corrida_id: corridaIdReal,
       cliente_nome: novoPedido.clienteNome,
       cliente_telefone: novoPedido.clienteTel,
       rua: novoPedido.rua,
@@ -2719,6 +2758,8 @@ export default function AppEmpresario() {
             bairro: emp.bairro,
             tel: emp.telefone,
             endereco: emp.endereco_estabelecimento || "",
+            // Endereço usado SÓ pra calcular o km/taxa (se vazio, usa o endereço normal)
+            enderecoTaxas: emp.endereco_taxas || "",
             planoPagamento: emp.plano_pagamento,
             planoPagamentoMotoboy: emp.plano_pagamento_motoboy,
             planoGratis: emp.plano_gratis,
@@ -2874,6 +2915,7 @@ export default function AppEmpresario() {
       bairro: emp.bairro,
       tel: emp.telefone,
       endereco: emp.endereco_estabelecimento || "",
+      enderecoTaxas: emp.endereco_taxas || "",
       planoPagamento: emp.plano_pagamento,
       planoPagamentoMotoboy: emp.plano_pagamento_motoboy,
       planoGratis: emp.plano_gratis,

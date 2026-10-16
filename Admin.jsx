@@ -1183,8 +1183,10 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
         // o bairro digitado quando ele não bate com a rua real, dando
         // distância mais barata e errada).
         const enderecoDestino = `${rua}, ${num||""}, Ilhabela, SP, Brasil`;
-        const enderecoOrigem = empSel.enderecoEstab
-          ? `${empSel.enderecoEstab}, Ilhabela, SP, Brasil`
+        // Se o estabelecimento tem um endereço só pra calcular taxas, usa ele; senão o normal.
+        const enderecoBaseTaxas = empSel.enderecoTaxas || empSel.enderecoEstab;
+        const enderecoOrigem = enderecoBaseTaxas
+          ? `${enderecoBaseTaxas}, Ilhabela, SP, Brasil`
           : `${empSel.bairro||""}, Ilhabela, SP, Brasil`;
         const resp = await fetch("/api/calcular-distancia", {
           method: "POST", headers: {"Content-Type":"application/json"},
@@ -1216,7 +1218,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
       }
     })();
     return () => { cancelado = true; };
-  }, [abaEmp, sel, formRegistro.rua, formRegistro.num, formRegistro.bairro, empSel?.modeloPrecificacao, empSel?.enderecoEstab, empSel?.bairro]);
+  }, [abaEmp, sel, formRegistro.rua, formRegistro.num, formRegistro.bairro, empSel?.modeloPrecificacao, empSel?.enderecoEstab, empSel?.enderecoTaxas, empSel?.bairro]);
 
   function abrirEmp(emp) { setSel(emp.id); setAbaEmp("geral"); setTaxasEdit(JSON.parse(JSON.stringify(emp.taxas||{}))); setTaxaSalva(false); }
 
@@ -3493,6 +3495,7 @@ export default function App() {
         nomeSocio: e.nome_socio || "",
         telSocio: e.tel_socio || "",
         enderecoEstab: e.endereco_estabelecimento || "",
+        enderecoTaxas: e.endereco_taxas || "",
         planoPagamento: e.plano_pagamento || "semanal",
         planoPagamentoMotoboy: e.plano_pagamento_motoboy || "diario",
         planoGratis: e.plano_gratis || false,
