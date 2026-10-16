@@ -706,6 +706,99 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   );
 }
 
+// ─── TAXA DE CHAMADO (locação do motoboy) ─────────────────────────────────────
+// Só aparece pra estabelecimentos com "taxa de chamado" definida (hoje só o Casa
+// Cardoso, por ficar longe do ponto de saída dos motoboys). Cada CHAMADA de
+// motoboy (cada "Nova Entrega" publicada) soma esse valor UMA vez, no primeiro
+// pedido da chamada — os pedidos adicionados depois na mesma corrida não somam
+// de novo. O valor entra na taxa desse pedido (e no ganho do motoboy que
+// aceitou), então repasse e totais já saem certos. Aqui separamos pra bater o olho:
+//   Locação (chamadas) + Taxas das entregas = Total a pagar.
+function ChamadasMotoboyCard({ empresaId, valor }) {
+  const [linhas, setLinhas] = useState(null); // [{ dia, taxa, chamado }]
+  const valorChamada = Number(valor) || 0;
+
+  useEffect(()=>{
+    if (!empresaId || !(valorChamada > 0)) return;
+    let cancelado = false;
+    async function carregar() {
+      try {
+        const inicio = new Date();
+        inicio.setDate(inicio.getDate() - 120);
+        const { data, error } = await buscarTodasPaginado(() => supabase
+          .from("pedidos")
+          .select("id, taxa, taxa_chamado, criado_em")
+          .eq("empresario_id", empresaId)
+          .eq("status", "entregue")
+          .gte("criado_em", inicio.toISOString())
+          .order("criado_em", { ascending: true })
+          .order("id", { ascending: true }));
+        if (cancelado || error) return;
+        setLinhas((data || []).map(p => ({
+          dia: dataLocalISO(new Date(p.criado_em)),
+          taxa: Number(p.taxa) || 0,
+          chamado: Number(p.taxa_chamado) || 0,
+        })));
+      } catch (e) { /* mantém o que já estava na tela */ }
+    }
+    carregar();
+    const intervalo = setInterval(carregar, 60000);
+    return () => { cancelado = true; clearInterval(intervalo); };
+  }, [empresaId, valorChamada]);
+
+  if (!(valorChamada > 0)) return null;
+
+  const brl = (n) => "R$ " + n.toFixed(2).replace(".", ",");
+  const hojeISO = dataLocalISO();
+  const segundaISO = segundaFeiraDaSemana(new Date());
+  const mesPrefixo = hojeISO.slice(0, 7);
+  const resumo = (filtro) => {
+    const sel = (linhas || []).filter(filtro);
+    const total = sel.reduce((s, l) => s + l.taxa, 0);
+    const locacao = sel.reduce((s, l) => s + l.chamado, 0);
+    const chamadas = sel.filter(l => l.chamado > 0).length;
+    return { chamadas, locacao, entregas: total - locacao, total };
+  };
+  const periodos = [
+    ["Hoje", resumo(l => l.dia === hojeISO)],
+    ["Esta semana", resumo(l => l.dia >= segundaISO && l.dia <= hojeISO)],
+    ["Este mês", resumo(l => l.dia.slice(0, 7) === mesPrefixo)],
+  ];
+
+  return (
+    <Card style={{marginBottom:14,border:"1px solid #f59e0b55"}}>
+      <div style={{color:"#fbbf24",fontWeight:800,fontSize:14}}>🏍️ Taxa de chamado — {brl(valorChamada)} por chamada de motoboy</div>
+      <div style={{color:"#6b7280",fontSize:12,marginTop:2,marginBottom:12,lineHeight:1.5}}>
+        Cada vez que um motoboy é chamado soma {brl(valorChamada)}, não importa quantos pedidos entrem nessa mesma corrida. As taxas de cada entrega continuam normais, à parte.
+      </div>
+      {linhas === null ? (
+        <div style={{color:"#6b7280",fontSize:12}}>⏳ Carregando...</div>
+      ) : (
+        periodos.map(([rotulo, r]) => (
+          <div key={rotulo} style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:10,padding:"10px 12px",marginBottom:8}}>
+            <div style={{color:"#9ca3af",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>{rotulo}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center"}}>
+              <div>
+                <div style={{color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"}}>Taxas de locação</div>
+                <div style={{color:"#fbbf24",fontWeight:900,fontSize:16,marginTop:2}}>{brl(r.locacao)}</div>
+                <div style={{color:"#9ca3af",fontSize:11}}>{r.chamadas} {r.chamadas === 1 ? "chamada" : "chamadas"}</div>
+              </div>
+              <div>
+                <div style={{color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"}}>Taxas das entregas</div>
+                <div style={{color:"#60a5fa",fontWeight:900,fontSize:16,marginTop:2}}>{brl(r.entregas)}</div>
+              </div>
+              <div>
+                <div style={{color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"}}>Total a pagar</div>
+                <div style={{color:"#34d399",fontWeight:900,fontSize:18,marginTop:1}}>{brl(r.total)}</div>
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+    </Card>
+  );
+}
+
 // ─── MOTOBOYS ─────────────────────────────────────────────────────────────────
 function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
   const [aba, setAba] = useState("ativos");
@@ -1604,10 +1697,12 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                   </button>
                 </div>
               </Card>
+              {/* Taxa de chamado: só aparece pra quem tem esse valor definido */}
+              {empSel.taxaChamado > 0 && <ChamadasMotoboyCard empresaId={empSel.id} valor={empSel.taxaChamado}/>}
               <Card style={{marginBottom:14,padding:"14px 16px",background:"#0f172a"}}>
                 <SectionTitle>📋 Dados Cadastrais</SectionTitle>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                  {[["CNPJ",empSel.cnpj],["Telefone",empSel.tel],["Endereço",empSel.enderecoEstab],["Bairro",empSel.bairro],["Dono",empSel.nomeDono],["Tel. Dono",empSel.telDono],["Sócio",empSel.nomeSocio||"—"],["Tel. Sócio",empSel.telSocio||"—"]].map(([l,v])=>(
+                  {[["CNPJ",empSel.cnpj],["Telefone",empSel.tel],["Endereço (retirada)",empSel.enderecoEstab],...(empSel.enderecoTaxas?[["Endereço p/ taxas",empSel.enderecoTaxas]]:[]),["Bairro",empSel.bairro],["Dono",empSel.nomeDono],["Tel. Dono",empSel.telDono],["Sócio",empSel.nomeSocio||"—"],["Tel. Sócio",empSel.telSocio||"—"]].map(([l,v])=>(
                     <div key={l}><div style={{color:"#4b5563",fontSize:11}}>{l}</div><div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{v||"—"}</div></div>
                   ))}
                 </div>
@@ -3496,6 +3591,7 @@ export default function App() {
         telSocio: e.tel_socio || "",
         enderecoEstab: e.endereco_estabelecimento || "",
         enderecoTaxas: e.endereco_taxas || "",
+        taxaChamado: Number(e.taxa_chamado) || 0,
         planoPagamento: e.plano_pagamento || "semanal",
         planoPagamentoMotoboy: e.plano_pagamento_motoboy || "diario",
         planoGratis: e.plano_gratis || false,

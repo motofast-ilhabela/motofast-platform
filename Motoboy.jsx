@@ -800,6 +800,9 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
                   <span style={{color:"#6b7280",fontSize:12,margin:"0 6px"}}>·</span>
                   <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
                 </div>
+                {e.taxaChamado > 0 && (
+                  <div style={{color:"#fbbf24",fontSize:11,marginTop:3,fontWeight:700}}>🏍️ inclui R${Number(e.taxaChamado).toFixed(2).replace(".", ",")} de taxa de chamado</div>
+                )}
                 {(e.horaAceite || e.horaEntrega) && (
                   <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>
                     ⏱️ {e.horaAceite && (e.adicionadoCorrida ? <>entrou na corrida que você já estava fazendo</> : <>aceitou {e.horaAceite}</>)}{e.horaAceite && e.horaEntrega && " · "}{e.horaEntrega && <>entregou {e.horaEntrega}</>}{e.minutosEntrega!=null && <> · <b style={{color:"#d1d5db"}}>{formatarDuracao(e.minutosEntrega)}</b></>}
@@ -1176,6 +1179,7 @@ export default function AppMotoboy() {
                 hora: d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
                 semana: segundaFeiraDaSemana(d), mes: d.getMonth()+1,
                 repasePago: p.repasse_pago || false,
+                taxaChamado: Number(p.taxa_chamado) || 0,
                 horaAceite: horaCurta(p.aceito_em),
                 // Só texto: aceite anterior ao pedido = adicionado a uma corrida já aceita.
                 adicionadoCorrida: !!(p.aceito_em && new Date(p.aceito_em) < new Date(p.criado_em)),
