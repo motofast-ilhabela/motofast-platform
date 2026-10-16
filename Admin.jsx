@@ -1931,15 +1931,25 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                 {entregasDia.length>0 && (
                   <Card style={{marginBottom:14}}>
                     <SectionTitle>Entregas de {dataFmt}</SectionTitle>
-                    {entregasDia.map(e=>(
+                    {entregasDia.map(e=>{
+                      const mbEntrega = motoboys.find(m=>m.id===e.motoboyId);
+                      return (
                       <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1f2937"}}>
                         <div>
                           <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
                           <span style={{color:"#6b7280",fontSize:12,marginLeft:8}}>{e.bairro}</span>
+                          <div style={{color:"#9ca3af",fontSize:11,marginTop:2}}>
+                            🏍️ {mbEntrega?.nomeCompleto || "Motoboy não identificado"}
+                            {e.horaEntrega && e.horaEntrega !== "—" ? ` · entregue às ${e.horaEntrega}` : ""}
+                          </div>
                         </div>
-                        <span style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>R${e.taxaEmpresario}</span>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>R${e.taxaEmpresario}</div>
+                          {e.taxaChamado > 0 && <div style={{color:"#fbbf24",fontSize:10,fontWeight:700}}>inclui R${e.taxaChamado} de locação</div>}
+                        </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </Card>
                 )}
 
@@ -3666,6 +3676,7 @@ export default function App() {
             pagamento: p.forma_pagamento || "pix",
             taxaEmpresario: taxaEmp,
             taxaMotoboy: taxaMb,
+            taxaChamado: Number(p.taxa_chamado) || 0,
             lucro: lucroEntrega,
             status: p.status === "entregue" ? "Entregue" : "Cancelada",
             canceladoPorMotoboy: p.cancelado_por_motoboy || false,
