@@ -761,10 +761,15 @@ function ChamadasMotoboyCard({ empresaId, valor }) {
     const chamadas = sel.filter(l => l.chamado > 0).length;
     return { chamadas, locacao, entregas: total - locacao, total };
   };
+  // Semana e mês só aparecem quando já existe histórico além de hoje (a taxa de
+  // chamado começou em 16/10/2026; enquanto for só o 1º dia, seriam cópias de "Hoje").
+  const temHistorico = hojeISO > DATA_INICIO_TAXA_CHAMADO;
   const periodos = [
     ["Hoje", resumo(l => l.dia === hojeISO)],
-    ["Esta semana", resumo(l => l.dia >= segundaISO && l.dia <= hojeISO)],
-    ["Este mês", resumo(l => l.dia.slice(0, 7) === mesPrefixo)],
+    ...(temHistorico ? [
+      ["Esta semana", resumo(l => l.dia >= segundaISO && l.dia <= hojeISO)],
+      ["Este mês", resumo(l => l.dia.slice(0, 7) === mesPrefixo)],
+    ] : []),
   ];
 
   return (
