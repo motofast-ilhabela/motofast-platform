@@ -2042,6 +2042,9 @@ function horaCurtaHist(iso) {
 // de novo. O valor entra na taxa desse pedido (e no ganho do motoboy que
 // aceitou), então repasse e totais já saem certos. Aqui separamos pra bater o olho:
 //   Locação (chamadas) + Taxas das entregas = Total a pagar.
+// A taxa de chamado começou a valer em 16/10/2026: nada antes dessa data entra na conta.
+const DATA_INICIO_TAXA_CHAMADO = "2026-10-16";
+
 function ChamadasMotoboyCard({ empresaId, valor }) {
   const [linhas, setLinhas] = useState(null); // [{ dia, taxa, chamado }]
   const valorChamada = Number(valor) || 0;
@@ -2051,8 +2054,7 @@ function ChamadasMotoboyCard({ empresaId, valor }) {
     let cancelado = false;
     async function carregar() {
       try {
-        const inicio = new Date();
-        inicio.setDate(inicio.getDate() - 120);
+        const inicio = new Date(DATA_INICIO_TAXA_CHAMADO + "T00:00:00-03:00");
         const { data, error } = await buscarTodasPaginado(() => supabase
           .from("pedidos")
           .select("id, taxa, taxa_chamado, criado_em")
@@ -2066,7 +2068,7 @@ function ChamadasMotoboyCard({ empresaId, valor }) {
           dia: dataLocalISO(new Date(p.criado_em)),
           taxa: Number(p.taxa) || 0,
           chamado: Number(p.taxa_chamado) || 0,
-        })));
+        })).filter(l => l.dia >= DATA_INICIO_TAXA_CHAMADO));
       } catch (e) { /* mantém o que já estava na tela */ }
     }
     carregar();
@@ -2097,7 +2099,7 @@ function ChamadasMotoboyCard({ empresaId, valor }) {
     <Card style={{marginBottom:14,border:"1px solid #f59e0b55"}}>
       <div style={{color:"#fbbf24",fontWeight:800,fontSize:14}}>🏍️ Taxa de chamado — {brl(valorChamada)} por chamada de motoboy</div>
       <div style={{color:"#6b7280",fontSize:12,marginTop:2,marginBottom:12,lineHeight:1.5}}>
-        Cada vez que um motoboy é chamado soma {brl(valorChamada)}, não importa quantos pedidos entrem nessa mesma corrida. As taxas de cada entrega continuam normais, à parte.
+        Cada vez que um motoboy é chamado soma {brl(valorChamada)}, não importa quantos pedidos entrem nessa mesma corrida. As taxas de cada entrega continuam normais, à parte. Contagem válida a partir de 16/10/2026.
       </div>
       {linhas === null ? (
         <div style={{color:"#6b7280",fontSize:12}}>⏳ Carregando...</div>
