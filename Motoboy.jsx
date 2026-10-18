@@ -427,7 +427,9 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
 
       {corrida.pedidos.map((p,i)=>{
         const entregue = pedidosEntregues.includes(p.id);
-        const saiu = saiuEstab[p.id];
+        // Corrigido em 18/10/2026: além do clique em memória, considera o status do banco —
+        // senão, ao bloquear o celular/trocar de app e voltar, o botão "Saí do estabelecimento" reaparece.
+        const saiu = saiuEstab[p.id] || p.statusBanco === "saiu_estabelecimento";
         const pg = PG[p.pagamento]||{icon:"•",cor:"#9ca3af",label:p.pagamento};
         return (
           <Card key={p.id} style={{marginBottom:12,border:`1px solid ${entregue?"#34d399":saiu?"#fbbf24":"#3b82f6"}`,background:entregue?"#0a1f14":"#111827"}}>
@@ -1628,6 +1630,7 @@ export default function AppMotoboy() {
                 criadoEm: new Date(pedidoCompleto.criado_em).getTime(),
                 aceitoEm: pedidoCompleto.aceito_em || null,
                 chegouLojaEm: pedidoCompleto.chegou_loja_em || null,
+                statusBanco: pedidoCompleto.status,
               };
               setCorridaAtiva(prev => prev
                 ? { ...prev, pedidos: [...prev.pedidos, novoItem] }
