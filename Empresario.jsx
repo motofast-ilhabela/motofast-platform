@@ -3296,7 +3296,7 @@ export default function AppEmpresario() {
       minutosAteChegar: minutosEntreHist(
         p.aceito_em && new Date(p.aceito_em) > new Date(p.criado_em) ? p.aceito_em : p.criado_em,
         p.chegou_loja_em),
-      minutosNaLoja: minutosEntreHist(p.chegou_loja_em, p.saiu_estabelecimento_em),
+      minutosNaLoja: minutosEntreHist(p.chegou_loja_em && new Date(p.chegou_loja_em) < new Date(p.criado_em) ? p.criado_em : p.chegou_loja_em, p.saiu_estabelecimento_em),
       minutosAteCliente: minutosEntreHist(p.saiu_estabelecimento_em, p.entregue_em),
       // Só texto: se o aceite é ANTERIOR ao pedido, ele foi adicionado a uma
       // corrida que o motoboy já tinha aceitado (herda o aceito_em da corrida).

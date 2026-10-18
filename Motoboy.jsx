@@ -488,7 +488,8 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                     const minAteChegar = aceitoMs ? (chegouMs - aceitoMs) / 60000 : null;
                     const prazo = prazoChegadaMotoboyMin();
                     const noPrazo = minAteChegar != null && minAteChegar <= prazo;
-                    const espera = Math.max(0, Date.now() - chegouMs);
+                    const inicioEsperaMs = Math.max(chegouMs, p.criadoEm ? new Date(p.criadoEm).getTime() : 0);
+                    const espera = Math.max(0, Date.now() - inicioEsperaMs);
                     const mm = Math.floor(espera / 60000), ss = Math.floor((espera % 60000) / 1000);
                     return (
                       <div style={{marginTop:8}}>
@@ -788,6 +789,22 @@ function minutosEntre(inicio, fim) {
   return isNaN(diff) ? null : Math.max(0, Math.round(diff));
 }
 
+// Adicionado em 18/10/2026: os 3 tempos do motoboy (iguais aos do empresário).
+// Chegada = aceite → "Cheguei na loja". Balcão = chegada → "Saí do
+// estabelecimento" (se o pedido entrou depois da chegada, conta da criação do
+// pedido). Entrega = saída → entregue.
+function temposDoPedido(p) {
+  const aceitoDepois = p.aceito_em && new Date(p.aceito_em) > new Date(p.criado_em);
+  const inicioBalcao = p.chegou_loja_em && new Date(p.chegou_loja_em) < new Date(p.criado_em) ? p.criado_em : p.chegou_loja_em;
+  return {
+    horaChegou: horaCurta(p.chegou_loja_em),
+    horaSaiu: horaCurta(p.saiu_estabelecimento_em),
+    minutosAteChegar: minutosEntre(aceitoDepois ? p.aceito_em : p.criado_em, p.chegou_loja_em),
+    minutosNaLoja: minutosEntre(inicioBalcao, p.saiu_estabelecimento_em),
+    minutosAteCliente: minutosEntre(p.saiu_estabelecimento_em, p.entregue_em),
+  };
+}
+
 function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy }) {
   const [verTudo, setVerTudo] = useState(false);
   const [dataSelecionada, setDataSelecionada] = useState(dataLocalISO());
@@ -885,7 +902,16 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
                 )}
                 {(e.horaAceite || e.horaEntrega) && (
                   <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>
-                    ⏱️ {e.horaAceite && (e.adicionadoCorrida ? <>entrou na corrida que você já estava fazendo</> : <>aceitou {e.horaAceite}</>)}{e.horaAceite && e.horaEntrega && " · "}{e.horaEntrega && <>entregou {e.horaEntrega}</>}{e.minutosEntrega!=null && <> · <b style={{color:"#d1d5db"}}>{formatarDuracao(e.minutosEntrega)}</b></>}
+                    ⏱️ {e.horaAceite && (e.adicionadoCorrida ? <>entrou na corrida que você já estava fazendo</> : <>aceitou {e.horaAceite}</>)}{e.horaChegou && <> · chegou na loja {e.horaChegou}</>}{e.horaSaiu && <> · saiu {e.horaSaiu}</>}{e.horaEntrega && <> · entregou {e.horaEntrega}</>}{e.minutosEntrega!=null && <> · <b style={{color:"#d1d5db"}}>{formatarDuracao(e.minutosEntrega)}</b></>}
+                  </div>
+                )}
+                {(e.minutosAteChegar!=null || e.minutosNaLoja!=null || e.minutosAteCliente!=null) && (
+                  <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>
+                    {e.minutosAteChegar!=null && <>🏪 até chegar <b style={{color:"#d1d5db"}}>{formatarDuracao(e.minutosAteChegar)}</b></>}
+                    {e.minutosAteChegar!=null && e.minutosNaLoja!=null && " · "}
+                    {e.minutosNaLoja!=null && <>⏳ no balcão <b style={{color:"#d1d5db"}}>{formatarDuracao(e.minutosNaLoja)}</b></>}
+                    {(e.minutosAteChegar!=null || e.minutosNaLoja!=null) && e.minutosAteCliente!=null && " · "}
+                    {e.minutosAteCliente!=null && <>🚀 até o cliente <b style={{color:"#d1d5db"}}>{formatarDuracao(e.minutosAteCliente)}</b></>}
                   </div>
                 )}
               </div>
@@ -1265,6 +1291,9 @@ export default function AppMotoboy() {
                 // Só texto: aceite anterior ao pedido = adicionado a uma corrida já aceita.
                 adicionadoCorrida: !!(p.aceito_em && new Date(p.aceito_em) < new Date(p.criado_em)),
                 horaEntrega: horaCurta(p.entregue_em),
+                // Adicionado em 18/10/2026: mesmos 3 tempos que o empresário e o
+                // Admin veem — proteção para o motoboy e para o estabelecimento.
+                ...temposDoPedido(p),
                 // O tempo do motoboy conta do aceite (ou da criação do pedido,
                 // se ele foi adicionado depois a uma corrida já em andamento).
                 minutosEntrega: minutosEntre(
@@ -1885,6 +1914,13 @@ export default function AppMotoboy() {
     const pedido = corridaAtiva?.pedidos?.find(p => p.id === pedidoId);
     if (pedido) {
       const agoraData = new Date();
+      let tempos = {};
+      try {
+        const { data: pdb } = await supabase.from("pedidos")
+          .select("criado_em, aceito_em, chegou_loja_em, saiu_estabelecimento_em, entregue_em")
+          .eq("id", pedidoId).maybeSingle();
+        if (pdb) tempos = temposDoPedido(pdb);
+      } catch (e) { /* só deixa de mostrar os tempos até recarregar */ }
       setHistorico(prev => [...prev, {
         id: Date.now() + Math.random(),
         clienteNome: pedido.clienteNome, empresaNome: pedido.empresaNome,
@@ -1896,6 +1932,7 @@ export default function AppMotoboy() {
         horaAceite: horaCurta(pedido.aceitoEm),
         adicionadoCorrida: !!(pedido.aceitoEm && pedido.criadoEm && new Date(pedido.aceitoEm).getTime() < pedido.criadoEm),
         horaEntrega: horaCurta(agoraData.toISOString()),
+        ...tempos,
         minutosEntrega: minutosEntre(
           pedido.aceitoEm && pedido.criadoEm && new Date(pedido.aceitoEm).getTime() > pedido.criadoEm ? pedido.aceitoEm : (pedido.criadoEm || pedido.aceitoEm),
           agoraData.toISOString()
