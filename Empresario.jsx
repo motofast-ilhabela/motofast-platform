@@ -2119,25 +2119,29 @@ function ChamadasMotoboyCard({ empresaId, valor }) {
 
   const brl = (n) => "R$ " + n.toFixed(2).replace(".", ",");
   const hojeISO = dataLocalISO();
-  const segundaISO = segundaFeiraDaSemana(new Date());
-  const mesPrefixo = hojeISO.slice(0, 7);
-  const resumo = (filtro) => {
-    const sel = (linhas || []).filter(filtro);
+  const resumo = (sel) => {
     const total = sel.reduce((s, l) => s + l.taxa, 0);
     const locacao = sel.reduce((s, l) => s + l.chamado, 0);
     const chamadas = sel.filter(l => l.chamado > 0).length;
     return { chamadas, locacao, entregas: total - locacao, total };
   };
-  // Semana e mês só aparecem quando já existe histórico além de hoje (a taxa de
-  // chamado começou em 16/10/2026; enquanto for só o 1º dia, seriam cópias de "Hoje").
-  const temHistorico = hojeISO > DATA_INICIO_TAXA_CHAMADO;
-  const periodos = [
-    ["Hoje", resumo(l => l.dia === hojeISO)],
-    ...(temHistorico ? [
-      ["Esta semana", resumo(l => l.dia >= segundaISO && l.dia <= hojeISO)],
-      ["Este mês", resumo(l => l.dia.slice(0, 7) === mesPrefixo)],
-    ] : []),
-  ];
+  // Alterado em 18/10/2026 a pedido do Alessandro: em vez de "Esta semana" e
+  // "Este mês" (confuso), mostra HOJE e depois cada DIA em que houve chamada,
+  // um por linha, com o total acumulado no fim. Tudo vem dos pedidos gravados
+  // no banco (pedidos.taxa_chamado), então o histórico fica sempre disponível.
+  const doDia = (dia) => (linhas || []).filter(l => l.dia === dia);
+  const hoje = resumo(doDia(hojeISO));
+  const diasAnteriores = Array.from(new Set((linhas || []).map(l => l.dia).filter(d => d < hojeISO)))
+    .sort().reverse()
+    .map(dia => ({ dia, ...resumo(doDia(dia)) }));
+  const acumulado = resumo(linhas || []);
+  const rotuloDia = (dia) => {
+    const d = new Date(dia + "T12:00:00");
+    const sem = d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
+    return sem + " " + d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  };
+  const caixa = {background:"#0f172a",border:"1px solid #1f2937",borderRadius:10,padding:"10px 12px",marginBottom:8};
+  const tit = {color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"};
 
   return (
     <Card style={{marginBottom:14,border:"1px solid #f59e0b55"}}>
@@ -2148,26 +2152,68 @@ function ChamadasMotoboyCard({ empresaId, valor }) {
       {linhas === null ? (
         <div style={{color:"#6b7280",fontSize:12}}>⏳ Carregando...</div>
       ) : (
-        periodos.map(([rotulo, r]) => (
-          <div key={rotulo} style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:10,padding:"10px 12px",marginBottom:8}}>
-            <div style={{color:"#9ca3af",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>{rotulo}</div>
+        <>
+          <div style={caixa}>
+            <div style={{color:"#9ca3af",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Hoje</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center"}}>
               <div>
-                <div style={{color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"}}>Taxas de locação</div>
-                <div style={{color:"#fbbf24",fontWeight:900,fontSize:16,marginTop:2}}>{brl(r.locacao)}</div>
-                <div style={{color:"#9ca3af",fontSize:11}}>{r.chamadas} {r.chamadas === 1 ? "chamada" : "chamadas"}</div>
+                <div style={tit}>Taxas de locação</div>
+                <div style={{color:"#fbbf24",fontWeight:900,fontSize:16,marginTop:2}}>{brl(hoje.locacao)}</div>
+                <div style={{color:"#9ca3af",fontSize:11}}>{hoje.chamadas} {hoje.chamadas === 1 ? "chamada" : "chamadas"}</div>
               </div>
               <div>
-                <div style={{color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"}}>Taxas das entregas</div>
-                <div style={{color:"#60a5fa",fontWeight:900,fontSize:16,marginTop:2}}>{brl(r.entregas)}</div>
+                <div style={tit}>Taxas das entregas</div>
+                <div style={{color:"#60a5fa",fontWeight:900,fontSize:16,marginTop:2}}>{brl(hoje.entregas)}</div>
               </div>
               <div>
-                <div style={{color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"}}>Total a pagar</div>
-                <div style={{color:"#34d399",fontWeight:900,fontSize:18,marginTop:1}}>{brl(r.total)}</div>
+                <div style={tit}>Total a pagar</div>
+                <div style={{color:"#34d399",fontWeight:900,fontSize:18,marginTop:1}}>{brl(hoje.total)}</div>
               </div>
             </div>
           </div>
-        ))
+
+          {diasAnteriores.length > 0 && (
+            <div style={caixa}>
+              <div style={{color:"#9ca3af",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Dias anteriores</div>
+              <div style={{display:"grid",gridTemplateColumns:"1.3fr 1fr 1fr 1fr",gap:6,padding:"0 0 6px",borderBottom:"1px solid #1f2937"}}>
+                <div style={tit}>Dia</div>
+                <div style={{...tit,textAlign:"right"}}>Locação</div>
+                <div style={{...tit,textAlign:"right"}}>Entregas</div>
+                <div style={{...tit,textAlign:"right"}}>Total</div>
+              </div>
+              {diasAnteriores.map(d => (
+                <div key={d.dia} style={{display:"grid",gridTemplateColumns:"1.3fr 1fr 1fr 1fr",gap:6,padding:"8px 0",borderBottom:"1px solid #111827",alignItems:"center"}}>
+                  <div>
+                    <div style={{color:"#f9fafb",fontSize:13,fontWeight:700}}>{rotuloDia(d.dia)}</div>
+                    <div style={{color:"#9ca3af",fontSize:11}}>{d.chamadas} {d.chamadas === 1 ? "chamada" : "chamadas"}</div>
+                  </div>
+                  <div style={{color:"#fbbf24",fontWeight:800,fontSize:13,textAlign:"right"}}>{brl(d.locacao)}</div>
+                  <div style={{color:"#60a5fa",fontWeight:800,fontSize:13,textAlign:"right"}}>{brl(d.entregas)}</div>
+                  <div style={{color:"#34d399",fontWeight:900,fontSize:14,textAlign:"right"}}>{brl(d.total)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{...caixa,marginBottom:0,border:"1px solid #f59e0b55"}}>
+            <div style={{color:"#9ca3af",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Acumulado desde 16/10/2026</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center"}}>
+              <div>
+                <div style={tit}>Taxas de locação</div>
+                <div style={{color:"#fbbf24",fontWeight:900,fontSize:16,marginTop:2}}>{brl(acumulado.locacao)}</div>
+                <div style={{color:"#9ca3af",fontSize:11}}>{acumulado.chamadas} {acumulado.chamadas === 1 ? "chamada" : "chamadas"}</div>
+              </div>
+              <div>
+                <div style={tit}>Taxas das entregas</div>
+                <div style={{color:"#60a5fa",fontWeight:900,fontSize:16,marginTop:2}}>{brl(acumulado.entregas)}</div>
+              </div>
+              <div>
+                <div style={tit}>Total</div>
+                <div style={{color:"#34d399",fontWeight:900,fontSize:18,marginTop:1}}>{brl(acumulado.total)}</div>
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </Card>
   );
