@@ -325,6 +325,10 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
 function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCancelarItem }) {
   const [pedidosEntregues, setPedidosEntregues] = useState([]);
   const [saiuEstab, setSaiuEstab] = useState({});
+  // Adicionado em 18/10/2026: botão "Cheguei na loja". Guarda o horário em que o
+  // motoboy avisou que chegou (por pedido). O que vem do banco (p.chegouLojaEm)
+  // vale mais que isso — aqui é só pra a tela reagir na hora do clique.
+  const [chegouLoja, setChegouLoja] = useState({});
   const [modalCancelar, setModalCancelar] = useState(false);
   const [motivoCancelamento, setMotivoCancelamento] = useState("");
   const [motivoCustom, setMotivoCustom] = useState("");
@@ -337,6 +341,40 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
     const t = setInterval(() => setTickCorrida(x => x + 1), 1000);
     return () => clearInterval(t);
   }, []);
+
+  // Aceite "efetivo" do pedido: o próprio, ou o mais antigo da mesma corrida
+  // (pedido adicionado depois herda o relógio da corrida).
+  function aceitoEfetivoMs(p) {
+    if (p.aceitoEm) return new Date(p.aceitoEm).getTime();
+    const tempos = corrida.pedidos.map(x => x.aceitoEm).filter(Boolean).map(x => new Date(x).getTime());
+    return tempos.length ? Math.min(...tempos) : null;
+  }
+
+  // Botão "Cheguei na loja": grava o horário no banco (o 1º clique vale — não
+  // sobrescreve) pra TODOS os pedidos dessa corrida que são do mesmo
+  // estabelecimento, e depois anexa a localização do celular na hora do clique
+  // (prova de que ele estava lá). Se a localização falhar, o horário já está salvo.
+  async function chegueiNaLoja(p) {
+    const agora = new Date().toISOString();
+    const ids = corrida.pedidos
+      .filter(x => x.empresaNome === p.empresaNome && !x.chegouLojaEm && !chegouLoja[x.id] && !pedidosEntregues.includes(x.id))
+      .map(x => x.id);
+    if (!ids.includes(p.id)) ids.push(p.id);
+    setChegouLoja(prev => { const n = { ...prev }; ids.forEach(id => { n[id] = agora; }); return n; });
+    const { error } = await supabase.from("pedidos")
+      .update({ chegou_loja_em: agora })
+      .in("id", ids)
+      .is("chegou_loja_em", null);
+    if (error) { console.error("Erro ao gravar chegada na loja:", error); return; }
+    try {
+      const pos = await new Promise((res, rej) =>
+        navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }));
+      await supabase.from("pedidos")
+        .update({ chegou_loja_lat: pos.coords.latitude, chegou_loja_lng: pos.coords.longitude })
+        .in("id", ids)
+        .eq("chegou_loja_em", agora);
+    } catch (e) { /* sem localização: o horário continua gravado */ }
+  }
 
   async function sairEstabelecimento(pedidoId) {
     setSaiuEstab(prev=>({...prev,[pedidoId]:true}));
@@ -389,11 +427,7 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
 
       {corrida.pedidos.map((p,i)=>{
         const entregue = pedidosEntregues.includes(p.id);
-        // Corrigido em 16/10/2026: antes só lembrava do clique em "Saí do estabelecimento"
-        // na memória da tela — ao bloquear o celular ou trocar de app e voltar, a tela
-        // recarregava, esquecia o clique e mostrava o botão de novo. Agora também
-        // confere o status salvo no banco (saiu_estabelecimento).
-        const saiu = saiuEstab[p.id] || p.statusBanco === "saiu_estabelecimento";
+        const saiu = saiuEstab[p.id];
         const pg = PG[p.pagamento]||{icon:"•",cor:"#9ca3af",label:p.pagamento};
         return (
           <Card key={p.id} style={{marginBottom:12,border:`1px solid ${entregue?"#34d399":saiu?"#fbbf24":"#3b82f6"}`,background:entregue?"#0a1f14":"#111827"}}>
@@ -430,6 +464,9 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                       ? new Date(p.aceitoEm).getTime()
                       : (temposAceite.length ? Math.min(...temposAceite) : null);
                     if (!aceitoEmEfetivo) return null;
+                    // Atualizado em 18/10/2026: o cronômetro do prazo PARA assim que ele
+                    // clica "Cheguei na loja" (o tempo de espera do pedido é outro relógio).
+                    if (p.chegouLojaEm || chegouLoja[p.id]) return null;
                     const PRAZO_CHEGADA_MIN = prazoChegadaMotoboyMin();
                     const minutosDesdeAceite = (Date.now() - aceitoEmEfetivo) / 60000;
                     const dentroDoPrazo = minutosDesdeAceite < PRAZO_CHEGADA_MIN;
@@ -440,6 +477,32 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                         {dentroDoPrazo
                           ? `⏱️ Você está no prazo — chegue em até ${minutosRestantes} min`
                           : `⏱️ Você está ${formatarAtraso(minutosDesdeAceite - PRAZO_CHEGADA_MIN)} atrasado`}
+                      </div>
+                    );
+                  })()}
+                  {(()=>{
+                    const chegouISO = p.chegouLojaEm || chegouLoja[p.id];
+                    if (!chegouISO) return null;
+                    const aceitoMs = aceitoEfetivoMs(p);
+                    const chegouMs = new Date(chegouISO).getTime();
+                    const minAteChegar = aceitoMs ? (chegouMs - aceitoMs) / 60000 : null;
+                    const prazo = prazoChegadaMotoboyMin();
+                    const noPrazo = minAteChegar != null && minAteChegar <= prazo;
+                    const espera = Math.max(0, Date.now() - chegouMs);
+                    const mm = Math.floor(espera / 60000), ss = Math.floor((espera % 60000) / 1000);
+                    return (
+                      <div style={{marginTop:8}}>
+                        {minAteChegar != null && (
+                          <div style={{padding:"6px 12px",borderRadius:8,fontSize:12,fontWeight:800,textAlign:"center",marginBottom:6,
+                            background:noPrazo?"#0d3d2e":"#3d1010",color:noPrazo?"#34d399":"#f87171"}}>
+                            {noPrazo
+                              ? `✅ Você chegou em ${formatarAtraso(minAteChegar)} — no prazo`
+                              : `✅ Você chegou em ${formatarAtraso(minAteChegar)} (${formatarAtraso(minAteChegar - prazo)} de atraso)`}
+                          </div>
+                        )}
+                        <div style={{padding:"6px 12px",borderRadius:8,fontSize:12,fontWeight:800,textAlign:"center",background:"#3d2a00",color:"#fbbf24"}}>
+                          ⏳ Aguardando o pedido há {mm}m {String(ss).padStart(2,"0")}s
+                        </div>
                       </div>
                     );
                   })()}
@@ -491,12 +554,25 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                   </div>
                 )}
 
-                <button onClick={()=>sairEstabelecimento(p.id, p)} style={{width:"100%",padding:"14px",borderRadius:10,background:"#f59e0b",border:"none",color:"#000",fontWeight:900,fontSize:16,cursor:"pointer"}}>
-                  🏍️ Saí do estabelecimento — iniciar entrega
-                </button>
-                <div style={{color:"#4b5563",fontSize:11,textAlign:"center",marginTop:6}}>
-                  ⚠️ Clique obrigatório ao sair — registra o horário e libera a navegação para o cliente
-                </div>
+                {!(p.chegouLojaEm || chegouLoja[p.id]) ? (
+                  <>
+                    <button onClick={()=>chegueiNaLoja(p)} style={{width:"100%",padding:"14px",borderRadius:10,background:"#3b82f6",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
+                      📍 Cheguei na loja
+                    </button>
+                    <div style={{color:"#4b5563",fontSize:11,textAlign:"center",marginTop:6}}>
+                      ⚠️ Clique quando chegar — para o cronômetro de chegada e registra o horário e o local
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={()=>sairEstabelecimento(p.id, p)} style={{width:"100%",padding:"14px",borderRadius:10,background:"#f59e0b",border:"none",color:"#000",fontWeight:900,fontSize:16,cursor:"pointer"}}>
+                      🏍️ Saí do estabelecimento — iniciar entrega
+                    </button>
+                    <div style={{color:"#4b5563",fontSize:11,textAlign:"center",marginTop:6}}>
+                      ⚠️ Clique obrigatório ao sair — registra o horário e libera a navegação para o cliente
+                    </div>
+                  </>
+                )}
               </div>
             )}
 
@@ -1162,6 +1238,7 @@ export default function AppMotoboy() {
                 valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
                 criadoEm: new Date(p.criado_em).getTime(),
                 aceitoEm: p.aceito_em || null,
+                chegouLojaEm: p.chegou_loja_em || null,
                 statusBanco: p.status,
               })),
             });
@@ -1521,6 +1598,7 @@ export default function AppMotoboy() {
                 valorPedido: pedidoCompleto.valor_pedido, valorReceber: pedidoCompleto.valor_receber, troco: pedidoCompleto.valor_troco,
                 criadoEm: new Date(pedidoCompleto.criado_em).getTime(),
                 aceitoEm: pedidoCompleto.aceito_em || null,
+                chegouLojaEm: pedidoCompleto.chegou_loja_em || null,
               };
               setCorridaAtiva(prev => prev
                 ? { ...prev, pedidos: [...prev.pedidos, novoItem] }
@@ -1609,6 +1687,7 @@ export default function AppMotoboy() {
           // prazo aparecia logo após aceitar e sumia poucos segundos depois,
           // quando essa recarga rodava.
           aceitoEm: p.aceito_em || null,
+          chegouLojaEm: p.chegou_loja_em || null,
           statusBanco: p.status,
         })),
       };

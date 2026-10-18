@@ -65,6 +65,26 @@ const BAIRROS_TAXA_FIXA_KM = {
 // IMPORTANTE: nunca usar date.toISOString().split("T")[0] para pegar "a data de hoje"
 // ou "a data de um pedido" — toISOString() converte pra UTC e desloca a data em
 // horários próximos da meia-noite (ex: pedido às 21h no Brasil vira dia seguinte em UTC).
+// Adicionado em 18/10/2026: ajudantes de horário/duração pro detalhe das entregas
+// de cada estabelecimento (mesma informação que o empresário vê no histórico dele).
+function horaCurtaAdm(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return isNaN(d) ? null : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+function minutosEntreAdm(inicio, fim) {
+  if (!inicio || !fim) return null;
+  const diff = (new Date(fim).getTime() - new Date(inicio).getTime()) / 60000;
+  return isNaN(diff) ? null : Math.max(0, Math.round(diff));
+}
+function duracaoAdm(min) {
+  if (min == null || isNaN(min)) return "";
+  const m = Math.max(0, Math.round(min));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60), r = m % 60;
+  return r === 0 ? `${h}h` : `${h}h ${String(r).padStart(2, "0")}min`;
+}
+
 function dataLocalISO(date = new Date()) {
   const y = date.getFullYear();
   const m = String(date.getMonth()+1).padStart(2,"0");
@@ -1940,8 +1960,31 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                           <span style={{color:"#6b7280",fontSize:12,marginLeft:8}}>{e.bairro}</span>
                           <div style={{color:"#9ca3af",fontSize:11,marginTop:2}}>
                             🏍️ {mbEntrega?.nomeCompleto || "Motoboy não identificado"}
-                            {e.horaEntrega && e.horaEntrega !== "—" ? ` · entregue às ${e.horaEntrega}` : ""}
                           </div>
+                          {/* Mesma linha do tempo que o estabelecimento vê no histórico dele */}
+                          <div style={{color:"#6b7280",fontSize:11,marginTop:3,lineHeight:1.5}}>
+                            {e.horaChamou && <>🕐 chamou {e.horaChamou}</>}
+                            {e.horaAceite && (e.adicionadoCorrida
+                              ? <> · entrou numa corrida que o motoboy já estava fazendo</>
+                              : <> · aceitou {e.horaAceite}</>)}
+                            {e.horaChegou && <> · chegou na loja {e.horaChegou}</>}
+                            {e.horaSaida && e.horaSaida !== "—" && <> · saiu {e.horaSaida}</>}
+                            {e.horaEntrega && e.horaEntrega !== "—" && <> · entregou {e.horaEntrega}</>}
+                          </div>
+                          {(e.minutosEspera!=null || e.minutosAteChegar!=null || e.minutosNaLoja!=null || e.minutosAteCliente!=null) && (
+                            <div style={{color:"#6b7280",fontSize:11,lineHeight:1.5}}>
+                              {e.minutosEspera!=null && !e.adicionadoCorrida && <>⏳ esperou motoboy <b style={{color:"#d1d5db"}}>{duracaoAdm(e.minutosEspera)}</b></>}
+                              {e.minutosAteChegar!=null && <>{e.minutosEspera!=null && !e.adicionadoCorrida ? " · " : ""}🏪 até chegar <b style={{color:"#d1d5db"}}>{duracaoAdm(e.minutosAteChegar)}</b></>}
+                              {e.minutosNaLoja!=null && <> · ⏱️ no balcão <b style={{color:"#d1d5db"}}>{duracaoAdm(e.minutosNaLoja)}</b></>}
+                              {e.minutosAteCliente!=null && <> · 🚀 até o cliente <b style={{color:"#d1d5db"}}>{duracaoAdm(e.minutosAteCliente)}</b></>}
+                            </div>
+                          )}
+                          {e.chegouLat != null && e.chegouLng != null && (
+                            <a href={`https://www.google.com/maps?q=${e.chegouLat},${e.chegouLng}`} target="_blank" rel="noreferrer"
+                              style={{color:"#60a5fa",fontSize:11,fontWeight:700,textDecoration:"none"}}>
+                              📍 ver onde ele clicou "Cheguei na loja"
+                            </a>
+                          )}
                         </div>
                         <div style={{textAlign:"right"}}>
                           <div style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>R${e.taxaEmpresario}</div>
@@ -3097,7 +3140,26 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
                         pra chegar no estabelecimento, contado a partir do
                         aceite — pra você conferir na hora se a reclamação de
                         um estabelecimento sobre demora é real ou não. */}
-                    {aindaNoEstabelecimento && (
+                    {/* Adicionado em 18/10/2026: o cronômetro de chegada para quando o
+                        motoboy clica "Cheguei na loja"; daí conta a espera do pedido. */}
+                    {p.status!=="entregue" && p.chegouLojaEm && (()=>{
+                      const aceitoMsEf = aceitoEmEfetivo ? Number(aceitoEmEfetivo) : null;
+                      const minAteChegar = aceitoMsEf ? (p.chegouLojaEm - aceitoMsEf) / 60000 : null;
+                      const noPrazo = minAteChegar != null && minAteChegar <= PRAZO_CHEGADA_MIN;
+                      const fim = p.saiuEstabelecimentoEm || Date.now();
+                      return (
+                        <>
+                          <div style={{marginTop:6,display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,
+                            background:noPrazo?"#0d3d2e":"#3d1010",color:noPrazo?"#34d399":"#f87171"}}>
+                            {`✅ Chegou na loja às ${new Date(p.chegouLojaEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}`}{minAteChegar != null && (noPrazo ? ` — no prazo (${formatarAtraso(minAteChegar)})` : ` — ${formatarAtraso(minAteChegar - PRAZO_CHEGADA_MIN)} de atraso`)}
+                          </div>
+                          <div style={{marginTop:4,marginLeft:6,display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,background:"#3d2a00",color:"#fbbf24"}}>
+                            {p.saiuEstabelecimentoEm ? "⏳ Esperou o pedido " : "⏳ Aguardando o pedido há "}{formatTempo(fim - p.chegouLojaEm)}
+                          </div>
+                        </>
+                      );
+                    })()}
+                    {aindaNoEstabelecimento && !p.chegouLojaEm && (
                       <div style={{marginTop:6,display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,
                         background:dentroDoPrazo?"#0d3d2e":"#3d1010",color:dentroDoPrazo?"#34d399":"#f87171"}}>
                         {dentroDoPrazo
@@ -3685,6 +3747,19 @@ export default function App() {
             data: dataStr,
             horaSaida,
             horaEntrega,
+            // Adicionado em 18/10/2026: linha do tempo completa da entrega
+            horaChamou: horaCurtaAdm(p.criado_em),
+            horaAceite: horaCurtaAdm(p.aceito_em),
+            adicionadoCorrida: !!(p.aceito_em && new Date(p.aceito_em) < new Date(p.criado_em)),
+            horaChegou: horaCurtaAdm(p.chegou_loja_em),
+            chegouLat: p.chegou_loja_lat != null ? Number(p.chegou_loja_lat) : null,
+            chegouLng: p.chegou_loja_lng != null ? Number(p.chegou_loja_lng) : null,
+            minutosAteChegar: minutosEntreAdm(
+              p.aceito_em && new Date(p.aceito_em) > new Date(p.criado_em) ? p.aceito_em : p.criado_em,
+              p.chegou_loja_em),
+            minutosNaLoja: minutosEntreAdm(p.chegou_loja_em, p.saiu_estabelecimento_em),
+            minutosAteCliente: minutosEntreAdm(p.saiu_estabelecimento_em, p.entregue_em),
+            minutosEspera: minutosEntreAdm(p.criado_em, p.aceito_em),
             mes,
             ano,
             semana: semanaChave,
@@ -3761,6 +3836,7 @@ export default function App() {
         empresaNome: p.empresarios?.nome || "Estabelecimento",
         criadoEm: new Date(p.criado_em).getTime(),
         aceitoEm: p.aceito_em ? new Date(p.aceito_em).getTime() : null,
+        chegouLojaEm: p.chegou_loja_em ? new Date(p.chegou_loja_em).getTime() : null,
         saiuEstabelecimentoEm: p.saiu_estabelecimento_em ? new Date(p.saiu_estabelecimento_em).getTime() : null,
         taxaMotoboy: p.taxa_motoboy || 0,
       }));

@@ -1453,6 +1453,17 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
       .limit(1)
       .maybeSingle();
     if (pedidoAnteriorDaCorrida?.aceito_em) aceitoEmDaCorrida = pedidoAnteriorDaCorrida.aceito_em;
+    // Se o motoboy já avisou que chegou nesta loja ("Cheguei na loja"), o pedido
+    // adicionado herda esse horário — ele já está lá, não precisa clicar de novo.
+    const { data: pedidoJaChegou } = await supabase
+      .from("pedidos")
+      .select("chegou_loja_em, chegou_loja_lat, chegou_loja_lng")
+      .eq("corrida_id", corridaIdReal)
+      .eq("empresario_id", empresa.id)
+      .not("chegou_loja_em", "is", null)
+      .order("chegou_loja_em", { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
     const { data: pedidoDB, error: erroAdicionar } = await supabase.from("pedidos").insert({
       empresario_id: empresa.id,
@@ -1475,6 +1486,11 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
       metodo_calculo_km: novoPedido.metodoCalculoKm,
       status: "aceito", // já entra direto na corrida do motoboy, sem precisar aceitar de novo
       aceito_em: aceitoEmDaCorrida,
+      ...(pedidoJaChegou?.chegou_loja_em ? {
+        chegou_loja_em: pedidoJaChegou.chegou_loja_em,
+        chegou_loja_lat: pedidoJaChegou.chegou_loja_lat,
+        chegou_loja_lng: pedidoJaChegou.chegou_loja_lng,
+      } : {}),
     }).select().single();
 
     // Antes, se o banco recusasse o pedido (qualquer motivo), a tela fechava
@@ -1728,7 +1744,30 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                       {p.obs && <div style={{color:"#9ca3af",fontSize:11,marginTop:2}}>💬 Obs: {p.obs}</div>}
                       {p.pagamento==="dinheiro" && <div style={{color:"#fbbf24",fontSize:11,marginTop:3,fontWeight:700}}>💵 Troco — motoboy retorna com o dinheiro</div>}
                       {p.pagamento==="cartao" && <div style={{color:"#60a5fa",fontSize:11,marginTop:3,fontWeight:700}}>💳 Maquininha já entregue ao motoboy</div>}
-                      {aindaNoEstabelecimento && (
+                      {/* Adicionado em 18/10/2026: depois que o motoboy clica "Cheguei na loja"
+                          o cronômetro de chegada para (fica o resultado) e começa o relógio de
+                          espera do pedido, que vale até ele clicar "Saí do estabelecimento". */}
+                      {!finalizado && p.chegouLojaEm && (()=>{
+                        const chegouMs = new Date(p.chegouLojaEm).getTime();
+                        const minAteChegar = aceitoEmEfetivo ? (chegouMs - aceitoEmEfetivo) / 60000 : null;
+                        const noPrazo = minAteChegar != null && minAteChegar <= PRAZO_CHEGADA_MIN;
+                        const hChegou = new Date(p.chegouLojaEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+                        const fimEspera = p.saiuEstabelecimentoEm ? new Date(p.saiuEstabelecimentoEm).getTime() : Date.now();
+                        return (
+                          <>
+                            <div style={{marginTop:6,display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,
+                              background:noPrazo?"#0d3d2e":"#3d1010",color:noPrazo?"#34d399":"#f87171"}}>
+                              {`✅ Motoboy chegou na loja às ${hChegou}`}{minAteChegar != null && (noPrazo ? ` — no prazo (${formatarAtraso(minAteChegar)})` : ` — com ${formatarAtraso(minAteChegar - PRAZO_CHEGADA_MIN)} de atraso`)}
+                            </div>
+                            <div style={{marginTop:4,display:"inline-block",marginLeft:6,padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,background:"#3d2a00",color:"#fbbf24"}}>
+                              {p.saiuEstabelecimentoEm
+                                ? `⏳ Esperou o pedido ${formatTempo(fimEspera - chegouMs)}`
+                                : `⏳ Aguardando o pedido há ${formatTempo(fimEspera - chegouMs)}`}
+                            </div>
+                          </>
+                        );
+                      })()}
+                      {aindaNoEstabelecimento && !p.chegouLojaEm && (
                         <div style={{marginTop:6,display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,
                           background:dentroDoPrazo?"#0d3d2e":"#3d1010",color:dentroDoPrazo?"#34d399":"#f87171"}}>
                           {dentroDoPrazo
@@ -2419,8 +2458,19 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
                   {e.horaAceite && (e.adicionadoCorrida
                     ? <> · entrou numa corrida que o motoboy já estava fazendo</>
                     : <> · aceitou {e.horaAceite}</>)}
+                  {e.horaChegou && <> · chegou na loja {e.horaChegou}</>}
+                  {e.horaSaida && <> · saiu {e.horaSaida}</>}
                   {e.horaEntrega && <> · entregou {e.horaEntrega}</>}
                 </div>
+                {(e.minutosAteChegar!=null || e.minutosNaLoja!=null || e.minutosAteCliente!=null) && (
+                  <div style={{color:"#6b7280",fontSize:11,lineHeight:1.5}}>
+                    {e.minutosAteChegar!=null && <>🏪 até chegar <b style={{color:"#d1d5db"}}>{formatarDuracaoHist(e.minutosAteChegar)}</b></>}
+                    {e.minutosAteChegar!=null && e.minutosNaLoja!=null && " · "}
+                    {e.minutosNaLoja!=null && <>⏳ no balcão <b style={{color:"#d1d5db"}}>{formatarDuracaoHist(e.minutosNaLoja)}</b></>}
+                    {(e.minutosAteChegar!=null || e.minutosNaLoja!=null) && e.minutosAteCliente!=null && " · "}
+                    {e.minutosAteCliente!=null && <>🚀 até o cliente <b style={{color:"#d1d5db"}}>{formatarDuracaoHist(e.minutosAteCliente)}</b></>}
+                  </div>
+                )}
                 {(e.minutosEspera!=null || e.minutosMotoboy!=null) && (
                   <div style={{color:"#6b7280",fontSize:11,lineHeight:1.5}}>
                     {e.minutosEspera!=null && <>⏳ esperou motoboy <b style={{color:"#d1d5db"}}>{formatarDuracaoHist(e.minutosEspera)}</b></>}
@@ -2959,6 +3009,7 @@ export default function AppEmpresario() {
                     motoboyTel: existente?.motoboyTel || null,
                     corridaId: p.corrida_id,
                     aceitoEm: p.aceito_em || null,
+                    chegouLojaEm: p.chegou_loja_em || null,
                     saiuEstabelecimentoEm: p.saiu_estabelecimento_em || null,
                     entregueEm: p.entregue_em || null,
                     distanciaKm: p.distancia_km || null,
@@ -3152,6 +3203,7 @@ export default function AppEmpresario() {
       motoboyTel: mapaMotoboys[p.motoboy_id]?.telefone || null,
       corridaId: p.corrida_id,
       aceitoEm: p.aceito_em || null,
+      chegouLojaEm: p.chegou_loja_em || null,
       saiuEstabelecimentoEm: p.saiu_estabelecimento_em || null,
       entregueEm: p.entregue_em || null,
       distanciaKm: p.distancia_km || null,
@@ -3237,6 +3289,15 @@ export default function AppEmpresario() {
       horaSaida: p.saiu_estabelecimento_em ? new Date(p.saiu_estabelecimento_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
       horaEntrega: p.entregue_em ? new Date(p.entregue_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
       horaAceite: horaCurtaHist(p.aceito_em),
+      // Adicionado em 18/10/2026: os 3 tempos do motoboy. Chegada = do aceite
+      // até clicar "Cheguei na loja"; Espera no balcão = da chegada até clicar
+      // "Saí do estabelecimento"; Entrega = da saída até a entrega.
+      horaChegou: horaCurtaHist(p.chegou_loja_em),
+      minutosAteChegar: minutosEntreHist(
+        p.aceito_em && new Date(p.aceito_em) > new Date(p.criado_em) ? p.aceito_em : p.criado_em,
+        p.chegou_loja_em),
+      minutosNaLoja: minutosEntreHist(p.chegou_loja_em, p.saiu_estabelecimento_em),
+      minutosAteCliente: minutosEntreHist(p.saiu_estabelecimento_em, p.entregue_em),
       // Só texto: se o aceite é ANTERIOR ao pedido, ele foi adicionado a uma
       // corrida que o motoboy já tinha aceitado (herda o aceito_em da corrida).
       adicionadoCorrida: !!(p.aceito_em && new Date(p.aceito_em) < new Date(p.criado_em)),
