@@ -483,8 +483,11 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         // errado — mais barata, sem avisar nada. Agora manda só rua +
         // número + cidade, sem bairro — a rua real decide o cálculo.
         const enderecoDestino = `${rua}, ${num||""}, Ilhabela, SP, Brasil`;
-        const enderecoOrigem = empresa.endereco
-          ? `${empresa.endereco}, Ilhabela, SP, Brasil`
+        // Origem do cálculo de km: o endereço "de taxas" (se o estabelecimento tiver
+        // um separado do de retirada) ou, se não tiver, o endereço normal.
+        const enderecoBaseTaxas = empresa.enderecoTaxas || empresa.endereco;
+        const enderecoOrigem = enderecoBaseTaxas
+          ? `${enderecoBaseTaxas}, Ilhabela, SP, Brasil`
           : `${empresa.bairro||""}, Ilhabela, SP, Brasil`;
 
         // Calcula pelo Google Maps (via nossa função no servidor, que protege a
@@ -732,6 +735,13 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         </Card>
       )}
 
+      {/* Taxa de chamado: aviso pra quem tem esse valor definido */}
+      {empresa?.taxaChamado > 0 && (
+        <div style={{background:"#3d2a00",border:"1px solid #f59e0b",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
+          <div style={{color:"#fbbf24",fontSize:12,fontWeight:800}}>🏍️ + R${Number(empresa.taxaChamado).toFixed(2).replace(".", ",")} de taxa de chamado</div>
+          <div style={{color:"#d1d5db",fontSize:12,marginTop:3,lineHeight:1.5}}>Soma 1 vez por chamada de motoboy (somada na taxa deste pedido). Se você adicionar mais pedidos nessa mesma corrida, não soma de novo.</div>
+        </div>
+      )}
       {/* Taxa automática */}
       {taxa && (clienteSel) && (
         <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"14px 18px",marginBottom:14}}>
@@ -984,8 +994,11 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         // errado — mais barata, sem avisar nada. Agora manda só rua +
         // número + cidade, sem bairro — a rua real decide o cálculo.
         const enderecoDestino = `${rua}, ${num||""}, Ilhabela, SP, Brasil`;
-        const enderecoOrigem = empresa.endereco
-          ? `${empresa.endereco}, Ilhabela, SP, Brasil`
+        // Origem do cálculo de km: o endereço "de taxas" (se o estabelecimento tiver
+        // um separado do de retirada) ou, se não tiver, o endereço normal.
+        const enderecoBaseTaxas = empresa.enderecoTaxas || empresa.endereco;
+        const enderecoOrigem = enderecoBaseTaxas
+          ? `${enderecoBaseTaxas}, Ilhabela, SP, Brasil`
           : `${empresa.bairro||""}, Ilhabela, SP, Brasil`;
 
         const resp = await fetch(`${WEB_APP_URL}/api/calcular-distancia`, {
@@ -1413,21 +1426,65 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
     // corrida, o prazo de chegada dele conta a partir desse aceite ORIGINAL —
     // herda o horário do pedido mais antigo da mesma corrida em vez de zerar
     // o relógio agora.
+    // Proteção adicionada em 14/10/2026 no site: se o pedido em andamento ficou SEM
+    // corrida registrada no banco (corrida_id vazio), a tela usava o id do
+    // próprio pedido como se fosse a corrida, e o banco recusava o novo pedido
+    // (erro "pedidos_corrida_id_fkey"). Agora confere se a corrida existe de
+    // verdade; se não existir, cria uma e liga os pedidos em andamento desse
+    // motoboy a ela antes de adicionar.
+    let corridaIdReal = novoPedido.corridaId;
+    const { data: corridaExiste } = await supabase
+      .from("corridas")
+      .select("id")
+      .eq("id", corridaIdReal)
+      .maybeSingle();
+    if (!corridaExiste) {
+      const { data: corridaNova, error: erroCorridaNova } = await supabase
+        .from("corridas")
+        .insert({ motoboy_id: novoPedido.motoboyId, status: "ativa" })
+        .select()
+        .single();
+      if (erroCorridaNova || !corridaNova) {
+        console.error("Erro ao criar a corrida que faltava:", erroCorridaNova);
+        alert("❌ Não foi possível adicionar o pedido a esta corrida." + (erroCorridaNova?.message ? "\n\n" + erroCorridaNova.message : " Tente de novo."));
+        return;
+      }
+      corridaIdReal = corridaNova.id;
+      await supabase
+        .from("pedidos")
+        .update({ corrida_id: corridaIdReal })
+        .eq("empresario_id", empresa.id)
+        .eq("motoboy_id", novoPedido.motoboyId)
+        .in("status", ["aceito", "saiu_estabelecimento"])
+        .is("corrida_id", null);
+    }
+
     let aceitoEmDaCorrida = new Date().toISOString();
     const { data: pedidoAnteriorDaCorrida } = await supabase
       .from("pedidos")
       .select("aceito_em")
-      .eq("corrida_id", novoPedido.corridaId)
+      .eq("corrida_id", corridaIdReal)
       .not("aceito_em", "is", null)
       .order("aceito_em", { ascending: true })
       .limit(1)
       .maybeSingle();
     if (pedidoAnteriorDaCorrida?.aceito_em) aceitoEmDaCorrida = pedidoAnteriorDaCorrida.aceito_em;
+    // Se o motoboy já avisou que chegou nesta loja ("Cheguei na loja"), o pedido
+    // adicionado herda esse horário — ele já está lá, não precisa clicar de novo.
+    const { data: pedidoJaChegou } = await supabase
+      .from("pedidos")
+      .select("chegou_loja_em, chegou_loja_lat, chegou_loja_lng")
+      .eq("corrida_id", corridaIdReal)
+      .eq("empresario_id", empresa.id)
+      .not("chegou_loja_em", "is", null)
+      .order("chegou_loja_em", { ascending: true })
+      .limit(1)
+      .maybeSingle();
 
     const { data: pedidoDB } = await supabase.from("pedidos").insert({
       empresario_id: empresa.id,
       motoboy_id: novoPedido.motoboyId,
-      corrida_id: novoPedido.corridaId,
+      corrida_id: corridaIdReal,
       cliente_nome: novoPedido.clienteNome,
       cliente_telefone: novoPedido.clienteTel,
       rua: novoPedido.rua,
@@ -1445,6 +1502,11 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
       metodo_calculo_km: novoPedido.metodoCalculoKm,
       status: "aceito", // já entra direto na corrida do motoboy, sem precisar aceitar de novo
       aceito_em: aceitoEmDaCorrida,
+      ...(pedidoJaChegou?.chegou_loja_em ? {
+        chegou_loja_em: pedidoJaChegou.chegou_loja_em,
+        chegou_loja_lat: pedidoJaChegou.chegou_loja_lat,
+        chegou_loja_lng: pedidoJaChegou.chegou_loja_lng,
+      } : {}),
     }).select().single();
 
     await onRecarregar();
@@ -1693,7 +1755,30 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                       {p.obs && <div style={{color:"#9ca3af",fontSize:11,marginTop:2}}>💬 Obs: {p.obs}</div>}
                       {p.pagamento==="dinheiro" && <div style={{color:"#fbbf24",fontSize:11,marginTop:3,fontWeight:700}}>💵 Troco — motoboy retorna com o dinheiro</div>}
                       {p.pagamento==="cartao" && <div style={{color:"#60a5fa",fontSize:11,marginTop:3,fontWeight:700}}>💳 Maquininha já entregue ao motoboy</div>}
-                      {aindaNoEstabelecimento && (
+                      {/* Adicionado em 18/10/2026: depois que o motoboy clica "Cheguei na loja"
+                          o cronômetro de chegada para (fica o resultado) e começa o relógio de
+                          espera do pedido, que vale até ele clicar "Saí do estabelecimento". */}
+                      {!finalizado && p.chegouLojaEm && (()=>{
+                        const chegouMs = new Date(p.chegouLojaEm).getTime();
+                        const minAteChegar = aceitoEmEfetivo ? (chegouMs - aceitoEmEfetivo) / 60000 : null;
+                        const noPrazo = minAteChegar != null && minAteChegar <= PRAZO_CHEGADA_MIN;
+                        const hChegou = new Date(p.chegouLojaEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});
+                        const fimEspera = p.saiuEstabelecimentoEm ? new Date(p.saiuEstabelecimentoEm).getTime() : Date.now();
+                        return (
+                          <>
+                            <div style={{marginTop:6,display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,
+                              background:noPrazo?"#0d3d2e":"#3d1010",color:noPrazo?"#34d399":"#f87171"}}>
+                              {`✅ Motoboy chegou na loja às ${hChegou}`}{minAteChegar != null && (noPrazo ? ` — no prazo (${formatarAtraso(minAteChegar)})` : ` — com ${formatarAtraso(minAteChegar - PRAZO_CHEGADA_MIN)} de atraso`)}
+                            </div>
+                            <div style={{marginTop:4,display:"inline-block",marginLeft:6,padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,background:"#3d2a00",color:"#fbbf24"}}>
+                              {p.saiuEstabelecimentoEm
+                                ? `⏳ Esperou o pedido ${formatTempo(fimEspera - chegouMs)}`
+                                : `⏳ Aguardando o pedido há ${formatTempo(fimEspera - chegouMs)}`}
+                            </div>
+                          </>
+                        );
+                      })()}
+                      {aindaNoEstabelecimento && !p.chegouLojaEm && (
                         <div style={{marginTop:6,display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,
                           background:dentroDoPrazo?"#0d3d2e":"#3d1010",color:dentroDoPrazo?"#34d399":"#f87171"}}>
                           {dentroDoPrazo
@@ -1999,6 +2084,152 @@ function horaCurtaHist(iso) {
   return isNaN(d) ? null : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
+// ─── TAXA DE CHAMADO (locação do motoboy) ─────────────────────────────────────
+// Só aparece pra estabelecimentos com "taxa de chamado" definida (hoje só o Casa
+// Cardoso, por ficar longe do ponto de saída dos motoboys). Cada CHAMADA de
+// motoboy (cada "Nova Entrega" publicada) soma esse valor UMA vez, no primeiro
+// pedido da chamada — os pedidos adicionados depois na mesma corrida não somam
+// de novo. O valor entra na taxa desse pedido (e no ganho do motoboy que
+// aceitou), então repasse e totais já saem certos. Aqui separamos pra bater o olho:
+//   Locação (chamadas) + Taxas das entregas = Total a pagar.
+// A taxa de chamado começou a valer em 16/10/2026: nada antes dessa data entra na conta.
+const DATA_INICIO_TAXA_CHAMADO = "2026-10-16";
+
+function ChamadasMotoboyCard({ empresaId, valor }) {
+  const [linhas, setLinhas] = useState(null); // [{ dia, taxa, chamado }]
+  const valorChamada = Number(valor) || 0;
+
+  useEffect(()=>{
+    if (!empresaId || !(valorChamada > 0)) return;
+    let cancelado = false;
+    async function carregar() {
+      try {
+        const inicio = new Date(DATA_INICIO_TAXA_CHAMADO + "T00:00:00-03:00");
+        const { data, error } = await buscarTodasPaginado(() => supabase
+          .from("pedidos")
+          .select("id, taxa, taxa_chamado, criado_em")
+          .eq("empresario_id", empresaId)
+          .eq("status", "entregue")
+          .gte("criado_em", inicio.toISOString())
+          .order("criado_em", { ascending: true })
+          .order("id", { ascending: true }));
+        if (cancelado || error) return;
+        setLinhas((data || []).map(p => ({
+          dia: dataLocalISO(new Date(p.criado_em)),
+          taxa: Number(p.taxa) || 0,
+          chamado: Number(p.taxa_chamado) || 0,
+        })).filter(l => l.dia >= DATA_INICIO_TAXA_CHAMADO));
+      } catch (e) { /* mantém o que já estava na tela */ }
+    }
+    carregar();
+    const intervalo = setInterval(carregar, 60000);
+    return () => { cancelado = true; clearInterval(intervalo); };
+  }, [empresaId, valorChamada]);
+
+  if (!(valorChamada > 0)) return null;
+
+  const brl = (n) => "R$ " + n.toFixed(2).replace(".", ",");
+  const hojeISO = dataLocalISO();
+  const resumo = (sel) => {
+    const total = sel.reduce((s, l) => s + l.taxa, 0);
+    const locacao = sel.reduce((s, l) => s + l.chamado, 0);
+    const chamadas = sel.filter(l => l.chamado > 0).length;
+    return { chamadas, locacao, entregas: total - locacao, total };
+  };
+  // Alterado em 18/10/2026 a pedido do Alessandro: em vez de "Esta semana" e
+  // "Este mês" (confuso), mostra HOJE e depois cada DIA em que houve chamada,
+  // um por linha, com o total acumulado no fim. Tudo vem dos pedidos gravados
+  // no banco (pedidos.taxa_chamado), então o histórico fica sempre disponível.
+  const doDia = (dia) => (linhas || []).filter(l => l.dia === dia);
+  const hoje = resumo(doDia(hojeISO));
+  const diasAnteriores = Array.from(new Set((linhas || []).map(l => l.dia).filter(d => d < hojeISO)))
+    .sort().reverse()
+    .map(dia => ({ dia, ...resumo(doDia(dia)) }));
+  const acumulado = resumo(linhas || []);
+  const rotuloDia = (dia) => {
+    const d = new Date(dia + "T12:00:00");
+    const sem = d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
+    return sem + " " + d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  };
+  const caixa = {background:"#0f172a",border:"1px solid #1f2937",borderRadius:10,padding:"10px 12px",marginBottom:8};
+  const tit = {color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"};
+
+  return (
+    <Card style={{marginBottom:14,border:"1px solid #f59e0b55"}}>
+      <div style={{color:"#fbbf24",fontWeight:800,fontSize:14}}>🏍️ Taxa de chamado — {brl(valorChamada)} por chamada de motoboy</div>
+      <div style={{color:"#6b7280",fontSize:12,marginTop:2,marginBottom:12,lineHeight:1.5}}>
+        Cada vez que um motoboy é chamado soma {brl(valorChamada)}, não importa quantos pedidos entrem nessa mesma corrida. As taxas de cada entrega continuam normais, à parte. Contagem válida a partir de 16/10/2026.
+      </div>
+      {linhas === null ? (
+        <div style={{color:"#6b7280",fontSize:12}}>⏳ Carregando...</div>
+      ) : (
+        <>
+          <div style={caixa}>
+            <div style={{color:"#9ca3af",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Hoje</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center"}}>
+              <div>
+                <div style={tit}>Taxas de locação</div>
+                <div style={{color:"#fbbf24",fontWeight:900,fontSize:16,marginTop:2}}>{brl(hoje.locacao)}</div>
+                <div style={{color:"#9ca3af",fontSize:11}}>{hoje.chamadas} {hoje.chamadas === 1 ? "chamada" : "chamadas"}</div>
+              </div>
+              <div>
+                <div style={tit}>Taxas das entregas</div>
+                <div style={{color:"#60a5fa",fontWeight:900,fontSize:16,marginTop:2}}>{brl(hoje.entregas)}</div>
+              </div>
+              <div>
+                <div style={tit}>Total a pagar</div>
+                <div style={{color:"#34d399",fontWeight:900,fontSize:18,marginTop:1}}>{brl(hoje.total)}</div>
+              </div>
+            </div>
+          </div>
+
+          {diasAnteriores.length > 0 && (
+            <div style={caixa}>
+              <div style={{color:"#9ca3af",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Dias anteriores</div>
+              <div style={{display:"grid",gridTemplateColumns:"1.3fr 1fr 1fr 1fr",gap:6,padding:"0 0 6px",borderBottom:"1px solid #1f2937"}}>
+                <div style={tit}>Dia</div>
+                <div style={{...tit,textAlign:"right"}}>Locação</div>
+                <div style={{...tit,textAlign:"right"}}>Entregas</div>
+                <div style={{...tit,textAlign:"right"}}>Total</div>
+              </div>
+              {diasAnteriores.map(d => (
+                <div key={d.dia} style={{display:"grid",gridTemplateColumns:"1.3fr 1fr 1fr 1fr",gap:6,padding:"8px 0",borderBottom:"1px solid #111827",alignItems:"center"}}>
+                  <div>
+                    <div style={{color:"#f9fafb",fontSize:13,fontWeight:700}}>{rotuloDia(d.dia)}</div>
+                    <div style={{color:"#9ca3af",fontSize:11}}>{d.chamadas} {d.chamadas === 1 ? "chamada" : "chamadas"}</div>
+                  </div>
+                  <div style={{color:"#fbbf24",fontWeight:800,fontSize:13,textAlign:"right"}}>{brl(d.locacao)}</div>
+                  <div style={{color:"#60a5fa",fontWeight:800,fontSize:13,textAlign:"right"}}>{brl(d.entregas)}</div>
+                  <div style={{color:"#34d399",fontWeight:900,fontSize:14,textAlign:"right"}}>{brl(d.total)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{...caixa,marginBottom:0,border:"1px solid #f59e0b55"}}>
+            <div style={{color:"#9ca3af",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Acumulado desde 16/10/2026</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center"}}>
+              <div>
+                <div style={tit}>Taxas de locação</div>
+                <div style={{color:"#fbbf24",fontWeight:900,fontSize:16,marginTop:2}}>{brl(acumulado.locacao)}</div>
+                <div style={{color:"#9ca3af",fontSize:11}}>{acumulado.chamadas} {acumulado.chamadas === 1 ? "chamada" : "chamadas"}</div>
+              </div>
+              <div>
+                <div style={tit}>Taxas das entregas</div>
+                <div style={{color:"#60a5fa",fontWeight:900,fontSize:16,marginTop:2}}>{brl(acumulado.entregas)}</div>
+              </div>
+              <div>
+                <div style={tit}>Total</div>
+                <div style={{color:"#34d399",fontWeight:900,fontSize:18,marginTop:1}}>{brl(acumulado.total)}</div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado, mesesDisponiveis, empresa }) {
   const [filtro, setFiltro] = useState("Todos");
   const [dataSelecionada, setDataSelecionada] = useState(dataLocalISO());
@@ -2154,6 +2385,9 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
         <div style={{color:"#6b7280",fontSize:13}}>{lista.length} registros no período selecionado</div>
       </div>
 
+      {/* Taxa de chamado: só aparece pra quem tem esse valor definido */}
+      {empresa?.taxaChamado > 0 && <ChamadasMotoboyCard empresaId={empresa.id} valor={empresa.taxaChamado}/>}
+
       {/* Seletor de mês — busca só o período escolhido, pra tela nunca ficar pesada */}
       <Card style={{marginBottom:14}}>
         <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>📅 Período</div>
@@ -2284,8 +2518,19 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
                   {e.horaAceite && (e.adicionadoCorrida
                     ? <> · entrou numa corrida que o motoboy já estava fazendo</>
                     : <> · aceitou {e.horaAceite}</>)}
+                  {e.horaChegou && <> · chegou na loja {e.horaChegou}</>}
+                  {e.horaSaida && <> · saiu {e.horaSaida}</>}
                   {e.horaEntrega && <> · entregou {e.horaEntrega}</>}
                 </div>
+                {(e.minutosAteChegar!=null || e.minutosNaLoja!=null || e.minutosAteCliente!=null) && (
+                  <div style={{color:"#6b7280",fontSize:11,lineHeight:1.5}}>
+                    {e.minutosAteChegar!=null && <>🏪 até chegar <b style={{color:"#d1d5db"}}>{formatarDuracaoHist(e.minutosAteChegar)}</b></>}
+                    {e.minutosAteChegar!=null && e.minutosNaLoja!=null && " · "}
+                    {e.minutosNaLoja!=null && <>⏳ no balcão <b style={{color:"#d1d5db"}}>{formatarDuracaoHist(e.minutosNaLoja)}</b></>}
+                    {(e.minutosAteChegar!=null || e.minutosNaLoja!=null) && e.minutosAteCliente!=null && " · "}
+                    {e.minutosAteCliente!=null && <>🚀 até o cliente <b style={{color:"#d1d5db"}}>{formatarDuracaoHist(e.minutosAteCliente)}</b></>}
+                  </div>
+                )}
                 {(e.minutosEspera!=null || e.minutosMotoboy!=null) && (
                   <div style={{color:"#6b7280",fontSize:11,lineHeight:1.5}}>
                     {e.minutosEspera!=null && <>⏳ esperou motoboy <b style={{color:"#d1d5db"}}>{formatarDuracaoHist(e.minutosEspera)}</b></>}
@@ -2737,6 +2982,10 @@ export default function Empresario() {
             bairro: emp.bairro,
             tel: emp.telefone,
             endereco: emp.endereco_estabelecimento || "",
+            // Endereço usado SÓ pra calcular o km/taxa (se vazio, usa o endereço normal)
+            enderecoTaxas: emp.endereco_taxas || "",
+            // Valor fixo por chamada de motoboy (só alguns estabelecimentos têm)
+            taxaChamado: Number(emp.taxa_chamado) || 0,
             planoPagamento: emp.plano_pagamento,
             planoPagamentoMotoboy: emp.plano_pagamento_motoboy,
             planoGratis: emp.plano_gratis,
@@ -2857,6 +3106,8 @@ export default function Empresario() {
       bairro: emp.bairro,
       tel: emp.telefone,
       endereco: emp.endereco_estabelecimento || "",
+      enderecoTaxas: emp.endereco_taxas || "",
+      taxaChamado: Number(emp.taxa_chamado) || 0,
       planoPagamento: emp.plano_pagamento,
       planoPagamentoMotoboy: emp.plano_pagamento_motoboy,
       planoGratis: emp.plano_gratis,
@@ -2939,6 +3190,7 @@ export default function Empresario() {
         bairro: p.bairro, ref: p.referencia, obs: p.observacao,
         pagamento: p.forma_pagamento, taxa: p.taxa,
         taxaMotoboy: p.taxa_motoboy || 0,
+        taxaChamado: Number(p.taxa_chamado) || 0,
         valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
         status: p.status==="aceito"||p.status==="saiu_estabelecimento" ? "em_rota" : p.status,
         criadoEm: new Date(p.criado_em).getTime(),
@@ -2947,6 +3199,7 @@ export default function Empresario() {
         motoboyTel: p.motoboys?.telefone || null,
         corridaId: p.corrida_id,
         aceitoEm: p.aceito_em || null,
+        chegouLojaEm: p.chegou_loja_em || null,
         saiuEstabelecimentoEm: p.saiu_estabelecimento_em || null,
         entregueEm: p.entregue_em || null,
         distanciaKm: p.distancia_km || null,
@@ -3036,6 +3289,15 @@ export default function Empresario() {
       horaSaida: p.saiu_estabelecimento_em ? new Date(p.saiu_estabelecimento_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
       horaEntrega: p.entregue_em ? new Date(p.entregue_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
       horaAceite: horaCurtaHist(p.aceito_em),
+      // Adicionado em 18/10/2026: os 3 tempos do motoboy. Chegada = do aceite
+      // até clicar "Cheguei na loja"; Espera no balcão = da chegada até clicar
+      // "Saí do estabelecimento"; Entrega = da saída até a entrega.
+      horaChegou: horaCurtaHist(p.chegou_loja_em),
+      minutosAteChegar: minutosEntreHist(
+        p.aceito_em && new Date(p.aceito_em) > new Date(p.criado_em) ? p.aceito_em : p.criado_em,
+        p.chegou_loja_em),
+      minutosNaLoja: minutosEntreHist(p.chegou_loja_em && new Date(p.chegou_loja_em) < new Date(p.criado_em) ? p.criado_em : p.chegou_loja_em, p.saiu_estabelecimento_em),
+      minutosAteCliente: minutosEntreHist(p.saiu_estabelecimento_em, p.entregue_em),
       // Só texto: se o aceite é ANTERIOR ao pedido, ele foi adicionado a uma
       // corrida que o motoboy já tinha aceitado (herda o aceito_em da corrida).
       adicionadoCorrida: !!(p.aceito_em && new Date(p.aceito_em) < new Date(p.criado_em)),
@@ -3110,6 +3372,21 @@ export default function Empresario() {
   async function publicarPedido(pedido) {
     if (!empresa?.id) return;
 
+    // Taxa de chamado (só pra estabelecimentos que têm um valor definido, hoje o
+    // Casa Cardoso): cada "Nova Entrega" é uma chamada de motoboy e soma esse valor
+    // UMA vez, no pedido que abre a chamada — tanto na taxa que o estabelecimento
+    // paga quanto na que o motoboy recebe. Pedidos adicionados depois na mesma
+    // corrida não passam por aqui, então não somam de novo.
+    const taxaChamadoValor = Number(empresa?.taxaChamado) || 0;
+    if (taxaChamadoValor > 0) {
+      pedido = {
+        ...pedido,
+        taxa: (Number(pedido.taxa) || 0) + taxaChamadoValor,
+        taxaMotoboy: (Number(pedido.taxaMotoboy) || 0) + taxaChamadoValor,
+        taxaChamado: taxaChamadoValor,
+      };
+    }
+
     // Verifica se está bloqueado no banco antes de publicar
     const { data: empAtual } = await supabase
       .from("empresarios")
@@ -3154,6 +3431,8 @@ export default function Empresario() {
       taxa: pedido.taxa,
       taxa_motoboy: pedido.taxaMotoboy || 0,
       taxa_empresario: pedido.taxa || 0,
+      // Só manda esse campo quando existe (estabelecimentos sem taxa de chamado não são afetados)
+      ...(pedido.taxaChamado > 0 ? { taxa_chamado: pedido.taxaChamado } : {}),
       valor_pedido: pedido.valorPedido,
       valor_receber: pedido.valorReceber,
       valor_troco: pedido.troco,
@@ -3379,6 +3658,7 @@ export default function Empresario() {
                   taxa: avisoSemMotoboy.taxa,
                   taxa_motoboy: avisoSemMotoboy.taxaMotoboy || 0,
                   taxa_empresario: avisoSemMotoboy.taxa || 0,
+                  ...(avisoSemMotoboy.taxaChamado > 0 ? { taxa_chamado: avisoSemMotoboy.taxaChamado } : {}),
                   valor_pedido: avisoSemMotoboy.valorPedido,
                   valor_receber: avisoSemMotoboy.valorReceber,
                   valor_troco: avisoSemMotoboy.troco,

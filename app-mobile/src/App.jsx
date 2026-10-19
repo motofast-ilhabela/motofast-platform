@@ -126,6 +126,60 @@ function LoginAdmin() {
   )
 }
 
+// ─── LOGIN QUE NÃO CAI À TOA ──────────────────────────────────────────────
+// Corrigido em 16/10/2026 no site (replicado aqui em 18/10/2026): ao minimizar o
+// app e voltar, a internet demora um instante pra voltar e a verificação do
+// login falhava na hora — o sistema entendia "sem login" e mandava a pessoa pra
+// tela de e-mail e senha. Agora, se for só falha momentânea de rede, tenta de
+// novo algumas vezes antes de desistir. Só considera "sem login" quando
+// realmente não existe sessão.
+const esperar = (ms) => new Promise(r => setTimeout(r, ms))
+
+async function obterUsuarioComTolerancia() {
+  for (let i = 0; i < 4; i++) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) return session.user
+      const { data: { user }, error } = await supabase.auth.getUser()
+      if (user) return user
+      // Sem sessão de verdade (nada guardado no aparelho): não adianta insistir
+      if (error && (error.name === "AuthSessionMissingError" || (error.status >= 400 && error.status < 500))) return null
+    } catch (e) { /* falha de rede: tenta de novo */ }
+    await esperar(700 * (i + 1))
+  }
+  return null
+}
+
+async function buscarPerfilComTolerancia(tabela) {
+  const user = await obterUsuarioComTolerancia()
+  if (!user) return { user: null, perfil: null }
+  for (let i = 0; i < 4; i++) {
+    try {
+      const { data, error } = await supabase
+        .from(tabela)
+        .select("id, aprovado")
+        .eq("user_id", user.id)
+        .maybeSingle()
+      if (!error) return { user, perfil: data }
+    } catch (e) { /* tenta de novo */ }
+    await esperar(700 * (i + 1))
+  }
+  return { user, perfil: undefined } // não conseguiu consultar: não derruba o login
+}
+
+// Só no app (a rota "/" restaura a sessão): busca o cadastro do usuário numa
+// tabela com a mesma tolerância. falhou=true quando a rede não deixou consultar.
+async function existeCadastroComTolerancia(tabela, userId) {
+  for (let i = 0; i < 4; i++) {
+    try {
+      const { data, error } = await supabase.from(tabela).select("id").eq("user_id", userId).maybeSingle()
+      if (!error) return { existe: !!data, falhou: false }
+    } catch (e) { /* tenta de novo */ }
+    await esperar(700 * (i + 1))
+  }
+  return { existe: false, falhou: true }
+}
+
 // ─── PROTEÇÃO DE ROTA DO ADMIN ────────────────────────────────────────────────
 function RotaAdmin() {
   const [estado, setEstado] = useState("verificando") // verificando | autorizado | negado
@@ -154,14 +208,9 @@ function RotaEmpresario() {
 
   useEffect(() => {
     async function verificar() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const { user, perfil: emp } = await buscarPerfilComTolerancia("empresarios")
       if (!user) { setEstado("negado"); return }
-
-      const { data: emp } = await supabase
-        .from("empresarios")
-        .select("id, aprovado")
-        .eq("user_id", user.id)
-        .maybeSingle()
+      if (emp === undefined) { setEstado("autorizado"); return } // rede instável: mantém logado
 
       if (emp && emp.aprovado) setEstado("autorizado")
       else if (emp && !emp.aprovado) setEstado("pendente")
@@ -182,14 +231,9 @@ function RotaMotoboy() {
 
   useEffect(() => {
     async function verificar() {
-      const { data: { user } } = await supabase.auth.getUser()
+      const { user, perfil: mb } = await buscarPerfilComTolerancia("motoboys")
       if (!user) { setEstado("negado"); return }
-
-      const { data: mb } = await supabase
-        .from("motoboys")
-        .select("id, aprovado")
-        .eq("user_id", user.id)
-        .maybeSingle()
+      if (mb === undefined) { setEstado("autorizado"); return } // rede instável: mantém logado
 
       if (mb && mb.aprovado) setEstado("autorizado")
       else if (mb && !mb.aprovado) setEstado("pendente")
@@ -220,16 +264,19 @@ function RotaInicial() {
 
   useEffect(() => {
     async function verificarSessaoExistente() {
-      const { data: { user } } = await supabase.auth.getUser()
+      // Atualizado em 18/10/2026: com tolerância de rede (ver
+      // obterUsuarioComTolerancia) — uma falha momentânea ao voltar do segundo
+      // plano não derruba mais o login nem mostra a tela de cadastro por engano.
+      const user = await obterUsuarioComTolerancia()
       if (!user) { setPronto(true); return }
 
       if (user.email === ADMIN_EMAIL) { navigate("/admin", { replace: true }); return }
 
-      const { data: mb } = await supabase.from("motoboys").select("id").eq("user_id", user.id).maybeSingle()
-      if (mb) { navigate("/motoboy", { replace: true }); return }
+      const mb = await existeCadastroComTolerancia("motoboys", user.id)
+      if (mb.existe) { navigate("/motoboy", { replace: true }); return }
 
-      const { data: emp } = await supabase.from("empresarios").select("id").eq("user_id", user.id).maybeSingle()
-      if (emp) { navigate("/empresario", { replace: true }); return }
+      const emp = await existeCadastroComTolerancia("empresarios", user.id)
+      if (emp.existe) { navigate("/empresario", { replace: true }); return }
 
       // Sessão existe mas não corresponde a nenhum cadastro conhecido —
       // mostra a tela de Cadastro normalmente.

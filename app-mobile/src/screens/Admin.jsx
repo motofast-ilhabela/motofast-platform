@@ -88,6 +88,26 @@ async function buscarTodasPaginado(montarConsulta, tamanhoPagina = 1000) {
   return { data: todas, error: null };
 }
 
+// Adicionado em 18/10/2026: ajudantes de horário/duração pro detalhe das entregas
+// de cada estabelecimento (mesma informação que o empresário vê no histórico dele).
+function horaCurtaAdm(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return isNaN(d) ? null : d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+}
+function minutosEntreAdm(inicio, fim) {
+  if (!inicio || !fim) return null;
+  const diff = (new Date(fim).getTime() - new Date(inicio).getTime()) / 60000;
+  return isNaN(diff) ? null : Math.max(0, Math.round(diff));
+}
+function duracaoAdm(min) {
+  if (min == null || isNaN(min)) return "";
+  const m = Math.max(0, Math.round(min));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60), r = m % 60;
+  return r === 0 ? `${h}h` : `${h}h ${String(r).padStart(2, "0")}min`;
+}
+
 function dataLocalISO(date = new Date()) {
   const y = date.getFullYear();
   const m = String(date.getMonth()+1).padStart(2,"0");
@@ -721,6 +741,152 @@ function Repasse({ historico, setHistorico, motoboys, empresarios }) {
   );
 }
 
+// ─── TAXA DE CHAMADO (locação do motoboy) ─────────────────────────────────────
+// Só aparece pra estabelecimentos com "taxa de chamado" definida (hoje só o Casa
+// Cardoso, por ficar longe do ponto de saída dos motoboys). Cada CHAMADA de
+// motoboy (cada "Nova Entrega" publicada) soma esse valor UMA vez, no primeiro
+// pedido da chamada — os pedidos adicionados depois na mesma corrida não somam
+// de novo. O valor entra na taxa desse pedido (e no ganho do motoboy que
+// aceitou), então repasse e totais já saem certos. Aqui separamos pra bater o olho:
+//   Locação (chamadas) + Taxas das entregas = Total a pagar.
+// A taxa de chamado começou a valer em 16/10/2026: nada antes dessa data entra na conta.
+const DATA_INICIO_TAXA_CHAMADO = "2026-10-16";
+
+function ChamadasMotoboyCard({ empresaId, valor }) {
+  const [linhas, setLinhas] = useState(null); // [{ dia, taxa, chamado }]
+  const valorChamada = Number(valor) || 0;
+
+  useEffect(()=>{
+    if (!empresaId || !(valorChamada > 0)) return;
+    let cancelado = false;
+    async function carregar() {
+      try {
+        const inicio = new Date(DATA_INICIO_TAXA_CHAMADO + "T00:00:00-03:00");
+        const { data, error } = await buscarTodasPaginado(() => supabase
+          .from("pedidos")
+          .select("id, taxa, taxa_chamado, criado_em")
+          .eq("empresario_id", empresaId)
+          .eq("status", "entregue")
+          .gte("criado_em", inicio.toISOString())
+          .order("criado_em", { ascending: true })
+          .order("id", { ascending: true }));
+        if (cancelado || error) return;
+        setLinhas((data || []).map(p => ({
+          dia: dataLocalISO(new Date(p.criado_em)),
+          taxa: Number(p.taxa) || 0,
+          chamado: Number(p.taxa_chamado) || 0,
+        })).filter(l => l.dia >= DATA_INICIO_TAXA_CHAMADO));
+      } catch (e) { /* mantém o que já estava na tela */ }
+    }
+    carregar();
+    const intervalo = setInterval(carregar, 60000);
+    return () => { cancelado = true; clearInterval(intervalo); };
+  }, [empresaId, valorChamada]);
+
+  if (!(valorChamada > 0)) return null;
+
+  const brl = (n) => "R$ " + n.toFixed(2).replace(".", ",");
+  const hojeISO = dataLocalISO();
+  const resumo = (sel) => {
+    const total = sel.reduce((s, l) => s + l.taxa, 0);
+    const locacao = sel.reduce((s, l) => s + l.chamado, 0);
+    const chamadas = sel.filter(l => l.chamado > 0).length;
+    return { chamadas, locacao, entregas: total - locacao, total };
+  };
+  // Alterado em 18/10/2026 a pedido do Alessandro: em vez de "Esta semana" e
+  // "Este mês" (confuso), mostra HOJE e depois cada DIA em que houve chamada,
+  // um por linha, com o total acumulado no fim. Tudo vem dos pedidos gravados
+  // no banco (pedidos.taxa_chamado), então o histórico fica sempre disponível.
+  const doDia = (dia) => (linhas || []).filter(l => l.dia === dia);
+  const hoje = resumo(doDia(hojeISO));
+  const diasAnteriores = Array.from(new Set((linhas || []).map(l => l.dia).filter(d => d < hojeISO)))
+    .sort().reverse()
+    .map(dia => ({ dia, ...resumo(doDia(dia)) }));
+  const acumulado = resumo(linhas || []);
+  const rotuloDia = (dia) => {
+    const d = new Date(dia + "T12:00:00");
+    const sem = d.toLocaleDateString("pt-BR", { weekday: "short" }).replace(".", "");
+    return sem + " " + d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+  };
+  const caixa = {background:"#0f172a",border:"1px solid #1f2937",borderRadius:10,padding:"10px 12px",marginBottom:8};
+  const tit = {color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase"};
+
+  return (
+    <Card style={{marginBottom:14,border:"1px solid #f59e0b55"}}>
+      <div style={{color:"#fbbf24",fontWeight:800,fontSize:14}}>🏍️ Taxa de chamado — {brl(valorChamada)} por chamada de motoboy</div>
+      <div style={{color:"#6b7280",fontSize:12,marginTop:2,marginBottom:12,lineHeight:1.5}}>
+        Cada vez que um motoboy é chamado soma {brl(valorChamada)}, não importa quantos pedidos entrem nessa mesma corrida. As taxas de cada entrega continuam normais, à parte. Contagem válida a partir de 16/10/2026.
+      </div>
+      {linhas === null ? (
+        <div style={{color:"#6b7280",fontSize:12}}>⏳ Carregando...</div>
+      ) : (
+        <>
+          <div style={caixa}>
+            <div style={{color:"#9ca3af",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Hoje</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center"}}>
+              <div>
+                <div style={tit}>Taxas de locação</div>
+                <div style={{color:"#fbbf24",fontWeight:900,fontSize:16,marginTop:2}}>{brl(hoje.locacao)}</div>
+                <div style={{color:"#9ca3af",fontSize:11}}>{hoje.chamadas} {hoje.chamadas === 1 ? "chamada" : "chamadas"}</div>
+              </div>
+              <div>
+                <div style={tit}>Taxas das entregas</div>
+                <div style={{color:"#60a5fa",fontWeight:900,fontSize:16,marginTop:2}}>{brl(hoje.entregas)}</div>
+              </div>
+              <div>
+                <div style={tit}>Total a pagar</div>
+                <div style={{color:"#34d399",fontWeight:900,fontSize:18,marginTop:1}}>{brl(hoje.total)}</div>
+              </div>
+            </div>
+          </div>
+
+          {diasAnteriores.length > 0 && (
+            <div style={caixa}>
+              <div style={{color:"#9ca3af",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Dias anteriores</div>
+              <div style={{display:"grid",gridTemplateColumns:"1.3fr 1fr 1fr 1fr",gap:6,padding:"0 0 6px",borderBottom:"1px solid #1f2937"}}>
+                <div style={tit}>Dia</div>
+                <div style={{...tit,textAlign:"right"}}>Locação</div>
+                <div style={{...tit,textAlign:"right"}}>Entregas</div>
+                <div style={{...tit,textAlign:"right"}}>Total</div>
+              </div>
+              {diasAnteriores.map(d => (
+                <div key={d.dia} style={{display:"grid",gridTemplateColumns:"1.3fr 1fr 1fr 1fr",gap:6,padding:"8px 0",borderBottom:"1px solid #111827",alignItems:"center"}}>
+                  <div>
+                    <div style={{color:"#f9fafb",fontSize:13,fontWeight:700}}>{rotuloDia(d.dia)}</div>
+                    <div style={{color:"#9ca3af",fontSize:11}}>{d.chamadas} {d.chamadas === 1 ? "chamada" : "chamadas"}</div>
+                  </div>
+                  <div style={{color:"#fbbf24",fontWeight:800,fontSize:13,textAlign:"right"}}>{brl(d.locacao)}</div>
+                  <div style={{color:"#60a5fa",fontWeight:800,fontSize:13,textAlign:"right"}}>{brl(d.entregas)}</div>
+                  <div style={{color:"#34d399",fontWeight:900,fontSize:14,textAlign:"right"}}>{brl(d.total)}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{...caixa,marginBottom:0,border:"1px solid #f59e0b55"}}>
+            <div style={{color:"#9ca3af",fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Acumulado desde 16/10/2026</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,textAlign:"center"}}>
+              <div>
+                <div style={tit}>Taxas de locação</div>
+                <div style={{color:"#fbbf24",fontWeight:900,fontSize:16,marginTop:2}}>{brl(acumulado.locacao)}</div>
+                <div style={{color:"#9ca3af",fontSize:11}}>{acumulado.chamadas} {acumulado.chamadas === 1 ? "chamada" : "chamadas"}</div>
+              </div>
+              <div>
+                <div style={tit}>Taxas das entregas</div>
+                <div style={{color:"#60a5fa",fontWeight:900,fontSize:16,marginTop:2}}>{brl(acumulado.entregas)}</div>
+              </div>
+              <div>
+                <div style={tit}>Total</div>
+                <div style={{color:"#34d399",fontWeight:900,fontSize:18,marginTop:1}}>{brl(acumulado.total)}</div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
 // ─── MOTOBOYS ─────────────────────────────────────────────────────────────────
 function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
   const [aba, setAba] = useState("ativos");
@@ -1198,8 +1364,10 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
         // o bairro digitado quando ele não bate com a rua real, dando
         // distância mais barata e errada).
         const enderecoDestino = `${rua}, ${num||""}, Ilhabela, SP, Brasil`;
-        const enderecoOrigem = empSel.enderecoEstab
-          ? `${empSel.enderecoEstab}, Ilhabela, SP, Brasil`
+        // Se o estabelecimento tem um endereço só pra calcular taxas, usa ele; senão o normal.
+        const enderecoBaseTaxas = empSel.enderecoTaxas || empSel.enderecoEstab;
+        const enderecoOrigem = enderecoBaseTaxas
+          ? `${enderecoBaseTaxas}, Ilhabela, SP, Brasil`
           : `${empSel.bairro||""}, Ilhabela, SP, Brasil`;
         const resp = await fetch(`${WEB_APP_URL}/api/calcular-distancia`, {
           method: "POST", headers: {"Content-Type":"application/json"},
@@ -1231,7 +1399,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
       }
     })();
     return () => { cancelado = true; };
-  }, [abaEmp, sel, formRegistro.rua, formRegistro.num, formRegistro.bairro, empSel?.modeloPrecificacao, empSel?.enderecoEstab, empSel?.bairro]);
+  }, [abaEmp, sel, formRegistro.rua, formRegistro.num, formRegistro.bairro, empSel?.modeloPrecificacao, empSel?.enderecoEstab, empSel?.enderecoTaxas, empSel?.bairro]);
 
   function abrirEmp(emp) { setSel(emp.id); setAbaEmp("geral"); setTaxasEdit(JSON.parse(JSON.stringify(emp.taxas||{}))); setTaxaSalva(false); }
 
@@ -1617,10 +1785,12 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                   </button>
                 </div>
               </Card>
+              {/* Taxa de chamado: só aparece pra quem tem esse valor definido */}
+              {empSel.taxaChamado > 0 && <ChamadasMotoboyCard empresaId={empSel.id} valor={empSel.taxaChamado}/>}
               <Card style={{marginBottom:14,padding:"14px 16px",background:"#0f172a"}}>
                 <SectionTitle>📋 Dados Cadastrais</SectionTitle>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                  {[["CNPJ",empSel.cnpj],["Telefone",empSel.tel],["Endereço",empSel.enderecoEstab],["Bairro",empSel.bairro],["Dono",empSel.nomeDono],["Tel. Dono",empSel.telDono],["Sócio",empSel.nomeSocio||"—"],["Tel. Sócio",empSel.telSocio||"—"]].map(([l,v])=>(
+                  {[["CNPJ",empSel.cnpj],["Telefone",empSel.tel],["Endereço (retirada)",empSel.enderecoEstab],...(empSel.enderecoTaxas?[["Endereço p/ taxas",empSel.enderecoTaxas]]:[]),["Bairro",empSel.bairro],["Dono",empSel.nomeDono],["Tel. Dono",empSel.telDono],["Sócio",empSel.nomeSocio||"—"],["Tel. Sócio",empSel.telSocio||"—"]].map(([l,v])=>(
                     <div key={l}><div style={{color:"#4b5563",fontSize:11}}>{l}</div><div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{v||"—"}</div></div>
                   ))}
                 </div>
@@ -1842,15 +2012,48 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                 {entregasDia.length>0 && (
                   <Card style={{marginBottom:14}}>
                     <SectionTitle>Entregas de {dataFmt}</SectionTitle>
-                    {entregasDia.map(e=>(
+                    {entregasDia.map(e=>{
+                      const mbEntrega = motoboys.find(m=>m.id===e.motoboyId);
+                      return (
                       <div key={e.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderBottom:"1px solid #1f2937"}}>
                         <div>
                           <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
                           <span style={{color:"#6b7280",fontSize:12,marginLeft:8}}>{e.bairro}</span>
+                          <div style={{color:"#9ca3af",fontSize:11,marginTop:2}}>
+                            🏍️ {mbEntrega?.nomeCompleto || "Motoboy não identificado"}
+                          </div>
+                          {/* Mesma linha do tempo que o estabelecimento vê no histórico dele */}
+                          <div style={{color:"#6b7280",fontSize:11,marginTop:3,lineHeight:1.5}}>
+                            {e.horaChamou && <>🕐 chamou {e.horaChamou}</>}
+                            {e.horaAceite && (e.adicionadoCorrida
+                              ? <> · entrou numa corrida que o motoboy já estava fazendo</>
+                              : <> · aceitou {e.horaAceite}</>)}
+                            {e.horaChegou && <> · chegou na loja {e.horaChegou}</>}
+                            {e.horaSaida && e.horaSaida !== "—" && <> · saiu {e.horaSaida}</>}
+                            {e.horaEntrega && e.horaEntrega !== "—" && <> · entregou {e.horaEntrega}</>}
+                          </div>
+                          {(e.minutosEspera!=null || e.minutosAteChegar!=null || e.minutosNaLoja!=null || e.minutosAteCliente!=null) && (
+                            <div style={{color:"#6b7280",fontSize:11,lineHeight:1.5}}>
+                              {e.minutosEspera!=null && !e.adicionadoCorrida && <>⏳ esperou motoboy <b style={{color:"#d1d5db"}}>{duracaoAdm(e.minutosEspera)}</b></>}
+                              {e.minutosAteChegar!=null && <>{e.minutosEspera!=null && !e.adicionadoCorrida ? " · " : ""}🏪 até chegar <b style={{color:"#d1d5db"}}>{duracaoAdm(e.minutosAteChegar)}</b></>}
+                              {e.minutosNaLoja!=null && <> · ⏱️ no balcão <b style={{color:"#d1d5db"}}>{duracaoAdm(e.minutosNaLoja)}</b></>}
+                              {e.minutosAteCliente!=null && <> · 🚀 até o cliente <b style={{color:"#d1d5db"}}>{duracaoAdm(e.minutosAteCliente)}</b></>}
+                            </div>
+                          )}
+                          {e.chegouLat != null && e.chegouLng != null && (
+                            <a href={`https://www.google.com/maps?q=${e.chegouLat},${e.chegouLng}`} target="_blank" rel="noreferrer"
+                              style={{color:"#60a5fa",fontSize:11,fontWeight:700,textDecoration:"none"}}>
+                              📍 ver onde ele clicou "Cheguei na loja"
+                            </a>
+                          )}
                         </div>
-                        <span style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>R${e.taxaEmpresario}</span>
+                        <div style={{textAlign:"right"}}>
+                          <div style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>R${e.taxaEmpresario}</div>
+                          {e.taxaChamado > 0 && <div style={{color:"#fbbf24",fontSize:10,fontWeight:700}}>inclui R${e.taxaChamado} de locação</div>}
+                        </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </Card>
                 )}
 
@@ -3018,7 +3221,26 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
                         pra chegar no estabelecimento, contado a partir do
                         aceite — pra você conferir na hora se a reclamação de
                         um estabelecimento sobre demora é real ou não. */}
-                    {aindaNoEstabelecimento && (
+                    {/* Adicionado em 18/10/2026: o cronômetro de chegada para quando o
+                        motoboy clica "Cheguei na loja"; daí conta a espera do pedido. */}
+                    {p.status!=="entregue" && p.chegouLojaEm && (()=>{
+                      const aceitoMsEf = aceitoEmEfetivo ? Number(aceitoEmEfetivo) : null;
+                      const minAteChegar = aceitoMsEf ? (p.chegouLojaEm - aceitoMsEf) / 60000 : null;
+                      const noPrazo = minAteChegar != null && minAteChegar <= PRAZO_CHEGADA_MIN;
+                      const fim = p.saiuEstabelecimentoEm || Date.now();
+                      return (
+                        <>
+                          <div style={{marginTop:6,display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,
+                            background:noPrazo?"#0d3d2e":"#3d1010",color:noPrazo?"#34d399":"#f87171"}}>
+                            {`✅ Chegou na loja às ${new Date(p.chegouLojaEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}`}{minAteChegar != null && (noPrazo ? ` — no prazo (${formatarAtraso(minAteChegar)})` : ` — ${formatarAtraso(minAteChegar - PRAZO_CHEGADA_MIN)} de atraso`)}
+                          </div>
+                          <div style={{marginTop:4,marginLeft:6,display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,background:"#3d2a00",color:"#fbbf24"}}>
+                            {p.saiuEstabelecimentoEm ? "⏳ Esperou o pedido " : "⏳ Aguardando o pedido há "}{formatTempo(fim - p.chegouLojaEm)}
+                          </div>
+                        </>
+                      );
+                    })()}
+                    {aindaNoEstabelecimento && !p.chegouLojaEm && (
                       <div style={{marginTop:6,display:"inline-block",padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,
                         background:dentroDoPrazo?"#0d3d2e":"#3d1010",color:dentroDoPrazo?"#34d399":"#f87171"}}>
                         {dentroDoPrazo
@@ -3647,6 +3869,8 @@ export default function Admin() {
         nomeSocio: e.nome_socio || "",
         telSocio: e.tel_socio || "",
         enderecoEstab: e.endereco_estabelecimento || "",
+        enderecoTaxas: e.endereco_taxas || "",
+        taxaChamado: Number(e.taxa_chamado) || 0,
         planoPagamento: e.plano_pagamento || "semanal",
         planoPagamentoMotoboy: e.plano_pagamento_motoboy || "diario",
         planoGratis: e.plano_gratis || false,
@@ -3714,6 +3938,7 @@ export default function Admin() {
             pagamento: p.forma_pagamento || "pix",
             taxaEmpresario: taxaEmp,
             taxaMotoboy: taxaMb,
+            taxaChamado: Number(p.taxa_chamado) || 0,
             lucro: lucroEntrega,
             status: p.status === "entregue" ? "Entregue" : "Cancelada",
             canceladoPorMotoboy: p.cancelado_por_motoboy || false,
@@ -3722,6 +3947,19 @@ export default function Admin() {
             data: dataStr,
             horaSaida,
             horaEntrega,
+            // Adicionado em 18/10/2026: linha do tempo completa da entrega
+            horaChamou: horaCurtaAdm(p.criado_em),
+            horaAceite: horaCurtaAdm(p.aceito_em),
+            adicionadoCorrida: !!(p.aceito_em && new Date(p.aceito_em) < new Date(p.criado_em)),
+            horaChegou: horaCurtaAdm(p.chegou_loja_em),
+            chegouLat: p.chegou_loja_lat != null ? Number(p.chegou_loja_lat) : null,
+            chegouLng: p.chegou_loja_lng != null ? Number(p.chegou_loja_lng) : null,
+            minutosAteChegar: minutosEntreAdm(
+              p.aceito_em && new Date(p.aceito_em) > new Date(p.criado_em) ? p.aceito_em : p.criado_em,
+              p.chegou_loja_em),
+            minutosNaLoja: minutosEntreAdm(p.chegou_loja_em && new Date(p.chegou_loja_em) < new Date(p.criado_em) ? p.criado_em : p.chegou_loja_em, p.saiu_estabelecimento_em),
+            minutosAteCliente: minutosEntreAdm(p.saiu_estabelecimento_em, p.entregue_em),
+            minutosEspera: minutosEntreAdm(p.criado_em, p.aceito_em),
             mes,
             ano,
             semana: semanaChave,
@@ -3801,6 +4039,7 @@ export default function Admin() {
         empresaNome: p.empresarios?.nome || "Estabelecimento",
         criadoEm: new Date(p.criado_em).getTime(),
         aceitoEm: p.aceito_em ? new Date(p.aceito_em).getTime() : null,
+        chegouLojaEm: p.chegou_loja_em ? new Date(p.chegou_loja_em).getTime() : null,
         saiuEstabelecimentoEm: p.saiu_estabelecimento_em ? new Date(p.saiu_estabelecimento_em).getTime() : null,
         taxaMotoboy: p.taxa_motoboy || 0,
       }));
