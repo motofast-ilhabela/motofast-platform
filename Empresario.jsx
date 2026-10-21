@@ -2918,15 +2918,22 @@ export default function AppEmpresario() {
         .order("id", { ascending: true }));
       if (cancelado || error || !data) return;
       let total = 0;
+      // Corrigido em 20/10/2026: o valor pendente é só o das semanas (ou dias) JÁ
+      // FECHADOS. A semana/dia em andamento NÃO entra, senão o valor cresce depois do
+      // bloqueio e deixa de bater com o que o empresário realmente deve.
+      const hojeISO = dataLocalISO();
+      const semanaAtualISO = segundaFeiraDaSemana(new Date());
       if (empresa.planoPagamentoMotoboy === "diario") {
         data.forEach(p=>{
           const diaISO = dataLocalISO(new Date(p.criado_em));
+          if (diaISO >= hojeISO) return;
           if (!empresa.pagamentosDiarios?.[diaISO]) total += p.taxa;
         });
       } else {
         const porSemana = {};
         data.forEach(p=>{
           const semana = segundaFeiraDaSemana(new Date(p.criado_em));
+          if (semana >= semanaAtualISO) return;
           porSemana[semana] = (porSemana[semana]||0) + p.taxa;
         });
         Object.entries(porSemana).forEach(([semana,tot])=>{
@@ -3587,7 +3594,18 @@ export default function AppEmpresario() {
           <div style={{background:"#1a0a0a",border:"1px solid #ef4444",borderRadius:12,padding:"20px 24px",marginBottom:20}}>
             <div style={{color:"#f87171",fontSize:15,lineHeight:1.7,marginBottom:12,textAlign:"left"}}>
               {empresa.motivoBloqueio
-                ? empresa.motivoBloqueio
+                ? (() => {
+                    // Corrigido em 20/10/2026: o motivo gravado no banco na hora do
+                    // bloqueio traz um "(faltam R$X)" que podia divergir do valor real
+                    // e confundia o empresário (pagavam o menor). Agora o número do
+                    // texto é SEMPRE o mesmo "Valor pendente" calculado abaixo; se o
+                    // valor ainda não foi calculado, o trecho com número é omitido.
+                    const m = String(empresa.motivoBloqueio);
+                    const faltam = valorPendenteBloqueio !== null
+                      ? `(faltam R$${valorPendenteBloqueio.toFixed(2).replace(".", ",")})`
+                      : "";
+                    return m.replace(/\(\s*faltam\s*R\$\s*[\d.,]+\s*\)/gi, faltam).replace(/\s+([.,])/g, "$1").replace(/ {2,}/g, " ");
+                  })()
                 : <>Sua conta foi bloqueada por <strong>mensalidade pendente</strong>.</>}
             </div>
             <div style={{color:"#9ca3af",fontSize:13,lineHeight:1.6}}>
