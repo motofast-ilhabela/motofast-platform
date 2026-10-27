@@ -2491,25 +2491,63 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
 }
 
 // ─── CLIENTES ─────────────────────────────────────────────────────────────────
+// Adicionado em 26/10/2026: LOCALIZAÇÃO EXATA do cliente. Quando o Google não conhece a
+// rua (ex.: Rua do Retiro, 158, Cocaia), o empresário cola o link do Google Maps que o
+// cliente mandou; guardamos latitude/longitude e a distância passa a ser calculada até
+// esse ponto exato, sem depender do Google achar o nome da rua.
+function extrairCoordenadasMaps(texto) {
+  const t = String(texto || "").trim();
+  if (!t) return null;
+  const padroes = [
+    /[?&](?:q|query|ll|destination)=(-?\d{1,3}\.\d+)[,%2C\s]+(-?\d{1,3}\.\d+)/i,
+    /@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/,
+    /!3d(-?\d{1,3}\.\d+)!4d(-?\d{1,3}\.\d+)/,
+    /^(-?\d{1,3}\.\d+)\s*[,;]\s*(-?\d{1,3}\.\d+)$/,
+  ];
+  for (const p of padroes) {
+    const m = t.match(p);
+    if (m) {
+      const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+      // Só aceita pontos dentro de Ilhabela (evita colar link de outra cidade por engano).
+      if (lat >= -23.98 && lat <= -23.70 && lng >= -45.52 && lng <= -45.25) return { lat, lng };
+      return { fora: true };
+    }
+  }
+  return null;
+}
+
 function Clientes({ clientes, setClientes, historico, empresarios }) {
   const [busca, setBusca] = useState("");
   const [editId, setEditId] = useState(null);
   const [detalheId, setDetalheId] = useState(null);
-  const [form, setForm] = useState({nome:"",tel:"",endereco:{rua:"",num:"",bairro:BAIRROS[0],ref:""}});
+  const [form, setForm] = useState({nome:"",tel:"",endereco:{rua:"",num:"",bairro:BAIRROS[0],ref:"",mapa:""}});
+  const [erroEd, setErroEd] = useState("");
 
   const filtrados = clientes.filter(c=>!busca||c.nome.toLowerCase().includes(busca.toLowerCase())||c.tel.includes(busca));
   const editCli = editId ? clientes.find(c=>c.id===editId) : null;
   const detCli  = detalheId ? clientes.find(c=>c.id===detalheId) : null;
 
-  function abrirEdicao(c) { setEditId(c.id); setForm({nome:c.nome,tel:c.tel,endereco:{...c.endereco}}); }
+  function abrirEdicao(c) { setErroEd(""); setEditId(c.id); setForm({nome:c.nome,tel:c.tel,endereco:{...c.endereco,mapa:(c.lat!=null&&c.lng!=null)?`${c.lat}, ${c.lng}`:""}}); }
 
   async function salvar() {
-    await supabase.from("clientes").update({
+    // Localização exata (26/10/2026): link do Google Maps ou coordenadas. Vazio = sem localização.
+    const txt = (form.endereco.mapa || "").trim();
+    let lat = null, lng = null;
+    if (txt) {
+      const c = extrairCoordenadasMaps(txt);
+      if (c && !c.fora) { lat = c.lat; lng = c.lng; }
+      else if (c && c.fora) { setErroEd("Essa localização está fora de Ilhabela. Confira o link."); return; }
+      else { setErroEd("Não consegui ler a localização. Cole o link completo do Google Maps (ex.: maps.google.com/?q=-23.81,-45.35) ou as coordenadas \"-23.81235, -45.352342\". Link curto (maps.app.goo.gl) não funciona: abra o link e copie o endereço da barra."); return; }
+    }
+    const { error } = await supabase.from("clientes").update({
       nome: form.nome, telefone: form.tel,
       rua: form.endereco.rua, numero: form.endereco.num,
       bairro: form.endereco.bairro, referencia: form.endereco.ref,
+      latitude: lat, longitude: lng,
     }).eq("id", editId);
-    setClientes(p=>p.map(c=>c.id===editId?{...c,...form}:c));
+    if (error) { setErroEd("Erro ao salvar: " + error.message); return; }
+    setClientes(p=>p.map(c=>c.id===editId?{...c,nome:form.nome,tel:form.tel,endereco:{rua:form.endereco.rua,num:form.endereco.num,bairro:form.endereco.bairro,ref:form.endereco.ref},lat,lng}:c));
+    setErroEd("");
     setEditId(null);
   }
 
@@ -2586,6 +2624,7 @@ function Clientes({ clientes, setClientes, historico, empresarios }) {
       {editId && editCli && (
         <Overlay onClose={()=>setEditId(null)} maxW={440}>
           <OvHeader titulo="✏️ Editar Cliente" onClose={()=>setEditId(null)}/>
+          {erroEd && <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#f87171",fontSize:13}}>{erroEd}</div>}
           <Inp label="Nome" value={form.nome} onChange={v=>setForm(f=>({...f,nome:v}))}/>
           <Inp label="Telefone" value={form.tel} onChange={v=>setForm(f=>({...f,tel:v}))}/>
           <Divider/>
@@ -2598,6 +2637,9 @@ function Clientes({ clientes, setClientes, historico, empresarios }) {
             {BAIRROS.map(b=><option key={b}>{b}</option>)}
           </SelInput>
           <Inp label="Ponto de referência" value={form.endereco.ref} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,ref:v}}))} placeholder="Casa de cor, portão..."/>
+          <Inp label="📍 Localização exata (opcional)" value={form.endereco.mapa||""} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,mapa:v}}))}
+            placeholder="Link do Google Maps ou coordenadas"
+            hint="Use quando o Google não achar a rua. A taxa das próximas entregas desse cliente passa a ser calculada até esse ponto exato. Apague o campo para voltar ao cálculo pelo endereço."/>
           <div style={{display:"flex",gap:8,marginTop:8}}>
             <Btn onClick={salvar} full>Salvar</Btn>
             <Btn cor="cinza" onClick={()=>setEditId(null)}>Cancelar</Btn>
@@ -2954,6 +2996,34 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
     return m>0?`${m}m ${r}s`:`${r}s`;
   }
 
+  // Corrigido em 22/10/2026: ao atribuir um pedido a um motoboy que JÁ estava em corrida,
+  // o Admin podia pegar um pedido dele sem corrida_id e criar uma corrida NOVA, e o
+  // painel mostrava o mesmo motoboy em dois cartões separados. Agora procura a corrida
+  // que já tem (ignorando pedidos sem corrida_id), cria só se não existir nenhuma e
+  // ainda religa à mesma corrida qualquer pedido ativo dele que estivesse solto.
+  async function corridaParaMotoboy(motoboyId) {
+    const { data: ativos } = await supabase
+      .from("pedidos")
+      .select("id, corrida_id")
+      .eq("motoboy_id", motoboyId)
+      .in("status", ["aceito", "saiu_estabelecimento"])
+      .order("aceito_em", { ascending: true });
+    let corridaId = (ativos || []).find(p => p.corrida_id)?.corrida_id;
+    if (!corridaId) {
+      const { data: corridaDB } = await supabase
+        .from("corridas")
+        .insert({ motoboy_id: motoboyId, status: "ativa" })
+        .select()
+        .single();
+      corridaId = corridaDB?.id;
+    }
+    const soltos = (ativos || []).filter(p => !p.corrida_id).map(p => p.id);
+    if (corridaId && soltos.length > 0) {
+      await supabase.from("pedidos").update({ corrida_id: corridaId }).in("id", soltos);
+    }
+    return corridaId;
+  }
+
   // Adicionado em 30/08/2026 — atribuição manual: o Alessandro escolhe
   // direto qualquer motoboy (mesmo que já esteja em outra corrida — nesse
   // caso, entra como um pedido A MAIS na mesma corrida dele) pra assumir um
@@ -2962,23 +3032,7 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
     if (!motoboyId) return;
     // Confere se esse motoboy já tem uma corrida em andamento — se tiver,
     // reaproveita ela (agrupa), em vez de criar uma corrida nova solta.
-    const { data: pedidoAtivoDele } = await supabase
-      .from("pedidos")
-      .select("corrida_id")
-      .eq("motoboy_id", motoboyId)
-      .in("status", ["aceito","saiu_estabelecimento"])
-      .limit(1)
-      .maybeSingle();
-
-    let corridaIdParaUsar = pedidoAtivoDele?.corrida_id;
-    if (!corridaIdParaUsar) {
-      const { data: corridaDB } = await supabase
-        .from("corridas")
-        .insert({ motoboy_id: motoboyId, status: "ativa" })
-        .select()
-        .single();
-      corridaIdParaUsar = corridaDB?.id;
-    }
+    const corridaIdParaUsar = await corridaParaMotoboy(motoboyId);
 
     const { error } = await supabase.from("pedidos").update({
       status: "aceito",
@@ -3002,23 +3056,7 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
   // mesmo — some da corrida de quem tinha antes.
   async function reatribuirParaOutroMotoboy(pedidoId, novoMotoboyId) {
     if (!novoMotoboyId) return;
-    const { data: pedidoAtivoDele } = await supabase
-      .from("pedidos")
-      .select("corrida_id")
-      .eq("motoboy_id", novoMotoboyId)
-      .in("status", ["aceito", "saiu_estabelecimento"])
-      .limit(1)
-      .maybeSingle();
-
-    let corridaIdParaUsar = pedidoAtivoDele?.corrida_id;
-    if (!corridaIdParaUsar) {
-      const { data: corridaDB } = await supabase
-        .from("corridas")
-        .insert({ motoboy_id: novoMotoboyId, status: "ativa" })
-        .select()
-        .single();
-      corridaIdParaUsar = corridaDB?.id;
-    }
+    const corridaIdParaUsar = await corridaParaMotoboy(novoMotoboyId);
 
     const { error } = await supabase.from("pedidos").update({
       motoboy_id: novoMotoboyId,
@@ -3746,7 +3784,9 @@ export default function App() {
           num: c.numero || "",
           bairro: c.bairro || "",
           ref: c.referencia || "",
-        }
+        },
+        lat: c.latitude ?? null,
+        lng: c.longitude ?? null,
       }));
 
       const hist = (pedRes.data || [])
