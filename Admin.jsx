@@ -1225,6 +1225,13 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   const [buscaEstab, setBuscaEstab] = useState("");
   const [somenteBloqueados, setSomenteBloqueados] = useState(false);
   const [abaEmp, setAbaEmp] = useState("geral");
+  // Recalcular taxa de uma entrega já feita (26/10/2026): corrige preço quando o endereço
+  // foi calculado errado (Google não achou a rua) usando a localização exata do cliente.
+  const [recalcE, setRecalcE] = useState(null);
+  const [recalcLink, setRecalcLink] = useState("");
+  const [recalcKm, setRecalcKm] = useState("");
+  const [recalcMsg, setRecalcMsg] = useState("");
+  const [recalcBusy, setRecalcBusy] = useState(false);
   const [taxasEdit, setTaxasEdit] = useState({});
   const [taxaSalva, setTaxaSalva] = useState(false);
   const [novoBairro, setNovoBairro] = useState("");
@@ -2035,12 +2042,76 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                         <div style={{textAlign:"right"}}>
                           <div style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>R${e.taxaEmpresario}</div>
                           {e.taxaChamado > 0 && <div style={{color:"#fbbf24",fontSize:10,fontWeight:700}}>inclui R${e.taxaChamado} de locação</div>}
+                          {e.status==="Entregue" && (
+                            <button onClick={()=>{ setRecalcE(e); setRecalcLink(""); setRecalcKm(""); setRecalcMsg(""); }}
+                              style={{marginTop:4,padding:"3px 8px",borderRadius:6,background:"transparent",border:"1px solid #374151",color:"#9ca3af",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+                              🔧 Recalcular taxa
+                            </button>
+                          )}
                         </div>
                       </div>
                       );
                     })}
                   </Card>
                 )}
+
+                {recalcE && (() => {
+                  const kmNum = parseFloat(String(recalcKm).replace(",", "."));
+                  const base = Number.isFinite(kmNum) && kmNum > 0 ? calcularTaxaPorKmReg(kmNum) : null;
+                  const chamado = Number(recalcE.taxaChamado) || 0;
+                  const novo = base ? { e: +(base.e + chamado).toFixed(2), m: +(base.m + chamado).toFixed(2) } : null;
+                  const origemTaxas = empSel.enderecoTaxas || empSel.enderecoEstab || "";
+                  async function calcularPeloMapa() {
+                    const c = extrairCoordenadasMaps(recalcLink);
+                    if (!c || c.fora) { setRecalcMsg(c && c.fora ? "Essa localização está fora de Ilhabela." : "Não consegui ler o link. Cole o link completo do Google Maps (com as coordenadas) ou \"-23.81235, -45.352342\"."); return; }
+                    if (!origemTaxas) { setRecalcMsg("Esse estabelecimento não tem endereço cadastrado para calcular."); return; }
+                    setRecalcBusy(true); setRecalcMsg("");
+                    try {
+                      const r = await fetch("/api/calcular-distancia", { method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ origem: `${origemTaxas}, Ilhabela, SP, Brasil`, destinoLatLng: c }) });
+                      const d = await r.json();
+                      if (d.ok) { setRecalcKm(d.km.toFixed(1)); setRecalcMsg(`Distância de moto até o ponto: ${d.km.toFixed(1)} km (saindo de: ${origemTaxas}).`); }
+                      else setRecalcMsg("Não consegui calcular: " + (d.erro || "erro desconhecido"));
+                    } catch (err) { setRecalcMsg("Erro de conexão ao calcular."); }
+                    setRecalcBusy(false);
+                  }
+                  async function aplicar() {
+                    if (!novo) return;
+                    if (!window.confirm(`Confirma? A entrega de ${recalcE.clienteNome} passa de R$${recalcE.taxaEmpresario} para R$${novo.e} (motoboy recebe R$${novo.m}).`)) return;
+                    setRecalcBusy(true);
+                    const { error } = await supabase.from("pedidos").update({
+                      taxa: novo.e, taxa_empresario: novo.e, taxa_motoboy: novo.m,
+                      distancia_km: kmNum, metodo_calculo_km: "Recalculado pelo Admin (localização exata do cliente)",
+                    }).eq("id", recalcE.id);
+                    setRecalcBusy(false);
+                    if (error) { setRecalcMsg("Erro ao salvar: " + error.message); return; }
+                    setRecalcE(null);
+                    if (onRecarregar) await onRecarregar();
+                  }
+                  return (
+                    <Overlay onClose={()=>setRecalcE(null)} maxW={460}>
+                      <OvHeader titulo="🔧 Recalcular taxa da entrega" onClose={()=>setRecalcE(null)}/>
+                      <div style={{color:"#d1d5db",fontSize:13,marginBottom:4}}><b>{recalcE.clienteNome}</b> · {recalcE.bairro}</div>
+                      <div style={{color:"#9ca3af",fontSize:12,marginBottom:12}}>Cobrado hoje: R${recalcE.taxaEmpresario}{chamado>0 ? ` (inclui R$${chamado} de locação, que continua)` : ""}</div>
+                      <Inp label="📍 Localização do cliente (link do Google Maps)" value={recalcLink} onChange={setRecalcLink} placeholder="Cole o link ou as coordenadas"/>
+                      <Btn onClick={calcularPeloMapa} full disabled={recalcBusy || !recalcLink.trim()}>{recalcBusy ? "Calculando..." : "📏 Calcular distância pelo mapa"}</Btn>
+                      <div style={{height:10}}/>
+                      <Inp label="Distância (km) — preenchida sozinha, ou digite" value={recalcKm} onChange={setRecalcKm} placeholder="Ex: 8,4"/>
+                      {recalcMsg && <div style={{color:"#fbbf24",fontSize:12,margin:"4px 0 8px",lineHeight:1.5}}>{recalcMsg}</div>}
+                      {novo && (
+                        <div style={{background:"#0f172a",border:"1px solid #34d399",borderRadius:10,padding:"10px 14px",marginBottom:10}}>
+                          <div style={{color:"#9ca3af",fontSize:11}}>Valor certo para {kmNum} km</div>
+                          <div style={{color:"#34d399",fontWeight:900,fontSize:22}}>R${novo.e.toFixed(2)} <span style={{color:"#9ca3af",fontSize:12,fontWeight:600}}>(estabelecimento paga)</span></div>
+                          <div style={{color:"#fbbf24",fontWeight:700,fontSize:14}}>Motoboy recebe R${novo.m.toFixed(2)}</div>
+                        </div>
+                      )}
+                      <div style={{display:"flex",gap:8}}>
+                        <Btn onClick={aplicar} full disabled={!novo || recalcBusy}>✅ Aplicar essa taxa</Btn>
+                        <Btn cor="cinza" onClick={()=>setRecalcE(null)}>Cancelar</Btn>
+                      </div>
+                    </Overlay>
+                  );
+                })()}
 
                 {diasOrdenados.length>0 && (
                   <Card>
