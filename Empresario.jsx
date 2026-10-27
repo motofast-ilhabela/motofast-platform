@@ -113,6 +113,42 @@ const EMPRESA = {
 
 const BAIRROS = Object.keys(EMPRESA.taxas);
 
+// Adicionado em 26/10/2026: PISOS. O motoboy nunca recebe menos que R$7,00 e o
+// estabelecimento nunca paga menos que o motoboy recebe. Antes, quando o cálculo por
+// km falhava (ou o pedido era publicado antes do cálculo terminar), caía na tabela
+// antiga por bairro, que tem valores como R$5 para o motoboy.
+const PISO_MOTOBOY_PUBLICAR = 7;
+// Adicionado em 26/10/2026: LOCALIZAÇÃO EXATA do cliente. Quando o Google não conhece a
+// rua (ex.: Rua do Retiro, 158, Cocaia), o empresário cola o link do Google Maps que o
+// cliente mandou; guardamos latitude/longitude e a distância passa a ser calculada até
+// esse ponto exato, sem depender do Google achar o nome da rua.
+function extrairCoordenadasMaps(texto) {
+  const t = String(texto || "").trim();
+  if (!t) return null;
+  const padroes = [
+    /[?&](?:q|query|ll|destination)=(-?\d{1,3}\.\d+)[,%2C\s]+(-?\d{1,3}\.\d+)/i,
+    /@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/,
+    /!3d(-?\d{1,3}\.\d+)!4d(-?\d{1,3}\.\d+)/,
+    /^(-?\d{1,3}\.\d+)\s*[,;]\s*(-?\d{1,3}\.\d+)$/,
+  ];
+  for (const p of padroes) {
+    const m = t.match(p);
+    if (m) {
+      const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+      // Só aceita pontos dentro de Ilhabela (evita colar link de outra cidade por engano).
+      if (lat >= -23.98 && lat <= -23.70 && lng >= -45.52 && lng <= -45.25) return { lat, lng };
+      return { fora: true };
+    }
+  }
+  return null;
+}
+
+function pisosTaxa(e, m) {
+  const mm = Math.max(PISO_MOTOBOY_PUBLICAR, Number(m) || 0);
+  const ee = Math.max(Number(e) || 0, mm);
+  return { taxa: +ee.toFixed(2), taxaMotoboy: +mm.toFixed(2) };
+}
+
 const PG = {
   pix:      { label:"Pix",      icon:"💠", cor:"#34d399" },
   dinheiro: { label:"Dinheiro", icon:"💵", cor:"#fbbf24" },
@@ -360,6 +396,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   const taxasEmpresa = (empresa && empresa.taxas && Object.keys(empresa.taxas).length>0) ? empresa.taxas : EMPRESA.taxas;
   const bairrosDisponiveis = Object.keys(taxasEmpresa);
   const endEfetivo = (clienteSel && modoEndereco==="salvo") ? {rua:clienteSel.rua,num:clienteSel.num,bairro:clienteSel.bairro,ref:clienteSel.ref} : novoEndereco;
+  const coordSalva = (clienteSel && modoEndereco==="salvo" && clienteSel.lat != null && clienteSel.lng != null) ? { lat: Number(clienteSel.lat), lng: Number(clienteSel.lng) } : null;
   const bairroFinal = endEfetivo.bairro || bairrosDisponiveis[0] || "";
   const taxaKey = Object.keys(taxasEmpresa).find(k => normalizarTexto(k) === normalizarTexto(bairroFinal)) || bairroFinal;
   const taxa = taxasEmpresa[taxaKey] || {e:0,m:0};
@@ -479,6 +516,21 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         // chave). O Google já lida muito bem com endereço incompleto ou digitado
         // torto — não precisa mais daquela cadeia de tentativas manuais que o mapa
         // gratuito exigia antes.
+        if (coordSalva) {
+          const rc = await fetch("/api/calcular-distancia", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ origem: enderecoOrigem, destinoLatLng: coordSalva }),
+          });
+          const dc = await rc.json();
+          if (!cancelado && dc.ok) {
+            setDistanciaKm(dc.km.toFixed(1));
+            setTaxaKm(calcularTaxaPorKm(dc.km));
+            setMetodoCalculoKm("Google Maps — localização exata do cliente (mapa)");
+            setAvisoEnderecoImpreciso(null);
+            return;
+          }
+        }
         const resp = await fetch("/api/calcular-distancia", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -529,7 +581,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       }
     })();
     return () => { cancelado = true; };
-  }, [endEfetivo.rua, endEfetivo.num, endEfetivo.bairro, empresa.endereco, empresa.bairro, empresa.modeloPrecificacao]);
+  }, [endEfetivo.rua, endEfetivo.num, endEfetivo.bairro, coordSalva?.lat, coordSalva?.lng, empresa.endereco, empresa.bairro, empresa.modeloPrecificacao]);
 
   const nomeEfetivo = clienteSel ? clienteSel.nome : clienteNome;
   const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
@@ -559,6 +611,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       setErro("Ainda carregando seus dados — aguarde alguns segundos e tente novamente.");
       return;
     }
+    if (calcKm) { setErro("Aguarde o cálculo da distância terminar antes de publicar."); return; }
     if (!clienteSel) {
       setErro("Selecione um cliente da lista de busca. Se ele ainda não está cadastrado, cadastre primeiro na aba \"Clientes\".");
       return;
@@ -591,7 +644,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       clienteNome:nomeEfetivo, clienteTel:telEfetivo,
       rua:endEfetivo.rua, num:endEfetivo.num,
       bairro:bairroFinal, ref:endEfetivo.ref,
-      pagamento, taxa:taxaKm?.e||taxa?.e||0, taxaMotoboy:taxaKm?.m||taxa?.m||0, obs,
+      pagamento, ...pisosTaxa(taxaKm?.e||taxa?.e||0, taxaKm?.m||taxa?.m||0), obs,
       distanciaKm: distanciaKm ? parseFloat(distanciaKm) : null,
       metodoCalculoKm: metodoCalculoKm,
       valorPedido: valorPedido ? parseFloat(valorPedido) : null,
@@ -873,7 +926,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         </div>
       )}
 
-      <Btn onClick={publicar} full disabled={!clienteSel || !empresa?.id || !telValido || semPrecoDisponivel}>
+      <Btn onClick={publicar} full disabled={!clienteSel || !empresa?.id || !telValido || semPrecoDisponivel || calcKm}>
         🚀 Publicar Pedido
       </Btn>
     </div>
@@ -901,6 +954,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
     : [];
 
   const endEfetivo = (clienteSel && modoEndereco==="salvo") ? {rua:clienteSel.rua,num:clienteSel.num,bairro:clienteSel.bairro,ref:clienteSel.ref} : novoEndereco;
+  const coordSalva = (clienteSel && modoEndereco==="salvo" && clienteSel.lat != null && clienteSel.lng != null) ? { lat: Number(clienteSel.lat), lng: Number(clienteSel.lng) } : null;
   const bairroFinal = endEfetivo.bairro || bairrosDisponiveis2[0] || "";
   const taxaKey2 = Object.keys(taxasEmpresa2).find(k => normalizarTexto(k) === normalizarTexto(bairroFinal)) || bairroFinal;
   const taxa = taxasEmpresa2[taxaKey2] || {e:0,m:0};
@@ -985,6 +1039,21 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
           ? `${enderecoBaseTaxas}, Ilhabela, SP, Brasil`
           : `${empresa.bairro||""}, Ilhabela, SP, Brasil`;
 
+        if (coordSalva) {
+          const rc = await fetch("/api/calcular-distancia", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ origem: enderecoOrigem, destinoLatLng: coordSalva }),
+          });
+          const dc = await rc.json();
+          if (!cancelado && dc.ok) {
+            setDistanciaKm(dc.km.toFixed(1));
+            setTaxaKm(calcularTaxaPorKm(dc.km));
+            setMetodoCalculoKm("Google Maps — localização exata do cliente (mapa)");
+            setAvisoEnderecoImpreciso(null);
+            return;
+          }
+        }
         const resp = await fetch("/api/calcular-distancia", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1033,7 +1102,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       }
     })();
     return () => { cancelado = true; };
-  }, [endEfetivo.rua, endEfetivo.num, endEfetivo.bairro, empresa.endereco, empresa.bairro, empresa.modeloPrecificacao]);
+  }, [endEfetivo.rua, endEfetivo.num, endEfetivo.bairro, coordSalva?.lat, coordSalva?.lng, empresa.endereco, empresa.bairro, empresa.modeloPrecificacao]);
 
   // Só bloqueia adicionar quando NÃO há preço nenhum disponível (nem por km, nem
   // pela reserva por bairro) — nunca adiciona um pedido com taxa R$0.
@@ -1056,6 +1125,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       setErro("Ainda carregando seus dados — aguarde alguns segundos e tente novamente.");
       return;
     }
+    if (calcKm) { setErro("Aguarde o cálculo da distância terminar antes de publicar."); return; }
     if (!clienteSel) {
       setErro("Selecione um cliente da lista de busca. Se ele ainda não está cadastrado, cadastre primeiro na aba \"Clientes\".");
       return;
@@ -1089,7 +1159,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       // A taxa é SEMPRE calculada pela distância real — nunca digitada na mão.
       // Se o cálculo por km falhar (endereço não localizado), cai pra reserva
       // por bairro como plano B, igual acontece na tela de Nova Entrega.
-      pagamento, taxa:taxaKm?.e||taxa?.e||0, taxaMotoboy:taxaKm?.m||taxa?.m||0, obs,
+      pagamento, ...pisosTaxa(taxaKm?.e||taxa?.e||0, taxaKm?.m||taxa?.m||0), obs,
       distanciaKm: distanciaKm ? parseFloat(distanciaKm) : null,
       metodoCalculoKm: metodoCalculoKm,
       valorPedido: valorPedido ? parseFloat(valorPedido) : null,
@@ -1316,7 +1386,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
       )}
 
-      <Btn onClick={salvar} full disabled={!clienteSel || !empresa?.id || !telValido || semPrecoDisponivel}>
+      <Btn onClick={salvar} full disabled={!clienteSel || !empresa?.id || !telValido || semPrecoDisponivel || calcKm}>
         ➕ Adicionar à Corrida
       </Btn>
     </Overlay>
@@ -2627,7 +2697,7 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
   const [busca, setBusca] = useState("");
   const [editId, setEditId] = useState(null);
   const [modalCad, setModalCad] = useState(false);
-  const [form, setForm] = useState({nome:"",tel:"",endereco:{rua:"",num:"",bairro:"",ref:""}});
+  const [form, setForm] = useState({nome:"",tel:"",endereco:{rua:"",num:"",bairro:"",ref:"",mapa:""}});
   const [erro, setErro] = useState("");
 
   const filtrados = clientes.filter(c=>!busca||normalizarTexto(c.nome).includes(normalizarTexto(busca))||c.tel.includes(busca));
@@ -2636,9 +2706,22 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
   // diferente da tela de Nova Entrega (onde só atrapalhava a busca do cliente).
   const telFormValido = !!(form.tel && form.tel.trim() && form.tel.replace(/\D/g,"").length>=8);
 
-  function abrirEdicao(c) { setEditId(c.id); setForm({nome:c.nome,tel:c.tel,endereco:{rua:c.rua||"",num:c.num||"",bairro:c.bairro||"",ref:c.ref||""}}); }
+  function abrirEdicao(c) { setEditId(c.id); setForm({nome:c.nome,tel:c.tel,endereco:{rua:c.rua||"",num:c.num||"",bairro:c.bairro||"",ref:c.ref||"",mapa:(c.lat!=null&&c.lng!=null)?`${c.lat}, ${c.lng}`:""}}); }
+
+  // Lê o campo "Localização exata" do formulário: vazio = sem localização; link válido
+  // = coordenadas; link que não dá pra entender (ou de fora de Ilhabela) = erro.
+  function lerLocalizacaoForm() {
+    const txt = (form.endereco.mapa || "").trim();
+    if (!txt) return { ok: true, lat: null, lng: null };
+    const c = extrairCoordenadasMaps(txt);
+    if (c && !c.fora) return { ok: true, lat: c.lat, lng: c.lng };
+    if (c && c.fora) return { ok: false, erro: "Essa localização está fora de Ilhabela. Confira o link." };
+    return { ok: false, erro: "Não consegui ler a localização. Cole o link completo do Google Maps (que tem as coordenadas, ex.: maps.google.com/?q=-23.81,-45.35) ou as coordenadas \"-23.81235, -45.352342\". Links curtos (maps.app.goo.gl) não funcionam: abra o link e copie o endereço da barra." };
+  }
 
   async function salvar() {
+    const loc = lerLocalizacaoForm();
+    if (!loc.ok) { setErro(loc.erro); return; }
     const { error } = await supabase.from("clientes").update({
       nome: form.nome,
       telefone: form.tel,
@@ -2646,9 +2729,11 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
       numero: form.endereco.num,
       bairro: form.endereco.bairro,
       referencia: form.endereco.ref,
+      latitude: loc.lat,
+      longitude: loc.lng,
     }).eq("id", editId);
     if (error) { setErro("Erro ao salvar: " + error.message); return; }
-    setClientes(p=>p.map(c=>c.id===editId?{...c,nome:form.nome,tel:form.tel,rua:form.endereco.rua,num:form.endereco.num,bairro:form.endereco.bairro,ref:form.endereco.ref}:c));
+    setClientes(p=>p.map(c=>c.id===editId?{...c,nome:form.nome,tel:form.tel,rua:form.endereco.rua,num:form.endereco.num,bairro:form.endereco.bairro,ref:form.endereco.ref,lat:loc.lat,lng:loc.lng}:c));
     setEditId(null);
     setErro("");
   }
@@ -2658,7 +2743,7 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
     setClientes(p=>p.filter(c=>c.id!==id));
   }
 
-  const FORM_VAZIO = {nome:"",tel:"",endereco:{rua:"",num:"",bairro:"",ref:""}};
+  const FORM_VAZIO = {nome:"",tel:"",endereco:{rua:"",num:"",bairro:"",ref:"",mapa:""}};
 
   function abrirCadastro() { setForm(FORM_VAZIO); setErro(""); setModalCad(true); }
 
@@ -2672,6 +2757,8 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
       setErro("Preencha o telefone/WhatsApp do cliente — é obrigatório, o motoboy precisa desse número pra fazer a entrega.");
       return;
     }
+    const loc = lerLocalizacaoForm();
+    if (!loc.ok) { setErro(loc.erro); return; }
     const { data, error } = await supabase.from("clientes").insert({
       empresario_id: empresaId,
       nome: form.nome,
@@ -2680,13 +2767,14 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
       numero: form.endereco.num,
       bairro: form.endereco.bairro,
       referencia: form.endereco.ref,
+      ...(loc.lat != null ? { latitude: loc.lat, longitude: loc.lng } : {}),
     }).select().single();
     if (error) {
       setErro("Erro ao salvar cliente: " + error.message);
       return;
     }
     if (data) {
-      setClientes(p=>[...p, {id:data.id, nome:data.nome, tel:data.telefone, rua:data.rua, num:data.numero, bairro:data.bairro, ref:data.referencia}]);
+      setClientes(p=>[...p, {id:data.id, nome:data.nome, tel:data.telefone, rua:data.rua, num:data.numero, bairro:data.bairro, ref:data.referencia, lat:data.latitude ?? null, lng:data.longitude ?? null}]);
     }
     setModalCad(false); setForm(FORM_VAZIO); setErro("");
   }
@@ -2751,6 +2839,9 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
           <Inp label="Ponto de referência" value={form.endereco.ref} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,ref:v}}))}
             placeholder="Ex: Casa azul, portão de ferro, próximo ao mercado..."
             hint="Ajuda o motoboy a encontrar mais rápido"/>
+          <Inp label="📍 Localização exata (opcional)" value={form.endereco.mapa||""} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,mapa:v}}))}
+            placeholder="Cole aqui o link do Google Maps que o cliente mandar"
+            hint="Use quando o Google não achar a rua. Peça pro cliente enviar a localização pelo WhatsApp e cole o link. A taxa passa a ser calculada até esse ponto exato."/>
           {/* Preview */}
           {form.nome && form.endereco.rua && form.endereco.num && (
             <div style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
@@ -2783,6 +2874,9 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
           </div>
           <Inp label="Bairro" value={form.endereco.bairro} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,bairro:v}}))} placeholder="Ex: Perequê, Vila, Feiticeira..."/>
           <Inp label="Referência" value={form.endereco.ref} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,ref:v}}))} placeholder="Casa de cor, portão..."/>
+          <Inp label="📍 Localização exata (opcional)" value={form.endereco.mapa||""} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,mapa:v}}))}
+            placeholder="Link do Google Maps ou coordenadas"
+            hint="Use quando o Google não achar a rua. Apague o campo para voltar ao cálculo pelo endereço."/>
           <div style={{display:"flex",gap:8,marginTop:8}}>
             <Btn onClick={salvar} full>Salvar</Btn>
             <Btn cor="cinza" onClick={()=>setEditId(null)}>Cancelar</Btn>
@@ -3008,6 +3102,8 @@ export default function AppEmpresario() {
               num: c.numero,
               bairro: c.bairro,
               ref: c.referencia,
+              lat: c.latitude ?? null,
+              lng: c.longitude ?? null,
             })));
           }
 
