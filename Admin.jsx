@@ -1060,7 +1060,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
                   <Tag label={mb.online?"🟢 Online":"⚫ Offline"} cor={mb.online?"#34d399":"#4b5563"}/>
                   {!mb.ativo && <Tag label="🔒 Bloqueado" cor="#f59e0b"/>}
                 </div>
-                <div style={{color:"#6b7280",fontSize:12}}>📞 {mb.tel} · PIX: {mb.pix} · Bairro base: {mb.bairroBase}</div>
+                <div style={{color:"#6b7280",fontSize:12}}>📞 {mb.tel} · PIX: {mb.pix} · Bairro base: {mb.bairroBase} · {mb.tipoCelular==="iphone"?"🍎 iPhone":mb.tipoCelular==="android"?"🤖 Android":"📱 celular não informado"}</div>
                 {mb.cpf && <div style={{color:"#4b5563",fontSize:11,marginTop:2}}>CPF: {mb.cpf}</div>}
               </div>
               <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
@@ -1114,7 +1114,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
           <Card style={{marginBottom:14,padding:"14px 16px",background:"#0f172a"}}>
             <SectionTitle>📋 Dados Cadastrais</SectionTitle>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              {[["Nome completo",mbDet.nomeCompleto],["CPF",mbDet.cpf],["RG",mbDet.rg],["Nascimento",mbDet.nascimento],["Nome do pai",mbDet.nomePai],["Nome da mãe",mbDet.nomeMae],["Endereço",mbDet.endereco],["Bairro base",mbDet.bairroBase]].map(([l,v])=>(
+              {[["Nome completo",mbDet.nomeCompleto],["CPF",mbDet.cpf],["RG",mbDet.rg],["Nascimento",mbDet.nascimento],["Nome do pai",mbDet.nomePai],["Nome da mãe",mbDet.nomeMae],["Endereço",mbDet.endereco],["Bairro base",mbDet.bairroBase],["Celular",mbDet.tipoCelular==="iphone"?"🍎 iPhone":mbDet.tipoCelular==="android"?"🤖 Android":""]].map(([l,v])=>(
                 <div key={l}><div style={{color:"#4b5563",fontSize:11}}>{l}</div><div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{v||"—"}</div></div>
               ))}
             </div>
@@ -3799,6 +3799,7 @@ export default function App() {
         tel: m.telefone || "",
         pix: m.pix || "",
         bairroBase: m.bairro_base || "",
+        tipoCelular: m.tipo_celular || "",
         cpf: m.cpf || "",
         rg: m.rg || "",
         nascimento: m.nascimento || "",
@@ -4224,6 +4225,7 @@ export default function App() {
                           <CampoCadastro rotulo="Endereço residencial completo" valor={mb.endereco} largura="100%"/>
                           <CampoCadastro rotulo="Bairro" valor={mb.bairro_base}/>
                           <CampoCadastro rotulo="Telefone" valor={mb.telefone}/>
+                          <CampoCadastro rotulo="Celular" valor={mb.tipo_celular==="iphone"?"🍎 iPhone":mb.tipo_celular==="android"?"🤖 Android":"NÃO INFORMADO"}/>
                           <CampoCadastro rotulo="PIX" valor={mb.pix}/>
                           <CampoCadastro rotulo="E-mail da conta" valor={emailsPend[mb.user_id]}/>
                           <CampoCadastro rotulo="Cadastrado em" valor={mb.criado_em ? new Date(mb.criado_em).toLocaleString("pt-BR") : ""}/>

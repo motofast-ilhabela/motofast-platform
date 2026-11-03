@@ -439,7 +439,7 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
     nomeCompleto:"", cpf:"", rg:"", nascimento:"",
     nomePai:"", nomeMae:"", endereco:"", bairro:"",
     // Contato
-    tel:"", pix:"",
+    tel:"", pix:"", tipoCelular:"",
     // Acesso
     email:"", emailConfirm:"", senha:"", senhaConfirm:"",
   });
@@ -465,6 +465,7 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
     const e = {};
     if (!form.tel.trim()) e.tel = "Campo obrigatório";
     if (!form.pix.trim()) e.pix = "Campo obrigatório";
+    if (form.tipoCelular!=="android" && form.tipoCelular!=="iphone") e.tipoCelular = "Escolha Android ou iPhone";
     setErros(e);
     return Object.keys(e).length===0;
   }
@@ -534,6 +535,7 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
             bairro_base: form.bairro,
             telefone: form.tel,
             pix: form.pix,
+            tipo_celular: form.tipoCelular,
           },
         }),
       });
@@ -554,12 +556,12 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
       const campoPorServidor = {
         nome_completo:"nomeCompleto", cpf:"cpf", rg:"rg", nascimento:"nascimento",
         nome_pai:"nomePai", nome_mae:"nomeMae", endereco:"endereco", bairro_base:"bairro",
-        telefone:"tel", pix:"pix",
+        telefone:"tel", pix:"pix", tipo_celular:"tipoCelular",
       };
       const campo = campoPorServidor[erroServidor?.campo];
       if (campo) {
         setErros({ [campo]: msg });
-        setStep(["tel","pix"].includes(campo) ? 2 : 1);
+        setStep(["tel","pix","tipoCelular"].includes(campo) ? 2 : 1);
       } else {
         setErros({ tel: msg });
         setStep(2);
@@ -617,6 +619,26 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
           <STitle>📞 Contato e PIX</STitle>
           <Inp label="Telefone / WhatsApp" obrigatorio value={form.tel} onChange={v=>set("tel",v)} placeholder="(12) 99999-0000" erro={erros.tel}/>
           <Inp label="Chave PIX" obrigatorio value={form.pix} onChange={v=>set("pix",v)} placeholder="CPF, telefone ou e-mail" hint="É por aqui que você vai receber seus ganhos toda terça-feira" erro={erros.pix}/>
+
+          {/* Pergunta adicionada em 31/10/2026: só Android ou iPhone (sem modelo).
+              O Alessandro usa pra mandar o aplicativo certo (Android) ou o passo a
+              passo de tela inicial (iPhone). */}
+          <div style={{marginBottom:14}}>
+            <div style={{color:"#d1d5db",fontSize:13,fontWeight:600,marginBottom:6}}>Seu celular é <span style={{color:"#f87171"}}>*</span></div>
+            <div style={{display:"flex",gap:8}}>
+              {[["android","🤖 Android"],["iphone","🍎 iPhone"]].map(([v,rot])=>(
+                <button key={v} type="button" onClick={()=>set("tipoCelular",v)}
+                  style={{flex:1,padding:"12px 8px",borderRadius:10,cursor:"pointer",fontWeight:700,fontSize:14,
+                    background:form.tipoCelular===v?"#0d3d2e":"#0f172a",
+                    border:form.tipoCelular===v?"2px solid #34d399":"2px solid #1f2937",
+                    color:form.tipoCelular===v?"#34d399":"#9ca3af"}}>
+                  {rot}
+                </button>
+              ))}
+            </div>
+            {erros.tipoCelular && <div style={{color:"#f87171",fontSize:12,marginTop:4}}>{erros.tipoCelular}</div>}
+            <div style={{color:"#6b7280",fontSize:11,marginTop:4}}>Só precisamos saber se é Android ou iPhone, para te mandar o aplicativo certo.</div>
+          </div>
 
           <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
             <div style={{color:"#34d399",fontWeight:700,fontSize:13,marginBottom:6}}>💰 Como funciona o pagamento?</div>
