@@ -935,6 +935,12 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
 
 // ─── ADICIONAR PEDIDO À CORRIDA (mesmo motoboy, sem escolher) ────────────────
 function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, motoboyTel, vagaNum, onSalvar, onFechar, empresa }) {
+  // Adicionado em 31/10/2026: trava contra toque duplo. No celular (iPhone e Android)
+  // o botão podia ser tocado duas vezes antes da tela fechar, e cada toque criava um
+  // pedido — o endereço ia duplicado na corrida. O ref bloqueia na hora (antes mesmo
+  // da tela redesenhar) e só libera se der erro, pra poder tentar de novo.
+  const enviandoRef = useRef(false);
+  const [enviando, setEnviando] = useState(false);
   const [buscaCliente, setBuscaCliente] = useState("");
   const [clienteSel, setClienteSel] = useState(null);
   const [modoEndereco, setModoEndereco] = useState("salvo");
@@ -1121,6 +1127,14 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   }
 
   async function salvar() {
+    if (enviandoRef.current) return;
+    enviandoRef.current = true;
+    setEnviando(true);
+    try { await salvarInterno(); }
+    finally { enviandoRef.current = false; setEnviando(false); }
+  }
+
+  async function salvarInterno() {
     if (!empresa?.id) {
       setErro("Ainda carregando seus dados — aguarde alguns segundos e tente novamente.");
       return;
@@ -1151,7 +1165,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       }).eq("id", clienteSel.id);
       setClientes(p=>p.map(c=>c.id===clienteSel.id?{...c,rua:novoEndereco.rua,num:novoEndereco.num,bairro:novoEndereco.bairro,ref:novoEndereco.ref}:c));
     }
-    onSalvar({
+    await onSalvar({
       id:Date.now(),
       clienteNome:nomeEfetivo, clienteTel:telEfetivo,
       rua:endEfetivo.rua, num:endEfetivo.num,
@@ -1386,8 +1400,8 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
       )}
 
-      <Btn onClick={salvar} full disabled={!clienteSel || !empresa?.id || !telValido || semPrecoDisponivel || calcKm}>
-        ➕ Adicionar à Corrida
+      <Btn onClick={salvar} full disabled={enviando || !clienteSel || !empresa?.id || !telValido || semPrecoDisponivel || calcKm}>
+        {enviando ? "Adicionando..." : "➕ Adicionar à Corrida"}
       </Btn>
     </Overlay>
   );
@@ -1397,6 +1411,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
 function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, onRecarregar, limiteAtingido }) {
   const [tick, setTick] = useState(0);
   const [modalMapa, setModalMapa] = useState(null);
+  const adicionandoRef = useRef(false);
   const [modalAddCorrida, setModalAddCorrida] = useState(null); // {corridaId, motoboyNome, motoboyTel, vagaNum}
   const [modalEditar, setModalEditar] = useState(null); // pedido sendo editado
   const coresMotoboyRef = useRef({}); // motoboyId -> índice da cor na paleta
@@ -1465,6 +1480,17 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
   }
 
   async function adicionarPedidoCorrida(novoPedido) {
+    // Segunda trava (31/10/2026): mesmo que a janela chame duas vezes, só uma passa.
+    if (adicionandoRef.current) return;
+    adicionandoRef.current = true;
+    try {
+      await adicionarPedidoCorridaInterno(novoPedido);
+    } finally {
+      adicionandoRef.current = false;
+    }
+  }
+
+  async function adicionarPedidoCorridaInterno(novoPedido) {
     // Trava de segurança extra — igual a do publicarPedido — pra nunca deixar
     // passar um pedido a mais depois que o limite mensal já bateu, mesmo que o
     // modal tenha ficado aberto de antes do bloqueio aparecer.
@@ -1549,6 +1575,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
       forma_pagamento: novoPedido.pagamento,
       taxa: novoPedido.taxa,
       taxa_motoboy: novoPedido.taxaMotoboy || 0,
+      taxa_empresario: novoPedido.taxa || 0,
       valor_pedido: novoPedido.valorPedido,
       valor_receber: novoPedido.valorReceber,
       valor_troco: novoPedido.troco,
