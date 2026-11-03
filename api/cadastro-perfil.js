@@ -33,6 +33,7 @@ const CAMPOS_MOTOBOY = {
   bairro_base: "bairro_base",
   telefone: "telefone",
   pix: "pix",
+  tipo_celular: "tipo_celular",
 };
 
 // Campos sensíveis: SEMPRE com valor de cadastro novo, venha o que vier do navegador.
@@ -153,6 +154,12 @@ export default async function handler(req, res) {
       } else {
         registro[permitidos[campo]] = null;
       }
+    }
+    // Android/iPhone (31/10/2026): só aceita um dos dois valores; qualquer outra coisa
+    // (ou campo ausente, como em versões antigas do app) vira vazio sem recusar o cadastro.
+    if (tipo === "motoboy") {
+      const tc = typeof registro.tipo_celular === "string" ? registro.tipo_celular.trim().toLowerCase() : "";
+      registro.tipo_celular = (tc === "android" || tc === "iphone") ? tc : null;
     }
     // 3.1) Regras extras do MOTOBOY: campos obrigatórios + maioridade (18 anos).
     // Se algo falhar, apaga o usuário recém-criado (pra não sobrar conta sem perfil)
