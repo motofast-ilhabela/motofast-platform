@@ -2850,7 +2850,8 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
                   {entregue?"✅ Entregue":"❌ Cancelada"}
                 </span>
                 <div style={{textAlign:"right"}}>
-                  <div style={{color:"#fbbf24",fontWeight:900,fontSize:18}}>R${e.taxa}</div>
+                  <div style={entregue?{color:"#fbbf24",fontWeight:900,fontSize:18}:{color:"#6b7280",fontWeight:700,fontSize:16,textDecoration:"line-through"}}>R${e.taxa}</div>
+                  {!entregue && <div style={{color:"#9ca3af",fontSize:10,fontWeight:700}}>sem cobrança</div>}
                   <div style={{color:pg.cor,fontSize:11,fontWeight:700}}>{pg.icon} {pg.label}</div>
                 </div>
               </div>
