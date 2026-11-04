@@ -246,6 +246,13 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
         <div style={{textAlign:"center",marginBottom:14,paddingBottom:14,borderBottom:"1px solid #1f2937"}}>
           <div style={{color:"#6b7280",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Você vai receber</div>
           <div style={{color:"#34d399",fontWeight:900,fontSize:48,lineHeight:1}}>R${pedido.taxa}</div>
+          {(pedido.taxaRetorno>0 || pedido.taxaDeslocamento>0) && (
+            <div style={{color:"#9ca3af",fontSize:12,marginTop:6,lineHeight:1.5}}>
+              R${(Number(pedido.taxa)-Number(pedido.taxaRetorno||0)-Number(pedido.taxaDeslocamento||0)).toFixed(2).replace(".",",")} da entrega
+              {pedido.taxaDeslocamento>0 && <> + <span style={{color:"#93c5fd",fontWeight:700}}>R${Number(pedido.taxaDeslocamento).toFixed(2).replace(".",",")} de deslocamento</span></>}
+              {pedido.taxaRetorno>0 && <> + <span style={{color:"#93c5fd",fontWeight:700}}>R${Number(pedido.taxaRetorno).toFixed(2).replace(".",",")} de retorno</span></>}
+            </div>
+          )}
         </div>
 
         <div style={{marginBottom:10}}>
@@ -296,6 +303,11 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
             ) : (
               <div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>💳 Pegar a maquininha no estabelecimento</div>
             )}
+          </div>
+        )}
+        {pedido.taxaRetorno>0 && (
+          <div style={{background:"#1a2f4a",border:"1px dashed #60a5fa",borderRadius:8,padding:"8px 14px",marginTop:10,color:"#93c5fd",fontSize:12,fontWeight:700,lineHeight:1.5}}>
+            ↩️ Depois da entrega, volte ao estabelecimento para devolver {pedido.pagamento==="cartao"?"a maquininha":"o dinheiro"}. Você ganha +R${Number(pedido.taxaRetorno).toFixed(2).replace(".",",")} de retorno.
           </div>
         )}
         {pedido.pagamento==="pix" && <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"8px 12px",marginTop:10}}><div style={{color:"#34d399",fontSize:12,fontWeight:700}}>💠 Pix já pago — só entregar</div></div>}
@@ -556,6 +568,11 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                     ) : <div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>💳 Pegar a maquininha no estabelecimento</div>}
                   </div>
                 )}
+                {p.taxaRetorno>0 && (
+                  <div style={{background:"#1a2f4a",border:"1px dashed #60a5fa",borderRadius:8,padding:"8px 14px",marginBottom:10,color:"#93c5fd",fontSize:12,fontWeight:700,lineHeight:1.5}}>
+                    ↩️ Depois da entrega, volte ao estabelecimento para devolver {p.pagamento==="cartao"?"a maquininha":"o dinheiro"}. Você ganha +R${Number(p.taxaRetorno).toFixed(2).replace(".",",")} de retorno.
+                  </div>
+                )}
 
                 {!(p.chegouLojaEm || chegouLoja[p.id]) ? (
                   <>
@@ -618,6 +635,11 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                     {p.valorPedido ? (
                       <div style={{color:"#60a5fa",fontSize:13,fontWeight:900}}>💳 Cobrar R${p.valorPedido.toFixed(2)} na maquininha</div>
                     ) : <div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>💳 Cobrar na maquininha</div>}
+                  </div>
+                )}
+                {p.taxaRetorno>0 && (
+                  <div style={{background:"#1a2f4a",border:"1px dashed #60a5fa",borderRadius:8,padding:"8px 14px",marginBottom:10,color:"#93c5fd",fontSize:12,fontWeight:700,lineHeight:1.5}}>
+                    ↩️ Depois da entrega, volte ao estabelecimento para devolver {p.pagamento==="cartao"?"a maquininha":"o dinheiro"}. Você ganha +R${Number(p.taxaRetorno).toFixed(2).replace(".",",")} de retorno.
                   </div>
                 )}
                 {p.pagamento==="pix" && (
@@ -1269,6 +1291,7 @@ export default function AppMotoboy() {
                 rua: p.rua, num: p.numero,
                 bairro: p.bairro, ref: p.referencia, obs: p.observacao,
                 pagamento: p.forma_pagamento, taxa: p.taxa_motoboy || p.taxa,
+                taxaRetorno: Number(p.taxa_retorno) || 0, taxaDeslocamento: Number(p.taxa_deslocamento) || 0,
                 valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
                 criadoEm: new Date(p.criado_em).getTime(),
                 aceitoEm: p.aceito_em || null,
@@ -1499,6 +1522,7 @@ export default function AppMotoboy() {
           rua: candidato.rua, num: candidato.numero,
           bairro: candidato.bairro, ref: candidato.referencia,
           pagamento: candidato.forma_pagamento, taxa: candidato.taxa_motoboy || candidato.taxa, obs: candidato.observacao,
+          taxaRetorno: Number(candidato.taxa_retorno) || 0, taxaDeslocamento: Number(candidato.taxa_deslocamento) || 0,
           valorPedido: candidato.valor_pedido, valorReceber: candidato.valor_receber, troco: candidato.valor_troco,
           criadoEm: new Date(candidato.criado_em).getTime(),
           bloqueadoAtePrioridade: candidato._bloqueadoAtePrioridade || null,
@@ -1633,6 +1657,7 @@ export default function AppMotoboy() {
                 bairro: pedidoCompleto.bairro, ref: pedidoCompleto.referencia,
                 pagamento: pedidoCompleto.forma_pagamento,
                 taxa: pedidoCompleto.taxa_motoboy || pedidoCompleto.taxa,
+                taxaRetorno: Number(pedidoCompleto.taxa_retorno) || 0, taxaDeslocamento: Number(pedidoCompleto.taxa_deslocamento) || 0,
                 obs: pedidoCompleto.observacao,
                 valorPedido: pedidoCompleto.valor_pedido, valorReceber: pedidoCompleto.valor_receber, troco: pedidoCompleto.valor_troco,
                 criadoEm: new Date(pedidoCompleto.criado_em).getTime(),
@@ -1719,6 +1744,7 @@ export default function AppMotoboy() {
           rua: p.rua, num: p.numero,
           bairro: p.bairro, ref: p.referencia, obs: p.observacao,
           pagamento: p.forma_pagamento, taxa: p.taxa_motoboy || p.taxa,
+          taxaRetorno: Number(p.taxa_retorno) || 0, taxaDeslocamento: Number(p.taxa_deslocamento) || 0,
           valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
           criadoEm: new Date(p.criado_em).getTime(),
           // CORRIGIDO em 27/09/2026: essa função recarrega a corrida do banco

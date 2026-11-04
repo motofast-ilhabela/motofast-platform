@@ -184,6 +184,12 @@ function valorRetorno(cfg, pagamento) {
   if (!cfg) return 0;
   return (pagamento === "cartao" || pagamento === "dinheiro") ? cfg.retorno : 0;
 }
+function abrirTaxa(p) {
+  const r = Number(p?.taxaRetorno) || 0, d = Number(p?.taxaDeslocamento) || 0, c = Number(p?.taxaChamado) || 0;
+  if (!(r > 0 || d > 0)) return null;
+  const base = (Number(p.taxa) || 0) - r - d;
+  return `${fmtR(base)} entrega${d>0?" + "+fmtR(d)+" deslocamento":""}${r>0?" + "+fmtR(r)+" retorno":""}`;
+}
 const fmtR = (v) => "R$" + Number(v || 0).toFixed(2).replace(".", ",");
 
 // Bairros com preço FIXO especial, independente da distância calculada por km —
@@ -1780,6 +1786,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
               <div style={{textAlign:"right"}}>
                 <div style={{color:"#6b7280",fontSize:11}}>Taxa de entrega</div>
                 <div style={{color:"#34d399",fontWeight:900,fontSize:24}}>R${p.taxa}</div>
+                {abrirTaxa(p) && <div style={{color:"#93c5fd",fontSize:11,marginTop:2}}>{abrirTaxa(p)}</div>}
                 <div style={{marginTop:4}}><Tag label={`${pg.icon} ${pg.label}`} cor={pg.cor}/></div>
               </div>
             </div>
@@ -1958,6 +1965,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
                       <div style={{color:"#34d399",fontWeight:800,fontSize:18}}>R${p.taxa}</div>
+                      {abrirTaxa(p) && <div style={{color:"#93c5fd",fontSize:10,marginTop:2,maxWidth:150,lineHeight:1.3}}>{abrirTaxa(p)}</div>}
                       {finalizado
                         ? <Tag label="✅ Finalizado" cor="#34d399"/>
                         : <Tag label={`${pg.icon} ${pg.label}`} cor={pg.cor}/>}
@@ -3455,6 +3463,8 @@ export default function AppEmpresario() {
       pagamento: p.forma_pagamento, taxa: p.taxa,
       taxaMotoboy: p.taxa_motoboy || 0,
       taxaChamado: Number(p.taxa_chamado) || 0,
+      taxaRetorno: Number(p.taxa_retorno) || 0,
+      taxaDeslocamento: Number(p.taxa_deslocamento) || 0,
       valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
       status: p.status==="aceito"||p.status==="saiu_estabelecimento" ? "em_rota" : p.status,
       criadoEm: new Date(p.criado_em).getTime(),
