@@ -3098,14 +3098,19 @@ export default function AppEmpresario() {
   }, [avisoCancelamentoMotoboy]);
 
   const [empresa, setEmpresa] = useState({...EMPRESA, id:null}); // começa SEM id até carregar o real do Supabase
-  // Valores de retorno/deslocamento (editáveis no Admin). Recarrega a cada 2 min.
+  // Valores de retorno/deslocamento (editáveis no Admin). Recarrega a cada 20s e ao voltar pra aba.
   const [cfgTaxas, setCfgTaxas] = useState(null);
   useEffect(()=>{
     let vivo = true;
     const carregar = async () => { const c = await buscarCfgTaxas(); if (vivo) setCfgTaxas(c); };
     carregar();
-    const t = setInterval(carregar, 120000);
-    return ()=>{ vivo = false; clearInterval(t); };
+    // A cada 20s e sempre que a pessoa volta pra aba/app: assim o aviso mostra o
+    // valor atual (modo chuva ligado/desligado) quase na hora.
+    const t = setInterval(carregar, 20000);
+    const aoVoltar = () => { if (document.visibilityState === "visible") carregar(); };
+    document.addEventListener("visibilitychange", aoVoltar);
+    window.addEventListener("focus", carregar);
+    return ()=>{ vivo = false; clearInterval(t); document.removeEventListener("visibilitychange", aoVoltar); window.removeEventListener("focus", carregar); };
   }, []);
   const empresaView = { ...empresa, cfgTaxas };
   const [carregando, setCarregando] = useState(true);
