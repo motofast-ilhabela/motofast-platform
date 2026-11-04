@@ -412,7 +412,7 @@ function TurnosMotoboy({ motoboyId }) {
       </div>
 
       <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:10,padding:"10px 14px",marginBottom:14,color:"#d1d5db",fontSize:12,lineHeight:1.5}}>
-        <b style={{color:"#fbbf24"}}>Como funciona:</b> depois de reservar, você pode sair do turno por conta própria só até {Math.round((Number(cfg.cancelar_ate_min ?? 150))/60*10)/10}h antes do início; depois disso, só pelo suporte. Você fica <b>online e disponível até o fim do turno</b>. Se as suas entregas somarem menos de {fmtR(cfg.piso)}, a MotoFast completa a diferença no pagamento. Se você <b>sair do online antes do fim</b>, perde a garantia e recebe só as entregas que fez.
+        <b style={{color:"#fbbf24"}}>Como funciona:</b> depois de reservar, você pode sair do turno por conta própria só até {(() => { const t = Number(cfg.cancelar_ate_min ?? 150) || 0; const h = Math.floor(t/60), mi = t%60; return h > 0 ? (mi > 0 ? `${h}h${String(mi).padStart(2,"0")}` : `${h}h`) : `${mi} min`; })()} antes do início; depois disso, só pelo suporte. Você fica <b>online e disponível até o fim do turno</b>. Se as suas entregas somarem menos de {fmtR(cfg.piso)}, a MotoFast completa a diferença no pagamento. Se você <b>sair do online antes do fim</b>, perde a garantia e recebe só as entregas que fez.
       </div>
 
       {resumo.length === 0 && (
