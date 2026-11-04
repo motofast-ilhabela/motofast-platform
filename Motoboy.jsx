@@ -663,8 +663,29 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                   </div>
                 )}
 
-                <button onClick={()=>{
-                  if (!window.confirm(`Confirma que entregou pra ${p.clienteNome}?`)) return;
+                {/* Código de confirmação (04/11/2026): 4 últimos dígitos do WhatsApp do cliente. */}
+                {(() => {
+                  const cod4 = (p.clienteTel || "").replace(/\D/g, "").slice(-4);
+                  if (p.semCodigo) return <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,marginBottom:8}}>📦 Pedido de app (iFood) — entregue sem código.</div>;
+                  if (cod4.length === 4) return <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:8,padding:"8px 12px",marginBottom:10,color:"#fbbf24",fontSize:12,fontWeight:700}}>🔐 Ao entregar, peça ao cliente o CÓDIGO: os 4 últimos dígitos do WhatsApp dele.</div>;
+                  return null;
+                })()}
+                <button onClick={async()=>{
+                  const cod4 = (p.clienteTel || "").replace(/\D/g, "").slice(-4);
+                  let statusCodigo = null;
+                  if (!p.semCodigo && cod4.length === 4) {
+                    let ok = false;
+                    while (!ok) {
+                      const digitado = window.prompt(`Peça ao cliente ${p.clienteNome} o CÓDIGO de entrega (os 4 últimos dígitos do WhatsApp dele) e digite aqui:`, "");
+                      if (digitado === null) {
+                        if (window.confirm("Cliente não sabe o código? Você pode entregar sem ele, mas isso fica registrado. Entregar sem código?")) { statusCodigo = "pulado"; break; }
+                        continue;
+                      }
+                      if (digitado.replace(/\D/g, "") === cod4) { ok = true; statusCodigo = "confirmado"; }
+                      else alert("Código errado. Confira com o cliente e tente de novo.");
+                    }
+                  } else if (!window.confirm(`Confirma que entregou pra ${p.clienteNome}?`)) return;
+                  if (statusCodigo) { try { await supabase.from("pedidos").update({ codigo_entrega_status: statusCodigo }).eq("id", p.id); } catch (e) {} }
                   marcarEntregue(p.id);
                 }} style={{width:"100%",padding:"14px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
                   ✅ Confirmar entrega
@@ -1299,7 +1320,7 @@ export default function AppMotoboy() {
                 empresaTel: p.empresarios?.telefone || "",
                 empresaEndereco: p.empresarios?.endereco_estabelecimento || "",
                 clienteNome: p.cliente_nome,
-                clienteTel: p.cliente_telefone,
+                clienteTel: p.cliente_telefone, semCodigo: !!p.sem_codigo_entrega,
                 rua: p.rua, num: p.numero,
                 bairro: p.bairro, ref: p.referencia, obs: p.observacao,
                 pagamento: p.forma_pagamento, taxa: p.taxa_motoboy || p.taxa,
@@ -1531,7 +1552,7 @@ export default function AppMotoboy() {
           empresaTel: candidato.empresarios?.telefone || "",
           empresaEndereco: candidato.empresarios?.endereco_estabelecimento || "",
           clienteNome: candidato.cliente_nome,
-          clienteTel: candidato.cliente_telefone,
+          clienteTel: candidato.cliente_telefone, semCodigo: !!candidato.sem_codigo_entrega,
           rua: candidato.rua, num: candidato.numero,
           bairro: candidato.bairro, ref: candidato.referencia,
           pagamento: candidato.forma_pagamento, taxa: candidato.taxa_motoboy || candidato.taxa, obs: candidato.observacao,
@@ -1665,7 +1686,7 @@ export default function AppMotoboy() {
                 empresaTel: pedidoCompleto.empresarios?.telefone || "",
                 empresaEndereco: pedidoCompleto.empresarios?.endereco_estabelecimento || "",
                 clienteNome: pedidoCompleto.cliente_nome,
-                clienteTel: pedidoCompleto.cliente_telefone,
+                clienteTel: pedidoCompleto.cliente_telefone, semCodigo: !!pedidoCompleto.sem_codigo_entrega,
                 rua: pedidoCompleto.rua, num: pedidoCompleto.numero,
                 bairro: pedidoCompleto.bairro, ref: pedidoCompleto.referencia,
                 pagamento: pedidoCompleto.forma_pagamento,
@@ -1753,7 +1774,7 @@ export default function AppMotoboy() {
           empresaTel: p.empresarios?.telefone || "",
           empresaEndereco: p.empresarios?.endereco_estabelecimento || "",
           clienteNome: p.cliente_nome,
-          clienteTel: p.cliente_telefone,
+          clienteTel: p.cliente_telefone, semCodigo: !!p.sem_codigo_entrega,
           rua: p.rua, num: p.numero,
           bairro: p.bairro, ref: p.referencia, obs: p.observacao,
           pagamento: p.forma_pagamento, taxa: p.taxa_motoboy || p.taxa,

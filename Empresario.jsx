@@ -462,6 +462,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   const [clienteTel, setClienteTel] = useState("");
   const [pagamento, setPagamento] = useState("pix");
   const [obs, setObs] = useState("");
+  const [semCodigo, setSemCodigo] = useState(false);
   const [erro, setErro] = useState("");
   const [valorPedido, setValorPedido] = useState("");
   const [valorReceber, setValorReceber] = useState("");
@@ -723,7 +724,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       clienteNome:nomeEfetivo, clienteTel:telEfetivo,
       rua:endEfetivo.rua, num:endEfetivo.num,
       bairro:bairroFinal, ref:endEfetivo.ref,
-      pagamento, ...pisosTaxa(taxaKm?.e||taxa?.e||0, taxaKm?.m||taxa?.m||0), obs,
+      pagamento, ...pisosTaxa(taxaKm?.e||taxa?.e||0, taxaKm?.m||taxa?.m||0), obs, semCodigo,
       distanciaKm: distanciaKm ? parseFloat(distanciaKm) : null,
       metodoCalculoKm: metodoCalculoKm,
       valorPedido: valorPedido ? parseFloat(valorPedido) : null,
@@ -736,7 +737,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
     // Reset
     setBuscaCliente(""); setClienteSel(null); setModoEndereco("salvo");
     setNovoEndereco({rua:"",num:"",bairro:"",ref:""});
-    setClienteNome(""); setClienteTel(""); setPagamento("pix"); setObs("");
+    setClienteNome(""); setClienteTel(""); setPagamento("pix"); setObs(""); setSemCodigo(false);
     setValorPedido(""); setValorReceber(""); setErro("");
   }
 
@@ -1020,9 +1021,17 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       )}
 
       {/* Obs */}
-      {clienteSel && (
+      {clienteSel && (<>
         <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
-      )}
+        {/* Código de confirmação (04/11/2026): o motoboy pede ao cliente os 4 últimos dígitos do WhatsApp dele. Pedido de iFood/app não tem o número real do cliente, então marca aqui e sai sem código. */}
+        <label style={{display:"flex",alignItems:"flex-start",gap:8,background:"#0f172a",border:"1px solid #1f2937",borderRadius:8,padding:"9px 12px",marginTop:8,cursor:"pointer"}}>
+          <input type="checkbox" checked={semCodigo} onChange={e=>setSemCodigo(e.target.checked)} style={{marginTop:2}}/>
+          <span style={{color:"#d1d5db",fontSize:12,lineHeight:1.4}}>
+            <b>Pedido de iFood / app (cliente sem WhatsApp)</b><br/>
+            <span style={{color:"#9ca3af"}}>Marque só se o número acima NÃO é o do cliente. Se for o WhatsApp real, deixe desmarcado: o motoboy vai pedir ao cliente os 4 últimos dígitos dele como código de entrega.</span>
+          </span>
+        </label>
+      </>)}
 
       {/* Botão publicar */}
       {clienteSel && (
@@ -1058,6 +1067,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   const [clienteTel, setClienteTel] = useState("");
   const [pagamento, setPagamento] = useState("pix");
   const [obs, setObs] = useState("");
+  const [semCodigo, setSemCodigo] = useState(false);
   const [erro, setErro] = useState("");
   const [valorPedido, setValorPedido] = useState("");
   const [valorReceber, setValorReceber] = useState("");
@@ -1280,7 +1290,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       // A taxa é SEMPRE calculada pela distância real — nunca digitada na mão.
       // Se o cálculo por km falhar (endereço não localizado), cai pra reserva
       // por bairro como plano B, igual acontece na tela de Nova Entrega.
-      pagamento, ...pisosTaxa(taxaKm?.e||taxa?.e||0, taxaKm?.m||taxa?.m||0), obs,
+      pagamento, ...pisosTaxa(taxaKm?.e||taxa?.e||0, taxaKm?.m||taxa?.m||0), obs, semCodigo,
       distanciaKm: distanciaKm ? parseFloat(distanciaKm) : null,
       metodoCalculoKm: metodoCalculoKm,
       valorPedido: valorPedido ? parseFloat(valorPedido) : null,
@@ -1503,9 +1513,17 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         </Card>
       )}
 
-      {clienteSel && (
+      {clienteSel && (<>
         <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
-      )}
+        {/* Código de confirmação (04/11/2026): o motoboy pede ao cliente os 4 últimos dígitos do WhatsApp dele. Pedido de iFood/app não tem o número real do cliente, então marca aqui e sai sem código. */}
+        <label style={{display:"flex",alignItems:"flex-start",gap:8,background:"#0f172a",border:"1px solid #1f2937",borderRadius:8,padding:"9px 12px",marginTop:8,cursor:"pointer"}}>
+          <input type="checkbox" checked={semCodigo} onChange={e=>setSemCodigo(e.target.checked)} style={{marginTop:2}}/>
+          <span style={{color:"#d1d5db",fontSize:12,lineHeight:1.4}}>
+            <b>Pedido de iFood / app (cliente sem WhatsApp)</b><br/>
+            <span style={{color:"#9ca3af"}}>Marque só se o número acima NÃO é o do cliente. Se for o WhatsApp real, deixe desmarcado: o motoboy vai pedir ao cliente os 4 últimos dígitos dele como código de entrega.</span>
+          </span>
+        </label>
+      </>)}
 
       <Btn onClick={salvar} full disabled={enviando || !clienteSel || !empresa?.id || !telValido || semPrecoDisponivel || calcKm}>
         {enviando ? "Adicionando..." : "➕ Adicionar à Corrida"}
@@ -1689,6 +1707,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
       corrida_id: corridaIdReal,
       cliente_nome: novoPedido.clienteNome,
       cliente_telefone: novoPedido.clienteTel,
+      sem_codigo_entrega: !!novoPedido.semCodigo,
       rua: novoPedido.rua,
       numero: novoPedido.num,
       bairro: novoPedido.bairro,
@@ -3363,7 +3382,7 @@ export default function AppEmpresario() {
                   const existente = prev.find(x => x.id === p.id);
                   const mapeado = {
                     id: p.id,
-                    clienteNome: p.cliente_nome, clienteTel: p.cliente_telefone,
+                    clienteNome: p.cliente_nome, clienteTel: p.cliente_telefone, semCodigo: !!p.sem_codigo_entrega,
                     rua: p.rua, num: p.numero, bairro: p.bairro, ref: p.referencia, obs: p.observacao,
                     pagamento: p.forma_pagamento, taxa: p.taxa, taxaMotoboy: p.taxa_motoboy || 0,
                     valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
@@ -3555,7 +3574,7 @@ export default function AppEmpresario() {
     setPedidos(todosPedidosDB.map(p=>({
       id: p.id,
       clienteNome: p.cliente_nome,
-      clienteTel: p.cliente_telefone,
+      clienteTel: p.cliente_telefone, semCodigo: !!p.sem_codigo_entrega,
       rua: p.rua, num: p.numero,
       bairro: p.bairro, ref: p.referencia, obs: p.observacao,
       pagamento: p.forma_pagamento, taxa: p.taxa,
@@ -3748,7 +3767,7 @@ export default function AppEmpresario() {
     const baseMotoboy = Math.max(0, (Number(p.taxaMotoboy)||0) - extras);
     await publicarPedido({
       id: Date.now(),
-      clienteNome: p.clienteNome, clienteTel: p.clienteTel,
+      clienteNome: p.clienteNome, clienteTel: p.clienteTel, semCodigo: !!p.semCodigo,
       rua: p.rua, num: p.num, bairro: p.bairro, ref: p.ref, obs: p.obs,
       pagamento: p.pagamento,
       taxa: baseTaxa, taxaMotoboy: baseMotoboy,
@@ -3831,6 +3850,7 @@ export default function AppEmpresario() {
       empresario_id: empresa.id,
       cliente_nome: pedido.clienteNome,
       cliente_telefone: pedido.clienteTel,
+      sem_codigo_entrega: !!pedido.semCodigo,
       rua: pedido.rua,
       numero: pedido.num,
       bairro: pedido.bairro,
@@ -3906,7 +3926,7 @@ export default function AppEmpresario() {
       setPedidos(prev => [...prev, {
         id: pedidoDB.id,
         clienteNome: pedidoDB.cliente_nome,
-        clienteTel: pedidoDB.cliente_telefone,
+        clienteTel: pedidoDB.cliente_telefone, semCodigo: !!pedidoDB.sem_codigo_entrega,
         rua: pedidoDB.rua, num: pedidoDB.numero,
         bairro: pedidoDB.bairro, ref: pedidoDB.referencia, obs: pedidoDB.observacao,
         pagamento: pedidoDB.forma_pagamento, taxa: pedidoDB.taxa,
