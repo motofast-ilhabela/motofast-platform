@@ -821,6 +821,18 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
             {d > 0 && <div style={{color:"#93c5fd",fontSize:12,fontWeight:800}}>🏍️ + {fmtR(d)} de taxa de deslocamento{empresa?.cfgTaxas?.modoChuva ? " (dia de chuva)" : ""}</div>}
             {r > 0 && <div style={{color:"#93c5fd",fontSize:12,fontWeight:800,marginTop:d>0?4:0}}>↩️ + {fmtR(r)} de taxa de retorno ({PG[pagamento]?.label})</div>}
             <div style={{color:"#d1d5db",fontSize:12,marginTop:3,lineHeight:1.5}}>Soma 1 vez por chamada de motoboy (somada na taxa deste pedido). Se você adicionar mais pedidos nessa mesma corrida, não soma de novo.</div>
+            {(()=>{
+              if (calcKm) return null;
+              const base = pisosTaxa(taxaKm?.e||taxa?.e||0, taxaKm?.m||taxa?.m||0).taxa;
+              if (!(base > 0)) return null;
+              const ch = Number(empresa?.taxaChamado) || 0;
+              const total = base + d + r + ch;
+              return (
+                <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #2b4a73",color:"#f9fafb",fontSize:13,fontWeight:800}}>
+                  Total deste pedido: {fmtR(base)} da entrega{d>0?" + "+fmtR(d)+" deslocamento":""}{r>0?" + "+fmtR(r)+" retorno":""}{ch>0?" + "+fmtR(ch)+" chamado":""} = {fmtR(total)}
+                </div>
+              );
+            })()}
           </div>
         );
       })()}

@@ -287,9 +287,9 @@ function ConfigTaxasCard() {
     <Card style={{marginBottom:14,border:cfg.modo_chuva?"1px solid #60a5fa":undefined}}>
       <SectionTitle>🏍️ Taxas do chamado (valem para os próximos chamados)</SectionTitle>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
-        <Inp label="Retorno (cartão/dinheiro) R$" value={form.retorno} onChange={v=>setForm(f=>({...f,retorno:v}))}/>
-        <Inp label="Deslocamento normal R$" value={form.desloc} onChange={v=>setForm(f=>({...f,desloc:v}))}/>
-        <Inp label="Deslocamento na chuva R$" value={form.chuva} onChange={v=>setForm(f=>({...f,chuva:v}))}/>
+        <Inp label="Retorno cartão/dinheiro (R$)" value={form.retorno} onChange={v=>setForm(f=>({...f,retorno:v}))}/>
+        <Inp label="Deslocamento no dia normal (R$)" value={form.desloc} onChange={v=>setForm(f=>({...f,desloc:v}))}/>
+        <Inp label="Deslocamento quando chover (R$) — troca o normal, não soma" value={form.chuva} onChange={v=>setForm(f=>({...f,chuva:v}))}/>
       </div>
       <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6}}>
         <Btn onClick={()=>salvar()} disabled={busy}>{busy?"Salvando...":"💾 Salvar valores"}</Btn>
@@ -297,6 +297,7 @@ function ConfigTaxasCard() {
           {cfg.modo_chuva ? "☀️ Desligar modo chuva" : "🌧️ Ligar modo chuva"}
         </Btn>
       </div>
+      <div style={{color:"#9ca3af",fontSize:12,marginTop:8}}>É só apertar o botão: ligando a chuva, o deslocamento passa de R${fmt(cfg.taxa_deslocamento)} para R${fmt(cfg.taxa_deslocamento_chuva)} (troca, não soma); desligando, volta ao normal. Vale só para os chamados novos.</div>
       <div style={{color:cfg.modo_chuva?"#93c5fd":"#6b7280",fontSize:12,marginTop:8}}>
         {cfg.modo_chuva ? "🌧️ MODO CHUVA LIGADO: deslocamento de R$"+fmt(cfg.taxa_deslocamento_chuva)+" por chamado." : "Deslocamento atual: R$"+fmt(cfg.taxa_deslocamento)+" por chamado."} Retorno: R${fmt(cfg.taxa_retorno)} (só cartão/dinheiro, 1 vez por chamado). Açaí da Hora não paga deslocamento.
       </div>
