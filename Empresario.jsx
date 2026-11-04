@@ -232,6 +232,9 @@ function camposCancelamento(c, p) {
     taxa_chamado: 0, taxa_retorno: 0, taxa_deslocamento: 0,
   };
 }
+// Cliente de iFood/app: sem WhatsApp, o cadastro guarda a palavra "iFood" no telefone.
+const ehIfoodTel = (t) => String(t||"").trim().toLowerCase() === "ifood";
+const temWhats = (t) => !ehIfoodTel(t) && String(t||"").replace(/\D/g,"").length >= 8;
 const fmtR = (v) => "R$" + Number(v || 0).toFixed(2).replace(".", ",");
 
 // Bairros com preço FIXO especial, independente da distância calculada por km —
@@ -667,7 +670,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
   // Telefone é ESSENCIAL pro motoboy conseguir falar com o cliente na entrega —
   // nunca deixa publicar sem um telefone válido preenchido, seja de cliente salvo ou novo.
-  const telValido = !!(telEfetivo && telEfetivo.trim() && telEfetivo.trim().toLowerCase()!=="não informado" && telEfetivo.replace(/\D/g,"").length>=8);
+  const telValido = ehIfoodTel(telEfetivo) || !!(telEfetivo && telEfetivo.trim() && telEfetivo.trim().toLowerCase()!=="não informado" && telEfetivo.replace(/\D/g,"").length>=8);
   // Só bloqueia publicar quando NÃO há preço nenhum disponível — nem pela distância
   // (km falhou) nem pela reserva por bairro (também não cadastrada). Nesse caso
   // publicar deixaria o pedido com taxa R$0, o que nunca pode acontecer.
@@ -724,7 +727,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       clienteNome:nomeEfetivo, clienteTel:telEfetivo,
       rua:endEfetivo.rua, num:endEfetivo.num,
       bairro:bairroFinal, ref:endEfetivo.ref,
-      pagamento, ...pisosTaxa(taxaKm?.e||taxa?.e||0, taxaKm?.m||taxa?.m||0), obs, semCodigo,
+      pagamento, ...pisosTaxa(taxaKm?.e||taxa?.e||0, taxaKm?.m||taxa?.m||0), obs, semCodigo: semCodigo || ehIfoodTel(telEfetivo),
       distanciaKm: distanciaKm ? parseFloat(distanciaKm) : null,
       metodoCalculoKm: metodoCalculoKm,
       valorPedido: valorPedido ? parseFloat(valorPedido) : null,
@@ -775,7 +778,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
                 onMouseOver={e=>e.currentTarget.style.background="#1f2937"}
                 onMouseOut={e=>e.currentTarget.style.background="transparent"}>
                 <div style={{color:"#f9fafb",fontWeight:600,fontSize:13}}>{c.nome}</div>
-                <div style={{color:"#6b7280",fontSize:11}}>📞 {c.tel} · 📍 {c.rua}, {c.num} — {c.bairro}</div>
+                <div style={{color:"#6b7280",fontSize:11}}>{ehIfoodTel(c.tel)?"📦 iFood":"📞 "+c.tel} · 📍 {c.rua}, {c.num} — {c.bairro}</div>
               </div>
             ))}
           </div>
@@ -1025,7 +1028,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
         {/* Código de confirmação (04/11/2026): o motoboy pede ao cliente os 4 últimos dígitos do WhatsApp dele. Pedido de iFood/app não tem o número real do cliente, então marca aqui e sai sem código. */}
         <label style={{display:"flex",alignItems:"flex-start",gap:8,background:"#0f172a",border:"1px solid #1f2937",borderRadius:8,padding:"9px 12px",marginTop:8,cursor:"pointer"}}>
-          <input type="checkbox" checked={semCodigo} onChange={e=>setSemCodigo(e.target.checked)} style={{marginTop:2}}/>
+          <input type="checkbox" checked={semCodigo || ehIfoodTel(telEfetivo)} disabled={ehIfoodTel(telEfetivo)} onChange={e=>setSemCodigo(e.target.checked)} style={{marginTop:2}}/>
           <span style={{color:"#d1d5db",fontSize:12,lineHeight:1.4}}>
             <b>Pedido de iFood / app (cliente sem WhatsApp)</b><br/>
             <span style={{color:"#9ca3af"}}>Marque só se o número acima NÃO é o do cliente. Se for o WhatsApp real, deixe desmarcado: o motoboy vai pedir ao cliente os 4 últimos dígitos dele como código de entrega.</span>
@@ -1085,7 +1088,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
   // Telefone é ESSENCIAL pro motoboy conseguir falar com o cliente na entrega —
   // nunca deixa adicionar pedido à corrida sem um telefone válido preenchido.
-  const telValido = !!(telEfetivo && telEfetivo.trim() && telEfetivo.trim().toLowerCase()!=="não informado" && telEfetivo.replace(/\D/g,"").length>=8);
+  const telValido = ehIfoodTel(telEfetivo) || !!(telEfetivo && telEfetivo.trim() && telEfetivo.trim().toLowerCase()!=="não informado" && telEfetivo.replace(/\D/g,"").length>=8);
 
   // ─── TAXA POR KM ──────────────────────────────────────────────────────────────
   // MESMA lógica do "Nova Entrega" — a taxa NUNCA é digitada manualmente, sempre
@@ -1290,7 +1293,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       // A taxa é SEMPRE calculada pela distância real — nunca digitada na mão.
       // Se o cálculo por km falhar (endereço não localizado), cai pra reserva
       // por bairro como plano B, igual acontece na tela de Nova Entrega.
-      pagamento, ...pisosTaxa(taxaKm?.e||taxa?.e||0, taxaKm?.m||taxa?.m||0), obs, semCodigo,
+      pagamento, ...pisosTaxa(taxaKm?.e||taxa?.e||0, taxaKm?.m||taxa?.m||0), obs, semCodigo: semCodigo || ehIfoodTel(telEfetivo),
       distanciaKm: distanciaKm ? parseFloat(distanciaKm) : null,
       metodoCalculoKm: metodoCalculoKm,
       valorPedido: valorPedido ? parseFloat(valorPedido) : null,
@@ -1328,7 +1331,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
                 onMouseOver={e=>e.currentTarget.style.background="#1f2937"}
                 onMouseOut={e=>e.currentTarget.style.background="transparent"}>
                 <div style={{color:"#f9fafb",fontWeight:600,fontSize:13}}>{c.nome}</div>
-                <div style={{color:"#6b7280",fontSize:11}}>📞 {c.tel} · 📍 {c.rua}, {c.num} — {c.bairro}</div>
+                <div style={{color:"#6b7280",fontSize:11}}>{ehIfoodTel(c.tel)?"📦 iFood":"📞 "+c.tel} · 📍 {c.rua}, {c.num} — {c.bairro}</div>
               </div>
             ))}
           </div>
@@ -1517,7 +1520,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
         {/* Código de confirmação (04/11/2026): o motoboy pede ao cliente os 4 últimos dígitos do WhatsApp dele. Pedido de iFood/app não tem o número real do cliente, então marca aqui e sai sem código. */}
         <label style={{display:"flex",alignItems:"flex-start",gap:8,background:"#0f172a",border:"1px solid #1f2937",borderRadius:8,padding:"9px 12px",marginTop:8,cursor:"pointer"}}>
-          <input type="checkbox" checked={semCodigo} onChange={e=>setSemCodigo(e.target.checked)} style={{marginTop:2}}/>
+          <input type="checkbox" checked={semCodigo || ehIfoodTel(telEfetivo)} disabled={ehIfoodTel(telEfetivo)} onChange={e=>setSemCodigo(e.target.checked)} style={{marginTop:2}}/>
           <span style={{color:"#d1d5db",fontSize:12,lineHeight:1.4}}>
             <b>Pedido de iFood / app (cliente sem WhatsApp)</b><br/>
             <span style={{color:"#9ca3af"}}>Marque só se o número acima NÃO é o do cliente. Se for o WhatsApp real, deixe desmarcado: o motoboy vai pedir ao cliente os 4 últimos dígitos dele como código de entrega.</span>
@@ -2036,7 +2039,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                     </div>
                   </div>
                   {!finalizado && (<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>
-                  {p.clienteTel && (
+                  {temWhats(p.clienteTel) && (
                     <button onClick={()=>abrirWhatsCliente(p)} style={{flex:"1 1 auto",padding:"7px 10px",borderRadius:8,background:"#0d3d2e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,fontSize:12,cursor:"pointer"}}>
                       📲 Avisar cliente
                     </button>
@@ -2923,7 +2926,7 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
   const editCli = editId ? clientes.find(c=>c.id===editId) : null;
   // Telefone obrigatório aqui no cadastro — é o lugar certo pra essa exigência,
   // diferente da tela de Nova Entrega (onde só atrapalhava a busca do cliente).
-  const telFormValido = !!(form.tel && form.tel.trim() && form.tel.replace(/\D/g,"").length>=8);
+  const telFormValido = ehIfoodTel(form.tel) || !!(form.tel && form.tel.trim() && form.tel.replace(/\D/g,"").length>=8);
 
   function abrirEdicao(c) { setEditId(c.id); setForm({nome:c.nome,tel:c.tel,endereco:{rua:c.rua||"",num:c.num||"",bairro:c.bairro||"",ref:c.ref||"",mapa:(c.lat!=null&&c.lng!=null)?`${c.lat}, ${c.lng}`:""}}); }
 
@@ -3023,8 +3026,10 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
           <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
             <div style={{flex:1,minWidth:150}}>
               <div style={{color:"#f9fafb",fontWeight:700,fontSize:14}}>{c.nome}</div>
-              <a href={`https://wa.me/55${c.tel?.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
-                style={{color:"#34d399",textDecoration:"none",fontSize:12}}>💬 {c.tel}</a>
+              {ehIfoodTel(c.tel)
+                ? <span style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>📦 iFood / app (sem WhatsApp)</span>
+                : <a href={`https://wa.me/55${c.tel?.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                style={{color:"#34d399",textDecoration:"none",fontSize:12}}>💬 {c.tel}</a>}
             </div>
             <div style={{flex:2,minWidth:180}}>
               <div style={{color:"#d1d5db",fontSize:13}}>{c.rua}, {c.num} — <span style={{color:"#34d399"}}>{c.bairro}</span></div>
@@ -3046,7 +3051,13 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
           <OvHeader titulo="+ Cadastrar Novo Cliente" onClose={()=>setModalCad(false)}/>
           {erro && <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#f87171",fontSize:13}}>{erro}</div>}
           <Inp label="Nome completo *" value={form.nome} onChange={v=>setForm(f=>({...f,nome:v}))} placeholder="Ex: João da Silva"/>
-          <Inp label="Telefone / WhatsApp *" value={form.tel} onChange={v=>setForm(f=>({...f,tel:v}))} placeholder="(12) 99999-0000"/>
+          <label style={{display:"flex",alignItems:"center",gap:8,background:"#0f172a",border:"1px solid #1f2937",borderRadius:8,padding:"9px 12px",marginBottom:8,cursor:"pointer"}}>
+            <input type="checkbox" checked={ehIfoodTel(form.tel)} onChange={e=>setForm(f=>({...f,tel:e.target.checked?"iFood":""}))}/>
+            <span style={{color:"#d1d5db",fontSize:12,fontWeight:700}}>Cliente de iFood / app (não tenho o WhatsApp dele)</span>
+          </label>
+          {ehIfoodTel(form.tel)
+            ? <div style={{color:"#9ca3af",fontSize:12,marginBottom:8}}>📦 Sem telefone: o pedido sai sem código de entrega e o motoboy não verá botão de WhatsApp.</div>
+            : <Inp label="Telefone / WhatsApp *" value={form.tel} onChange={v=>setForm(f=>({...f,tel:v}))} placeholder="(12) 99999-0000"/>}
           {!telFormValido && form.tel && <div style={{color:"#f87171",fontSize:11,marginTop:-4,marginBottom:6}}>⚠️ Número incompleto</div>}
           <Divider/>
           <STitle>Endereço</STitle>

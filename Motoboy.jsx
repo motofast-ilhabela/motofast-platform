@@ -615,7 +615,8 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                   <div style={{color:"#34d399",fontSize:13,marginTop:2}}>{p.bairro} — Ilhabela/SP</div>
                   {p.ref && <div style={{color:"#fbbf24",fontSize:12,marginTop:3}}>📌 Ref: {p.ref}</div>}
                   {p.obs && <div style={{color:"#9ca3af",fontSize:12,marginTop:3}}>💬 {p.obs}</div>}
-                  {p.clienteTel && (
+                  {String(p.clienteTel||"").toLowerCase().trim()==="ifood" && <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,marginTop:6}}>📦 Cliente de iFood/app — sem WhatsApp. Se precisar, fale com o estabelecimento.</div>}
+                  {p.clienteTel && String(p.clienteTel).replace(/\D/g,"").length >= 8 && (
                     <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
                       <a href={`https://wa.me/55${p.clienteTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
                         style={{background:"#0a2a1e",color:"#34d399",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>💬 WhatsApp</a>
@@ -676,14 +677,14 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                 {/* Código de confirmação (04/11/2026): 4 últimos dígitos do WhatsApp do cliente. */}
                 {(() => {
                   const cod4 = (p.clienteTel || "").replace(/\D/g, "").slice(-4);
-                  if (p.semCodigo) return <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,marginBottom:8}}>📦 Pedido de app (iFood) — entregue sem código.</div>;
+                  if (p.semCodigo || String(p.clienteTel||"").toLowerCase().trim()==="ifood") return <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,marginBottom:8}}>📦 Pedido de app (iFood) — entregue sem código.</div>;
                   if (cod4.length === 4) return <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:8,padding:"8px 12px",marginBottom:10,color:"#fbbf24",fontSize:12,fontWeight:700}}>🔐 Ao entregar, peça ao cliente o CÓDIGO: os 4 últimos dígitos do WhatsApp dele.</div>;
                   return null;
                 })()}
                 <button onClick={async()=>{
                   const cod4 = (p.clienteTel || "").replace(/\D/g, "").slice(-4);
                   let statusCodigo = null;
-                  if (!p.semCodigo && cod4.length === 4) {
+                  if (!p.semCodigo && String(p.clienteTel||"").toLowerCase().trim()!=="ifood" && cod4.length === 4) {
                     let ok = false;
                     while (!ok) {
                       const digitado = window.prompt(`Peça ao cliente ${p.clienteNome} o CÓDIGO de entrega (os 4 últimos dígitos do WhatsApp dele) e digite aqui:`, "");
