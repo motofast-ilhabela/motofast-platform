@@ -921,15 +921,24 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
                   <span style={{color:"#6b7280",fontSize:12,margin:"0 6px"}}>·</span>
                   <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
                 </div>
-                {e.taxaChamado > 0 && (
-                  <div style={{color:"#fbbf24",fontSize:11,marginTop:3,fontWeight:700}}>🏍️ inclui R${Number(e.taxaChamado).toFixed(2).replace(".", ",")} de taxa de chamado</div>
-                )}
-                {e.taxaDeslocamento > 0 && (
-                  <div style={{color:"#93c5fd",fontSize:11,marginTop:3,fontWeight:700}}>🏍️ inclui R${Number(e.taxaDeslocamento).toFixed(2).replace(".", ",")} de taxa de deslocamento</div>
-                )}
-                {e.taxaRetorno > 0 && (
-                  <div style={{color:"#93c5fd",fontSize:11,marginTop:3,fontWeight:700}}>↩️ inclui R${Number(e.taxaRetorno).toFixed(2).replace(".", ",")} de taxa de retorno (devolver a maquininha/dinheiro)</div>
-                )}
+                {e.cancelamentoCobrado ? (
+                  <div style={{background:"#3d2a08",border:"1px solid #f59e0b55",borderRadius:8,padding:"6px 8px",marginTop:5,color:"#fbbf24",fontSize:11,fontWeight:700,lineHeight:1.4}}>
+                    ❌ Entrega cancelada pelo estabelecimento — você recebe a taxa de cancelamento{e.cancelamentoTipo==="total" ? " (valor inteiro da sua entrega, porque você já tinha chegado na loja ou retirado o pedido)" : " (25% da entrega: o estabelecimento cancelou antes dos 15 minutos que você tinha pra chegar)"}.
+                  </div>
+                ) : (e.taxaChamado > 0 || e.taxaDeslocamento > 0 || e.taxaRetorno > 0) && (() => {
+                  const fm = (v) => "R$" + Number(v).toFixed(2).replace(".", ",");
+                  const extras = (Number(e.taxaChamado)||0) + (Number(e.taxaDeslocamento)||0) + (Number(e.taxaRetorno)||0);
+                  const base = Math.max(0, (Number(e.taxa)||0) - extras);
+                  return (
+                    <div style={{color:"#93c5fd",fontSize:11,marginTop:3,fontWeight:700,lineHeight:1.4}}>
+                      🧾 Entrega {fm(base)}
+                      {e.taxaChamado > 0 && <> + chamado {fm(e.taxaChamado)}</>}
+                      {e.taxaDeslocamento > 0 && <> + deslocamento {fm(e.taxaDeslocamento)}</>}
+                      {e.taxaRetorno > 0 && <> + retorno (devolver maquininha/dinheiro) {fm(e.taxaRetorno)}</>}
+                      {" "}= <span style={{color:"#fbbf24"}}>{fm(e.taxa)}</span>
+                    </div>
+                  );
+                })()}
                 {(e.horaAceite || e.horaEntrega) && (
                   <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>
                     ⏱️ {e.horaAceite && (e.adicionadoCorrida ? <>entrou na corrida que você já estava fazendo</> : <>aceitou {e.horaAceite}</>)}{e.horaChegou && <> · chegou na loja {e.horaChegou}</>}{e.horaSaiu && <> · saiu {e.horaSaiu}</>}{e.horaEntrega && <> · entregou {e.horaEntrega}</>}{e.minutosEntrega!=null && <> · <b style={{color:"#d1d5db"}}>{formatarDuracao(e.minutosEntrega)}</b></>}
@@ -1315,7 +1324,7 @@ export default function AppMotoboy() {
                 pagamento: p.forma_pagamento,
                 taxa: p.taxa_motoboy || p.taxa,
                 status: (p.status==="entregue"||p.cancelamento_cobrado) ? "Entregue" : "Cancelada",
-                cancelamentoCobrado: !!p.cancelamento_cobrado,
+                cancelamentoCobrado: !!p.cancelamento_cobrado, cancelamentoTipo: p.cancelamento_tipo || null,
                 data: d.toLocaleDateString("pt-BR"),
                 dataISO: dataLocalISO(d),
                 hora: d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
