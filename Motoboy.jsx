@@ -396,7 +396,7 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
     }).eq("id", pedidoId);
   }
 
-  function marcarEntregue(pedidoId) {
+  async function marcarEntregue(pedidoId) {
     const novos = [...pedidosEntregues, pedidoId];
     setPedidosEntregues(novos);
     // Corrigido em 07/09/2026 a pedido do Alessandro: antes, o banco só era
@@ -405,11 +405,21 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
     // caminho" pro Admin, sem jeito de saber qual já foi de fato entregue
     // quando o motoboy está com várias corridas ao mesmo tempo. Agora cada
     // uma grava sozinha, na hora, assim que confirmada.
-    onEntregarItem(pedidoId);
-    const todos = corrida.pedidos.map(p=>p.id);
-    if (todos.every(id=>novos.includes(id))) {
-      setTimeout(()=>onEntregar(), 800);
-    }
+    try { await onEntregarItem(pedidoId); } catch (e) { console.error("Erro ao gravar entrega:", e); }
+    // CORRIGIDO em 04/11/2026: a decisão de "acabou a corrida?" olhava só a lista
+    // que estava na tela naquele instante. Se um pedido tinha acabado de ser
+    // adicionado à corrida pelo estabelecimento e a tela ainda não tinha
+    // recebido, a corrida inteira sumia ao entregar o primeiro. Agora confere
+    // no banco se ainda existe pedido ativo nessa corrida antes de encerrar.
+    let acabou = corrida.pedidos.map(p=>p.id).every(id=>novos.includes(id));
+    try {
+      if (corrida.id) {
+        const { data: restantes, error } = await supabase.from("pedidos")
+          .select("id").eq("corrida_id", corrida.id).in("status", ["aceito","saiu_estabelecimento"]);
+        if (!error && restantes && restantes.filter(r => r.id !== pedidoId).length > 0) acabou = false;
+      }
+    } catch (e) { /* mantém a conta local */ }
+    if (acabou) setTimeout(()=>onEntregar(), 800);
   }
 
   function abrirGPSEstab(p) {
