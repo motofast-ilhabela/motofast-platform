@@ -1584,9 +1584,51 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
   // Salva edições feitas num pedido já publicado (mesmo depois do motoboy aceitar).
   // Permite corrigir dados errados sem precisar cancelar e recriar o pedido do zero.
   async function salvarEdicaoPedido(pedidoId, dados) {
-    // A taxa (cliente e motoboy) NUNCA é tocada aqui de propósito — o empresário não
+    // A taxa da entrega em si (cliente e motoboy) NUNCA é tocada aqui de propósito — o empresário não
     // pode editar nem ver o valor do motoboy depois que o pedido já foi publicado.
+    // Única exceção (04/11/2026): a taxa de RETORNO (R$5) acompanha a forma de pagamento.
+    // Trocou de cartão/dinheiro pra Pix: tira o retorno. Trocou de Pix pra cartão/dinheiro:
+    // põe o retorno (uma vez só por corrida). Vai 100% pro motoboy, igual na criação.
+    let ajusteRetorno = {};
+    try {
+      const { data: row } = await supabase.from("pedidos")
+        .select("forma_pagamento, taxa, taxa_motoboy, taxa_empresario, taxa_retorno, corrida_id, cancelamento_cobrado")
+        .eq("id", pedidoId).maybeSingle();
+      if (row && !row.cancelamento_cobrado && row.forma_pagamento !== dados.pagamento) {
+        const rAtual = Number(row.taxa_retorno) || 0;
+        const novoTem = dados.pagamento === "cartao" || dados.pagamento === "dinheiro";
+        const baseEmp = Number(row.taxa_empresario) || Number(row.taxa) || 0;
+        if (rAtual > 0 && !novoTem) {
+          ajusteRetorno = {
+            taxa: Math.max(0, (Number(row.taxa)||0) - rAtual),
+            taxa_empresario: Math.max(0, baseEmp - rAtual),
+            taxa_motoboy: Math.max(0, (Number(row.taxa_motoboy)||0) - rAtual),
+            taxa_retorno: 0,
+          };
+        } else if (rAtual === 0 && novoTem) {
+          let jaCobrado = false;
+          if (row.corrida_id) {
+            const { data: irmaos } = await supabase.from("pedidos")
+              .select("id, taxa_retorno, status").eq("corrida_id", row.corrida_id).neq("id", pedidoId);
+            jaCobrado = (irmaos || []).some(x => x.status !== "cancelado" && Number(x.taxa_retorno) > 0);
+          }
+          if (!jaCobrado) {
+            const cfgAgora = await buscarCfgTaxas();
+            const v = valorRetorno(cfgAgora, dados.pagamento);
+            if (v > 0) {
+              ajusteRetorno = {
+                taxa: (Number(row.taxa)||0) + v,
+                taxa_empresario: baseEmp + v,
+                taxa_motoboy: (Number(row.taxa_motoboy)||0) + v,
+                taxa_retorno: v,
+              };
+            }
+          }
+        }
+      }
+    } catch (e) { console.error("Erro ao ajustar taxa de retorno na edição (segue sem ajustar):", e); }
     const { error } = await supabase.from("pedidos").update({
+      ...ajusteRetorno,
       cliente_telefone: dados.clienteTel,
       rua: dados.rua,
       numero: dados.num,
