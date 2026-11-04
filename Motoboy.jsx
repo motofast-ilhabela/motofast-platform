@@ -902,6 +902,12 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
                 {e.taxaChamado > 0 && (
                   <div style={{color:"#fbbf24",fontSize:11,marginTop:3,fontWeight:700}}>🏍️ inclui R${Number(e.taxaChamado).toFixed(2).replace(".", ",")} de taxa de chamado</div>
                 )}
+                {e.taxaDeslocamento > 0 && (
+                  <div style={{color:"#93c5fd",fontSize:11,marginTop:3,fontWeight:700}}>🏍️ inclui R${Number(e.taxaDeslocamento).toFixed(2).replace(".", ",")} de taxa de deslocamento</div>
+                )}
+                {e.taxaRetorno > 0 && (
+                  <div style={{color:"#93c5fd",fontSize:11,marginTop:3,fontWeight:700}}>↩️ inclui R${Number(e.taxaRetorno).toFixed(2).replace(".", ",")} de taxa de retorno (devolver a maquininha/dinheiro)</div>
+                )}
                 {(e.horaAceite || e.horaEntrega) && (
                   <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>
                     ⏱️ {e.horaAceite && (e.adicionadoCorrida ? <>entrou na corrida que você já estava fazendo</> : <>aceitou {e.horaAceite}</>)}{e.horaChegou && <> · chegou na loja {e.horaChegou}</>}{e.horaSaiu && <> · saiu {e.horaSaiu}</>}{e.horaEntrega && <> · entregou {e.horaEntrega}</>}{e.minutosEntrega!=null && <> · <b style={{color:"#d1d5db"}}>{formatarDuracao(e.minutosEntrega)}</b></>}
@@ -1289,6 +1295,8 @@ export default function AppMotoboy() {
                 semana: segundaFeiraDaSemana(d), mes: d.getMonth()+1,
                 repasePago: p.repasse_pago || false,
                 taxaChamado: Number(p.taxa_chamado) || 0,
+                taxaRetorno: Number(p.taxa_retorno) || 0,
+                taxaDeslocamento: Number(p.taxa_deslocamento) || 0,
                 horaAceite: horaCurta(p.aceito_em),
                 // Só texto: aceite anterior ao pedido = adicionado a uma corrida já aceita.
                 adicionadoCorrida: !!(p.aceito_em && new Date(p.aceito_em) < new Date(p.criado_em)),

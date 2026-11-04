@@ -256,6 +256,55 @@ function OvHeader({ titulo, sub, onClose }) {
   );
 }
 function Divider() { return <div style={{height:1,background:"#1f2937",margin:"12px 0"}}/>; }
+// ─── Taxas do chamado (retorno e deslocamento) — adicionado em 04/11/2026 ──────
+// Valores que o Alessandro edita a qualquer hora. "Modo chuva" troca o deslocamento
+// pelo valor de chuva em todos os chamados NOVOS (os já criados não mudam).
+function ConfigTaxasCard() {
+  const [cfg, setCfg] = useState(null);
+  const [form, setForm] = useState({ retorno:"", desloc:"", chuva:"" });
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const num = (v) => parseFloat(String(v).replace(",", "."));
+  const fmt = (v) => String(Number(v)).replace(".", ",");
+  useEffect(()=>{ (async()=>{
+    const { data, error } = await supabase.from("config_taxas").select("*").eq("id",1).maybeSingle();
+    if (error || !data) { setMsg("Não foi possível carregar as taxas (a tabela config_taxas existe?)."); return; }
+    setCfg(data);
+    setForm({ retorno: fmt(data.taxa_retorno), desloc: fmt(data.taxa_deslocamento), chuva: fmt(data.taxa_deslocamento_chuva) });
+  })(); }, []);
+  async function salvar(extra={}) {
+    const r = num(form.retorno), d = num(form.desloc), c = num(form.chuva);
+    if ([r,d,c].some(v => isNaN(v) || v < 0 || v > 50)) { setMsg("Use valores entre 0 e 50."); return; }
+    setBusy(true); setMsg("");
+    const { data, error } = await supabase.from("config_taxas")
+      .update({ taxa_retorno:r, taxa_deslocamento:d, taxa_deslocamento_chuva:c, ...extra }).eq("id",1).select().maybeSingle();
+    setBusy(false);
+    if (error || !data) { setMsg("❌ Não salvou" + (error?.message ? ": " + error.message : ".")); return; }
+    setCfg(data); setMsg("✅ Salvo. Vale para os próximos chamados.");
+  }
+  if (!cfg) return msg ? <Card style={{marginBottom:14}}><div style={{color:"#f87171",fontSize:13}}>{msg}</div></Card> : null;
+  return (
+    <Card style={{marginBottom:14,border:cfg.modo_chuva?"1px solid #60a5fa":undefined}}>
+      <SectionTitle>🏍️ Taxas do chamado (valem para os próximos chamados)</SectionTitle>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+        <Inp label="Retorno (cartão/dinheiro) R$" value={form.retorno} onChange={v=>setForm(f=>({...f,retorno:v}))}/>
+        <Inp label="Deslocamento normal R$" value={form.desloc} onChange={v=>setForm(f=>({...f,desloc:v}))}/>
+        <Inp label="Deslocamento na chuva R$" value={form.chuva} onChange={v=>setForm(f=>({...f,chuva:v}))}/>
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6}}>
+        <Btn onClick={()=>salvar()} disabled={busy}>{busy?"Salvando...":"💾 Salvar valores"}</Btn>
+        <Btn cor={cfg.modo_chuva?"amarelo":"azul"} onClick={()=>salvar({modo_chuva:!cfg.modo_chuva})} disabled={busy}>
+          {cfg.modo_chuva ? "☀️ Desligar modo chuva" : "🌧️ Ligar modo chuva"}
+        </Btn>
+      </div>
+      <div style={{color:cfg.modo_chuva?"#93c5fd":"#6b7280",fontSize:12,marginTop:8}}>
+        {cfg.modo_chuva ? "🌧️ MODO CHUVA LIGADO: deslocamento de R$"+fmt(cfg.taxa_deslocamento_chuva)+" por chamado." : "Deslocamento atual: R$"+fmt(cfg.taxa_deslocamento)+" por chamado."} Retorno: R${fmt(cfg.taxa_retorno)} (só cartão/dinheiro, 1 vez por chamado). Açaí da Hora não paga deslocamento.
+      </div>
+      {msg && <div style={{fontSize:12,marginTop:6,color:msg.startsWith("✅")?"#34d399":"#f87171"}}>{msg}</div>}
+    </Card>
+  );
+}
+
 function SectionTitle({ children }) { return <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>{children}</div>; }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
@@ -4303,7 +4352,7 @@ export default function App() {
           </div>
         )}
 
-        {aba==="dashboard" && <Dashboard historico={historico} motoboys={motoboys} empresarios={empresarios}/> }
+        {aba==="dashboard" && <><ConfigTaxasCard/><Dashboard historico={historico} motoboys={motoboys} empresarios={empresarios}/></>}
         {aba==="corridas"         && <CorridasAtivas corridasAtivas={corridasAtivas} onRecarregar={carregarTudo} motoboys={motoboys}/>}
         {aba==="repasse"          && <Repasse historico={historico} setHistorico={setHistorico} motoboys={motoboys} empresarios={empresarios}/>}
         {aba==="motoboys"         && <Motoboys motoboys={motoboys} setMotoboys={setMotoboys} historico={historico} focoBanidos={focoBanidosMb}/>}

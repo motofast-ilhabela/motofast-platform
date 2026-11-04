@@ -155,6 +155,37 @@ const PG = {
   cartao:   { label:"Cartão",   icon:"💳", cor:"#60a5fa" },
 };
 
+// ─── TAXA DE RETORNO E TAXA DE DESLOCAMENTO (04/11/2026) ──────────────────────
+// Valores vêm da tabela config_taxas (o Alessandro edita no Admin; em dia de chuva
+// liga "modo chuva" e o deslocamento sobe). Regras:
+// • Retorno (R$5): só quando o pagamento é cartão ou dinheiro (o motoboy precisa
+//   voltar pra devolver a maquininha/o dinheiro). Cobrado UMA vez por chamado.
+// • Deslocamento (R$3, R$5 na chuva): o motoboy ganha por sair. UMA vez por chamado.
+//   O Açaí da Hora não paga (empresarios.isento_deslocamento).
+// Os dois entram 100% pro motoboy (sem desconto de 20%) e somam na taxa do
+// estabelecimento, igual à taxa de chamado.
+async function buscarCfgTaxas() {
+  try {
+    const { data } = await supabase.from("config_taxas").select("*").eq("id", 1).maybeSingle();
+    if (!data) return null;
+    return {
+      retorno: Number(data.taxa_retorno) || 0,
+      deslocamento: Number(data.taxa_deslocamento) || 0,
+      deslocamentoChuva: Number(data.taxa_deslocamento_chuva) || 0,
+      modoChuva: !!data.modo_chuva,
+    };
+  } catch (e) { return null; }
+}
+function valorDeslocamento(cfg, empresa) {
+  if (!cfg || empresa?.isentoDeslocamento) return 0;
+  return cfg.modoChuva ? cfg.deslocamentoChuva : cfg.deslocamento;
+}
+function valorRetorno(cfg, pagamento) {
+  if (!cfg) return 0;
+  return (pagamento === "cartao" || pagamento === "dinheiro") ? cfg.retorno : 0;
+}
+const fmtR = (v) => "R$" + Number(v || 0).toFixed(2).replace(".", ",");
+
 // Bairros com preço FIXO especial, independente da distância calculada por km —
 // usado quando um bairro específico precisa de valor diferente do que a fórmula
 // por km daria (ex: bairro muito longe, comparação sempre sem acento/maiúscula
@@ -780,6 +811,19 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
           <div style={{color:"#d1d5db",fontSize:12,marginTop:3,lineHeight:1.5}}>Soma 1 vez por chamada de motoboy (somada na taxa deste pedido). Se você adicionar mais pedidos nessa mesma corrida, não soma de novo.</div>
         </div>
       )}
+      {/* Retorno e deslocamento (valores do Admin) */}
+      {(()=>{
+        const r = valorRetorno(empresa?.cfgTaxas, pagamento);
+        const d = valorDeslocamento(empresa?.cfgTaxas, empresa);
+        if (!(r > 0 || d > 0)) return null;
+        return (
+          <div style={{background:"#1a2f4a",border:"1px solid #60a5fa",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
+            {d > 0 && <div style={{color:"#93c5fd",fontSize:12,fontWeight:800}}>🏍️ + {fmtR(d)} de taxa de deslocamento{empresa?.cfgTaxas?.modoChuva ? " (dia de chuva)" : ""}</div>}
+            {r > 0 && <div style={{color:"#93c5fd",fontSize:12,fontWeight:800,marginTop:d>0?4:0}}>↩️ + {fmtR(r)} de taxa de retorno ({PG[pagamento]?.label})</div>}
+            <div style={{color:"#d1d5db",fontSize:12,marginTop:3,lineHeight:1.5}}>Soma 1 vez por chamada de motoboy (somada na taxa deste pedido). Se você adicionar mais pedidos nessa mesma corrida, não soma de novo.</div>
+          </div>
+        );
+      })()}
       {/* Taxa automática */}
       {taxa && (clienteSel) && (
         <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"14px 18px",marginBottom:14}}>
@@ -1561,6 +1605,21 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
       .limit(1)
       .maybeSingle();
 
+    // Retorno (04/11/2026): se este pedido é cartão/dinheiro e a corrida ainda não
+    // pagou o retorno (porque o pedido que abriu a chamada era Pix, por exemplo),
+    // cobra agora, uma vez só. Deslocamento nunca soma aqui: já foi cobrado na abertura.
+    let retornoAdicional = 0;
+    {
+      const cfgAgora = await buscarCfgTaxas();
+      const tRetorno = valorRetorno(cfgAgora, novoPedido.pagamento);
+      if (tRetorno > 0) {
+        const { data: jaCobrou } = await supabase
+          .from("pedidos").select("id")
+          .eq("corrida_id", corridaIdReal).gt("taxa_retorno", 0).limit(1);
+        if (!jaCobrou || jaCobrou.length === 0) retornoAdicional = tRetorno;
+      }
+    }
+
     const { data: pedidoDB, error: erroAdicionar } = await supabase.from("pedidos").insert({
       empresario_id: empresa.id,
       motoboy_id: novoPedido.motoboyId,
@@ -1573,9 +1632,10 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
       referencia: novoPedido.ref,
       observacao: novoPedido.obs,
       forma_pagamento: novoPedido.pagamento,
-      taxa: novoPedido.taxa,
-      taxa_motoboy: novoPedido.taxaMotoboy || 0,
-      taxa_empresario: novoPedido.taxa || 0,
+      taxa: (Number(novoPedido.taxa) || 0) + retornoAdicional,
+      taxa_motoboy: (Number(novoPedido.taxaMotoboy) || 0) + retornoAdicional,
+      taxa_empresario: (Number(novoPedido.taxa) || 0) + retornoAdicional,
+      ...(retornoAdicional > 0 ? { taxa_retorno: retornoAdicional } : {}),
       valor_pedido: novoPedido.valorPedido,
       valor_receber: novoPedido.valorReceber,
       valor_troco: novoPedido.troco,
@@ -3015,6 +3075,16 @@ export default function AppEmpresario() {
   }, [avisoCancelamentoMotoboy]);
 
   const [empresa, setEmpresa] = useState({...EMPRESA, id:null}); // começa SEM id até carregar o real do Supabase
+  // Valores de retorno/deslocamento (editáveis no Admin). Recarrega a cada 2 min.
+  const [cfgTaxas, setCfgTaxas] = useState(null);
+  useEffect(()=>{
+    let vivo = true;
+    const carregar = async () => { const c = await buscarCfgTaxas(); if (vivo) setCfgTaxas(c); };
+    carregar();
+    const t = setInterval(carregar, 120000);
+    return ()=>{ vivo = false; clearInterval(t); };
+  }, []);
+  const empresaView = { ...empresa, cfgTaxas };
   const [carregando, setCarregando] = useState(true);
   // Valor exato pendente quando a conta está bloqueada — pra mostrar na tela de
   // bloqueio, junto com o PIX, e o empresário já pagar sem precisar chamar o
@@ -3096,6 +3166,7 @@ export default function AppEmpresario() {
             enderecoTaxas: emp.endereco_taxas || "",
             // Valor fixo por chamada de motoboy (só alguns estabelecimentos têm)
             taxaChamado: Number(emp.taxa_chamado) || 0,
+            isentoDeslocamento: !!emp.isento_deslocamento,
             planoPagamento: emp.plano_pagamento,
             planoPagamentoMotoboy: emp.plano_pagamento_motoboy,
             planoGratis: emp.plano_gratis,
@@ -3256,6 +3327,7 @@ export default function AppEmpresario() {
       endereco: emp.endereco_estabelecimento || "",
       enderecoTaxas: emp.endereco_taxas || "",
       taxaChamado: Number(emp.taxa_chamado) || 0,
+      isentoDeslocamento: !!emp.isento_deslocamento,
       planoPagamento: emp.plano_pagamento,
       planoPagamentoMotoboy: emp.plano_pagamento_motoboy,
       planoGratis: emp.plano_gratis,
@@ -3563,6 +3635,24 @@ export default function AppEmpresario() {
       };
     }
 
+    // Retorno (cartão/dinheiro) e deslocamento: uma vez por chamado, no pedido que
+    // abre a chamada. Busca o valor ATUAL do banco (o Admin pode ter ligado o modo chuva).
+    {
+      const cfgAgora = await buscarCfgTaxas();
+      const tRetorno = valorRetorno(cfgAgora, pedido.pagamento);
+      const tDesloc = valorDeslocamento(cfgAgora, empresa);
+      const extras = tRetorno + tDesloc;
+      if (extras > 0) {
+        pedido = {
+          ...pedido,
+          taxa: (Number(pedido.taxa) || 0) + extras,
+          taxaMotoboy: (Number(pedido.taxaMotoboy) || 0) + extras,
+          taxaRetorno: tRetorno,
+          taxaDeslocamento: tDesloc,
+        };
+      }
+    }
+
     // Verifica se está bloqueado no banco antes de publicar
     const { data: empAtual } = await supabase
       .from("empresarios")
@@ -3610,6 +3700,8 @@ export default function AppEmpresario() {
       taxa_empresario: pedido.taxa || 0,
       // Só manda esse campo quando existe (estabelecimentos sem taxa de chamado não são afetados)
       ...(pedido.taxaChamado > 0 ? { taxa_chamado: pedido.taxaChamado } : {}),
+      ...(pedido.taxaRetorno > 0 ? { taxa_retorno: pedido.taxaRetorno } : {}),
+      ...(pedido.taxaDeslocamento > 0 ? { taxa_deslocamento: pedido.taxaDeslocamento } : {}),
       valor_pedido: pedido.valorPedido,
       valor_receber: pedido.valorReceber,
       valor_troco: pedido.troco,
@@ -3804,8 +3896,8 @@ export default function AppEmpresario() {
       <div style={{maxWidth:900,margin:"0 auto",padding:"24px 20px"}}>
         {aba==="nova"      && (limiteAtingido
           ? <BloqueioLimiteEntregas empresa={empresa}/>
-          : <SolicitarEntrega clientes={clientes} setClientes={setClientes} onPublicar={publicarPedido} empresa={empresa}/>)}
-        {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes} empresa={empresa} onRecarregar={()=>carregarPedidos(empresa.id)} limiteAtingido={limiteAtingido}/>}
+          : <SolicitarEntrega clientes={clientes} setClientes={setClientes} onPublicar={publicarPedido} empresa={empresaView}/>)}
+        {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes} empresa={empresaView} onRecarregar={()=>carregarPedidos(empresa.id)} limiteAtingido={limiteAtingido}/>}
         {aba==="historico" && <HistoricoEmp historico={historicoData} carregando={carregandoHistorico} mesSelecionado={mesHistorico} setMesSelecionado={setMesHistorico} mesesDisponiveis={gerarMesesDisponiveis()} empresa={empresa}/>}
         {aba==="clientes"  && <ClientesSalvos clientes={clientes} setClientes={setClientes} empresaId={empresa.id}/>}
       </div>
@@ -3851,6 +3943,8 @@ export default function AppEmpresario() {
                   taxa_motoboy: avisoSemMotoboy.taxaMotoboy || 0,
                   taxa_empresario: avisoSemMotoboy.taxa || 0,
                   ...(avisoSemMotoboy.taxaChamado > 0 ? { taxa_chamado: avisoSemMotoboy.taxaChamado } : {}),
+                  ...(avisoSemMotoboy.taxaRetorno > 0 ? { taxa_retorno: avisoSemMotoboy.taxaRetorno } : {}),
+                  ...(avisoSemMotoboy.taxaDeslocamento > 0 ? { taxa_deslocamento: avisoSemMotoboy.taxaDeslocamento } : {}),
                   valor_pedido: avisoSemMotoboy.valorPedido,
                   valor_receber: avisoSemMotoboy.valorReceber,
                   valor_troco: avisoSemMotoboy.troco,
