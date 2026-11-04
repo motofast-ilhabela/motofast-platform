@@ -2109,6 +2109,11 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                   }).eq("id", p.id);
                 }
                 await onRecarregar();
+                if (onRepublicar && window.confirm(cobrancas.length > 1
+                  ? "Pedidos cancelados. Quer chamar outro motoboy com os mesmos dados dos clientes?"
+                  : "Pedido cancelado. Quer chamar outro motoboy com os mesmos dados do cliente?")) {
+                  for (const { p } of cobrancas) await onRepublicar(p);
+                }
               }} style={{padding:"7px 12px",borderRadius:8,background:"transparent",border:"1px solid #ef444466",color:"#f87171",fontWeight:700,fontSize:12,cursor:"pointer"}}>
                 ❌ Cancelar todos desta corrida
               </button>
