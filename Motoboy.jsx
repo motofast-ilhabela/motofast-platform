@@ -482,7 +482,7 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                     // clica "Cheguei na loja" (o tempo de espera do pedido é outro relógio).
                     if (p.chegouLojaEm || chegouLoja[p.id]) return null;
                     const PRAZO_CHEGADA_MIN = prazoChegadaMotoboyMin();
-                    const minutosDesdeAceite = (Date.now() - aceitoEmEfetivo) / 60000;
+                    const minutosDesdeAceite = Math.max(0, (Date.now() - aceitoEmEfetivo) / 60000);
                     const dentroDoPrazo = minutosDesdeAceite < PRAZO_CHEGADA_MIN;
                     const minutosRestantes = Math.max(0, Math.ceil(PRAZO_CHEGADA_MIN - minutosDesdeAceite));
                     return (

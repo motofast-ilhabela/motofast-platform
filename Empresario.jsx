@@ -210,7 +210,7 @@ function calcularCancelamento(p, aceitoEmMs, prazoMin) {
       ? { tipo: "total", taxaCancelamento: r2(T), ganhoMotoboy: r2(M) }
       : { tipo: "nenhuma", taxaCancelamento: 0, ganhoMotoboy: 0 };
   }
-  const minDesdeAceite = (Date.now() - aceitoEmMs) / 60000;
+  const minDesdeAceite = Math.max(0, (Date.now() - aceitoEmMs) / 60000);
   return minDesdeAceite < prazoMin
     ? { tipo: "parcial", taxaCancelamento: r2(T * 0.5), ganhoMotoboy: r2(T * 0.25) }
     : { tipo: "nenhuma", taxaCancelamento: 0, ganhoMotoboy: 0 };
@@ -1947,7 +1947,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                 ? new Date(p.aceitoEm).getTime()
                 : (temposAceite.length ? Math.min(...temposAceite) : null);
               const aindaNoEstabelecimento = !finalizado && !p.saiuEstabelecimentoEm && aceitoEmEfetivo;
-              const minutosDesdeAceite = aindaNoEstabelecimento ? (Date.now() - aceitoEmEfetivo) / 60000 : 0;
+              const minutosDesdeAceite = aindaNoEstabelecimento ? Math.max(0, (Date.now() - aceitoEmEfetivo) / 60000) : 0;
               const dentroDoPrazo = minutosDesdeAceite < PRAZO_CHEGADA_MIN;
               const minutosRestantes = Math.max(0, Math.ceil(PRAZO_CHEGADA_MIN - minutosDesdeAceite));
               return (

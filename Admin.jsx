@@ -3338,7 +3338,7 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
                   const temposAceite = pedidosDaCorrida.map(x => x.aceitoEm).filter(Boolean);
                   const aceitoEmEfetivo = p.aceitoEm || (temposAceite.length ? Math.min(...temposAceite) : null);
                   const aindaNoEstabelecimento = p.status==="aceito" && aceitoEmEfetivo;
-                  const minutosDesdeAceite = aindaNoEstabelecimento ? (Date.now() - aceitoEmEfetivo) / 60000 : 0;
+                  const minutosDesdeAceite = aindaNoEstabelecimento ? Math.max(0, (Date.now() - aceitoEmEfetivo) / 60000) : 0;
                   const dentroDoPrazo = minutosDesdeAceite < PRAZO_CHEGADA_MIN;
                   const minutosRestantes = Math.max(0, Math.ceil(PRAZO_CHEGADA_MIN - minutosDesdeAceite));
                   return (
