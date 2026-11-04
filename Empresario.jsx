@@ -819,6 +819,9 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       )}
       {/* Retorno e deslocamento (valores do Admin) */}
       {(()=>{
+        // Só aparece depois que o cliente foi escolhido e a distância calculada:
+        // antes disso não existe pedido, e mostrar valor confundia o empresário.
+        if (!clienteSel || calcKm || !distanciaKm) return null;
         const r = valorRetorno(empresa?.cfgTaxas, pagamento);
         const d = valorDeslocamento(empresa?.cfgTaxas, empresa);
         if (!(r > 0 || d > 0)) return null;
