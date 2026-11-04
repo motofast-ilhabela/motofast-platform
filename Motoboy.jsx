@@ -334,6 +334,144 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
   );
 }
 
+
+// ============================================================
+// TURNOS (04/11/2026) — o motoboy reserva sozinho um turno com garantia.
+// Regra: ficar ONLINE até o fim do turno; se sair antes, perde a garantia.
+// ============================================================
+function TurnosMotoboy({ motoboyId }) {
+  const [cfg, setCfg] = useState(null);
+  const [resumo, setResumo] = useState([]);
+  const [minhas, setMinhas] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [ocupado, setOcupado] = useState(false);
+  const hoje = dataLocalISO();
+  const fim7 = (() => { const d = new Date(); d.setDate(d.getDate() + 7); return dataLocalISO(d); })();
+  const ini14 = (() => { const d = new Date(); d.setDate(d.getDate() - 14); return dataLocalISO(d); })();
+  const rotulo = (t) => t === "almoco" ? "☀️ Almoço" : "🌙 Noite";
+  const diaFmt = (iso) => new Date(iso + "T12:00:00-03:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" });
+  const fmtR = (v) => "R$" + Number(v || 0).toFixed(2).replace(".", ",");
+
+  async function carregar() {
+    const { data: c } = await supabase.from("config_turnos").select("*").eq("id", 1).maybeSingle();
+    setCfg(c || null);
+    const { data: r } = await supabase.rpc("turnos_livres_resumo", { p_ini: hoje, p_fim: fim7 });
+    setResumo(r || []);
+    if (motoboyId) {
+      const { data: m } = await supabase.from("turnos_livres_inscricoes").select("*")
+        .eq("motoboy_id", motoboyId).gte("data", ini14).order("data", { ascending: false });
+      setMinhas(m || []);
+    }
+    setCarregando(false);
+  }
+  useEffect(() => { carregar(); const t = setInterval(carregar, 30000); return () => clearInterval(t); }, [motoboyId]);
+
+  function horarios(turno) {
+    return turno === "almoco" ? [cfg.almoco_inicio, cfg.almoco_fim] : [cfg.noite_inicio, cfg.noite_fim];
+  }
+  function prazoAte(data, turno) {
+    const [ini] = horarios(turno);
+    return new Date(new Date(`${data}T${ini}:00-03:00`).getTime() - (Number(cfg.antecedencia_min) || 0) * 60000);
+  }
+
+  async function reservar(data, turno) {
+    if (ocupado) return;
+    if (!window.confirm(`Reservar o turno ${turno === "almoco" ? "do almoço" : "da noite"} de ${diaFmt(data)}?\n\nVocê precisa ficar ONLINE e disponível até o fim do turno. Se sair do online antes, perde a garantia de ${fmtR(cfg.piso)}.`)) return;
+    setOcupado(true);
+    const { error } = await supabase.from("turnos_livres_inscricoes").insert({ data, turno, motoboy_id: motoboyId });
+    setOcupado(false);
+    if (error) { alert("Não foi possível reservar: " + error.message); carregar(); return; }
+    alert("✅ Turno reservado!");
+    carregar();
+  }
+  async function cancelar(data, turno) {
+    const minha = minhas.find(m => m.data === data && m.turno === turno && !m.cancelado_em);
+    if (!minha) return;
+    if (!window.confirm("Cancelar sua reserva deste turno?")) return;
+    const { error } = await supabase.from("turnos_livres_inscricoes").update({ cancelado_em: new Date().toISOString() }).eq("id", minha.id);
+    if (error) { alert("Não foi possível cancelar: " + error.message); return; }
+    carregar();
+  }
+
+  if (carregando) return <div style={{color:"#6b7280",padding:20}}>Carregando...</div>;
+  if (!cfg) return <div style={{color:"#6b7280",padding:20}}>Turnos ainda não disponíveis.</div>;
+
+  const agora = new Date();
+  const historicoTurnos = minhas.filter(m => !m.cancelado_em && (m.fechado_em || m.data < hoje));
+
+  return (
+    <div>
+      <div style={{marginBottom:12}}>
+        <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>🗓️ Turnos com garantia</div>
+        <div style={{color:"#6b7280",fontSize:13}}>Reserve um turno e ganhe no mínimo {fmtR(cfg.piso)} por turno.</div>
+      </div>
+
+      <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:10,padding:"10px 14px",marginBottom:14,color:"#d1d5db",fontSize:12,lineHeight:1.5}}>
+        <b style={{color:"#fbbf24"}}>Como funciona:</b> você fica <b>online e disponível até o fim do turno</b>. Se as suas entregas somarem menos de {fmtR(cfg.piso)}, a MotoFast completa a diferença no pagamento. Se você <b>sair do online antes do fim</b>, perde a garantia e recebe só as entregas que fez.
+      </div>
+
+      {resumo.length === 0 && (
+        <div style={{color:"#6b7280",fontSize:14,padding:"16px 4px"}}>Nenhuma vaga aberta nos próximos dias. Volte mais tarde.</div>
+      )}
+
+      {resumo.map(r => {
+        const [ini, fim] = horarios(r.turno);
+        const livres = Math.max(0, r.vagas - r.ocupadas);
+        const prazo = prazoAte(r.data, r.turno);
+        const encerrado = agora > prazo;
+        return (
+          <div key={r.data + r.turno} style={{background:"#111827",border:`1px solid ${r.reservado_por_mim?"#34d399":"#1f2937"}`,borderRadius:12,padding:"14px 16px",marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+              <div>
+                <div style={{color:"#f9fafb",fontWeight:800,fontSize:15,textTransform:"capitalize"}}>{diaFmt(r.data)}</div>
+                <div style={{color:"#9ca3af",fontSize:13,marginTop:2}}>{rotulo(r.turno)} · {ini} às {fim}</div>
+                <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>
+                  {livres > 0 ? `${livres} vaga${livres>1?"s":""} livre${livres>1?"s":""}` : "Sem vagas"} · reservas até {prazo.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}
+                </div>
+              </div>
+              <div>
+                {r.reservado_por_mim ? (
+                  <div style={{textAlign:"right"}}>
+                    <div style={{color:"#34d399",fontWeight:800,fontSize:13,marginBottom:4}}>✅ Reservado</div>
+                    {!encerrado && <Btn small cor="cinza" onClick={() => cancelar(r.data, r.turno)}>Cancelar</Btn>}
+                  </div>
+                ) : encerrado ? (
+                  <span style={{color:"#6b7280",fontSize:12,fontWeight:700}}>Reservas encerradas</span>
+                ) : livres > 0 ? (
+                  <Btn onClick={() => reservar(r.data, r.turno)} disabled={ocupado}>Reservar</Btn>
+                ) : (
+                  <span style={{color:"#f87171",fontSize:12,fontWeight:700}}>Cheio</span>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {historicoTurnos.length > 0 && (
+        <div style={{marginTop:20}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Meus turnos anteriores</div>
+          {historicoTurnos.map(m => {
+            const completar = Number(m.valor_completar) || 0;
+            return (
+              <div key={m.id} style={{background:"#111827",border:"1px solid #1f2937",borderRadius:10,padding:"10px 14px",marginBottom:8}}>
+                <div style={{color:"#f9fafb",fontWeight:700,fontSize:13,textTransform:"capitalize"}}>{diaFmt(m.data)} · {rotulo(m.turno)}</div>
+                {m.perdeu_garantia
+                  ? <div style={{color:"#f87171",fontSize:12,marginTop:3}}>Você saiu do online antes do fim — sem garantia neste turno.</div>
+                  : m.fechado_em
+                    ? <div style={{color:"#34d399",fontSize:12,marginTop:3}}>
+                        ✅ Turno cumprido · entregas {fmtR(m.ganho_entregas)}{completar > 0 ? ` · a MotoFast completa ${fmtR(completar)}` : " · você bateu a meta"}
+                      </div>
+                    : <div style={{color:"#6b7280",fontSize:12,marginTop:3}}>Calculando o resultado…</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCancelarItem }) {
   const [pedidosEntregues, setPedidosEntregues] = useState([]);
   const [saiuEstab, setSaiuEstab] = useState({});
@@ -2190,6 +2328,7 @@ export default function AppMotoboy() {
     {id:"home",   label:"🏠 Início"},
     {id:"corrida",label:"🏍️ Corrida", badge:corridaAtiva?1:0},
     {id:"cancelados", label:"❌ Cancelados", badge:naoVistosCancelados},
+    {id:"turnos", label:"🗓️ Turnos"},
     {id:"ganhos", label:"💰 Ganhos"},
   ];
 
@@ -2471,6 +2610,7 @@ export default function AppMotoboy() {
             </div>
           );
         })()}
+        {aba==="turnos" && <TurnosMotoboy motoboyId={motoboyId}/>}
         {aba==="ganhos" && <Ganhos historico={historico} motoboyId={motoboyId} todosHistorico={historico} rankingGeral={rankingGeral} motoboy={motoboy}/>}
       </div>
 

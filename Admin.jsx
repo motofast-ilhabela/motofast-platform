@@ -3450,6 +3450,201 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
 //   dá pra comparar mês a mês, ano a ano, pra sempre.
 const PISO_SEMANAL_PADRAO = 455; // R$65/dia — ajustável aqui se o valor combinado mudar
 
+
+// ============================================================
+// TURNOS LIVRES (04/11/2026) — garantia de R$53 por turno, vagas liberadas por dia.
+// Tabelas: config_turnos (1 linha), turnos_livres_vagas (data+turno), turnos_livres_inscricoes.
+// O fechamento roda sozinho de madrugada (função fechar_turnos_livres, via pg_cron).
+// ============================================================
+function TurnosLivres({ motoboys }) {
+  const [cfg, setCfg] = useState(null);
+  const [vagas, setVagas] = useState({});
+  const [insc, setInsc] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [addSel, setAddSel] = useState({});
+  const hoje = dataLocalISO();
+  const nomeDe = (id) => (motoboys.find(m => m.id === id)?.nomeCompleto) || "Motoboy";
+  const rotulo = (t) => t === "almoco" ? "☀️ Almoço" : "🌙 Noite";
+  const diaFmt = (iso) => {
+    const d = new Date(iso + "T12:00:00-03:00");
+    return d.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
+  };
+  const dias = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() + i); return dataLocalISO(d);
+  });
+
+  async function carregar() {
+    const { data: c } = await supabase.from("config_turnos").select("*").eq("id", 1).maybeSingle();
+    setCfg(c || null);
+    const { data: v } = await supabase.from("turnos_livres_vagas").select("*").gte("data", hoje);
+    const mapa = {}; (v || []).forEach(x => { mapa[x.data + "|" + x.turno] = x.vagas; });
+    setVagas(mapa);
+    const ini = new Date(); ini.setDate(ini.getDate() - 35);
+    const { data: i } = await supabase.from("turnos_livres_inscricoes").select("*")
+      .gte("data", dataLocalISO(ini)).order("data", { ascending: false });
+    setInsc(i || []);
+    setCarregando(false);
+  }
+  useEffect(() => { carregar(); }, []);
+
+  async function salvarCfg() {
+    const { error } = await supabase.from("config_turnos").update({
+      piso: Number(cfg.piso) || 0,
+      almoco_inicio: cfg.almoco_inicio, almoco_fim: cfg.almoco_fim,
+      noite_inicio: cfg.noite_inicio, noite_fim: cfg.noite_fim,
+      antecedencia_min: Number(cfg.antecedencia_min) || 0,
+    }).eq("id", 1);
+    if (error) { alert("Erro ao salvar: " + error.message); return; }
+    alert("✅ Configuração dos turnos salva.");
+  }
+  async function mudarVagas(data, turno, n) {
+    const { error } = await supabase.from("turnos_livres_vagas").upsert({ data, turno, vagas: Number(n) }, { onConflict: "data,turno" });
+    if (error) { alert("Erro: " + error.message); return; }
+    setVagas(p => ({ ...p, [data + "|" + turno]: Number(n) }));
+  }
+  async function adicionar(data, turno) {
+    const key = data + "|" + turno;
+    const id = addSel[key];
+    if (!id) return;
+    const { error } = await supabase.from("turnos_livres_inscricoes").insert({ data, turno, motoboy_id: id });
+    if (error) { alert("Erro: " + error.message); return; }
+    setAddSel(p => ({ ...p, [key]: "" }));
+    carregar();
+  }
+  async function removerReserva(id) {
+    if (!window.confirm("Remover esta reserva?")) return;
+    await supabase.from("turnos_livres_inscricoes").update({ cancelado_em: new Date().toISOString() }).eq("id", id);
+    carregar();
+  }
+  async function restaurarGarantia(i) {
+    if (!window.confirm("Restaurar a garantia deste motoboy neste turno?")) return;
+    const falta = i.fechado_em ? Math.max(0, (Number(i.piso) || 0) - (Number(i.ganho_entregas) || 0)) : null;
+    await supabase.from("turnos_livres_inscricoes").update({
+      perdeu_garantia: false, saiu_offline_em: null,
+      ...(falta !== null ? { valor_completar: falta } : {}),
+    }).eq("id", i.id);
+    carregar();
+  }
+  async function marcarPago(i, pago) {
+    await supabase.from("turnos_livres_inscricoes").update({ pago }).eq("id", i.id);
+    carregar();
+  }
+
+  if (carregando) return <div style={{color:"#6b7280",padding:20}}>Carregando...</div>;
+  if (!cfg) return <div style={{color:"#f87171",padding:20}}>Não achei a configuração dos turnos. Rode o SQL dos turnos livres no Supabase.</div>;
+
+  const ativas = insc.filter(i => !i.cancelado_em);
+  const passados = ativas.filter(i => i.data < hoje || i.fechado_em);
+  const totalCompletar = +passados.filter(i => i.fechado_em && !i.pago).reduce((s, i) => s + (Number(i.valor_completar) || 0), 0).toFixed(2);
+  const campo = { background:"#111827", border:"1px solid #374151", borderRadius:8, color:"#f9fafb", padding:"8px 10px", fontSize:13, width:"100%", boxSizing:"border-box" };
+  const fmtH = (ts) => ts ? new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
+
+  return (
+    <div>
+      <div style={{marginBottom:16}}>
+        <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>🗓️ Turnos Livres — Garantia por turno</div>
+        <div style={{color:"#6b7280",fontSize:13}}>Você libera as vagas de cada dia; o motoboy reserva sozinho. Ficou online até o fim = garantia de R${Number(cfg.piso).toFixed(2).replace(".", ",")}.</div>
+      </div>
+
+      <Card style={{marginBottom:16,background:"#0f172a"}}>
+        <SectionTitle>⚙️ Valores e horários</SectionTitle>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10}}>
+          {[
+            ["Garantia (R$)","piso","number"],["Almoço começa","almoco_inicio","text"],["Almoço termina","almoco_fim","text"],
+            ["Noite começa","noite_inicio","text"],["Noite termina","noite_fim","text"],["Reservar até (min antes)","antecedencia_min","number"],
+          ].map(([rot, k, tp]) => (
+            <div key={k}>
+              <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:3}}>{rot}</div>
+              <input type={tp} value={cfg[k] ?? ""} onChange={e => setCfg(c => ({ ...c, [k]: e.target.value }))} style={campo} placeholder={tp==="text"?"hh:mm":""}/>
+            </div>
+          ))}
+        </div>
+        <div style={{marginTop:10}}><Btn onClick={salvarCfg}>💾 Salvar</Btn></div>
+      </Card>
+
+      <SectionTitle>Próximos dias — escolha quantas vagas abrir (0 = fechado)</SectionTitle>
+      {dias.map(data => (
+        <Card key={data} style={{marginBottom:10}}>
+          <div style={{color:"#f9fafb",fontWeight:800,fontSize:14,marginBottom:8,textTransform:"capitalize"}}>{diaFmt(data)}{data===hoje?" · hoje":""}</div>
+          {["almoco","noite"].map(turno => {
+            const key = data + "|" + turno;
+            const n = vagas[key] || 0;
+            const reservas = ativas.filter(i => i.data === data && i.turno === turno && !i.cancelado_em);
+            const jaIds = new Set(reservas.map(r => r.motoboy_id));
+            return (
+              <div key={turno} style={{borderTop:"1px solid #1f2937",padding:"8px 0"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <div style={{color:"#d1d5db",fontWeight:700,fontSize:13,minWidth:130}}>
+                    {rotulo(turno)} <span style={{color:"#6b7280",fontWeight:600}}>{turno==="almoco"?`${cfg.almoco_inicio}–${cfg.almoco_fim}`:`${cfg.noite_inicio}–${cfg.noite_fim}`}</span>
+                  </div>
+                  <select value={n} onChange={e => mudarVagas(data, turno, e.target.value)} style={{...campo,width:"auto"}}>
+                    {[0,1,2,3,4,5].map(x => <option key={x} value={x}>{x===0?"Fechado":`${x} vaga${x>1?"s":""}`}</option>)}
+                  </select>
+                  <div style={{color:"#6b7280",fontSize:12}}>{reservas.length}/{n} reservada{reservas.length!==1?"s":""}</div>
+                </div>
+                {reservas.map(r => (
+                  <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,marginTop:6,color:"#34d399",fontSize:13,fontWeight:600}}>
+                    🏍️ {nomeDe(r.motoboy_id)}
+                    <button onClick={() => removerReserva(r.id)} style={{background:"transparent",border:"1px solid #ef444466",color:"#f87171",borderRadius:6,fontSize:11,cursor:"pointer",padding:"2px 8px"}}>remover</button>
+                  </div>
+                ))}
+                <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
+                  <select value={addSel[key] || ""} onChange={e => setAddSel(p => ({ ...p, [key]: e.target.value }))} style={{...campo,width:"auto",flex:"1 1 160px"}}>
+                    <option value="">Colocar um motoboy aqui...</option>
+                    {motoboys.filter(m => !m.banido && !jaIds.has(m.id)).map(m => <option key={m.id} value={m.id}>{m.nomeCompleto}</option>)}
+                  </select>
+                  <Btn small onClick={() => adicionar(data, turno)} disabled={!addSel[key]}>+ Colocar</Btn>
+                </div>
+              </div>
+            );
+          })}
+        </Card>
+      ))}
+
+      <div style={{marginTop:22}}>
+        <SectionTitle>💰 Quem trabalhou — para pagar na terça</SectionTitle>
+        <Card style={{marginBottom:12,background:"#0f172a"}}>
+          <div style={{color:"#9ca3af",fontSize:12}}>Total a completar (ainda não pago)</div>
+          <div style={{color:"#fbbf24",fontWeight:900,fontSize:26}}>R${totalCompletar.toFixed(2).replace(".", ",")}</div>
+          <div style={{color:"#6b7280",fontSize:11,marginTop:2}}>Só soma turnos já fechados. O fechamento roda sozinho de madrugada, depois que o turno acaba.</div>
+        </Card>
+        {passados.length === 0 && <div style={{color:"#6b7280",fontSize:13}}>Ainda não há turnos encerrados.</div>}
+        {passados.map(i => {
+          const fechado = !!i.fechado_em;
+          const completar = Number(i.valor_completar) || 0;
+          return (
+            <Card key={i.id} style={{marginBottom:8,padding:"12px 14px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+                <div>
+                  <div style={{color:"#f9fafb",fontWeight:800,fontSize:14}}>🏍️ {nomeDe(i.motoboy_id)}</div>
+                  <div style={{color:"#9ca3af",fontSize:12,textTransform:"capitalize"}}>{diaFmt(i.data)} · {rotulo(i.turno)}</div>
+                  {i.perdeu_garantia
+                    ? <div style={{color:"#f87171",fontSize:12,fontWeight:700,marginTop:3}}>⚠️ Saiu do online{i.saiu_offline_em?` às ${fmtH(i.saiu_offline_em)}`:""} — perdeu a garantia (recebe só as entregas)</div>
+                    : <div style={{color:"#34d399",fontSize:12,fontWeight:700,marginTop:3}}>✅ Ficou online até o fim</div>}
+                </div>
+                <div style={{textAlign:"right"}}>
+                  {fechado ? (<>
+                    <div style={{color:"#9ca3af",fontSize:12}}>Fez em entregas: <b style={{color:"#f9fafb"}}>R${(Number(i.ganho_entregas)||0).toFixed(2).replace(".", ",")}</b></div>
+                    {completar > 0
+                      ? <div style={{color:"#fbbf24",fontWeight:900,fontSize:16}}>Completar R${completar.toFixed(2).replace(".", ",")}</div>
+                      : <div style={{color:"#34d399",fontWeight:800,fontSize:13}}>{i.perdeu_garantia ? "Nada a completar" : "Bateu a meta — nada a completar"}</div>}
+                  </>) : <div style={{color:"#6b7280",fontSize:12}}>Fecha de madrugada</div>}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+                {i.perdeu_garantia && <Btn small cor="cinza" onClick={() => restaurarGarantia(i)}>Restaurar garantia</Btn>}
+                {fechado && completar > 0 && (
+                  <Btn small cor={i.pago?"cinza":"verde"} onClick={() => marcarPago(i, !i.pago)}>{i.pago ? "✅ Pago (desfazer)" : "Marcar como pago"}</Btn>
+                )}
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function TurnoFixo({ motoboys, historico }) {
   const [turnoFixo, setTurnoFixo] = useState([]);
   const [fechamentos, setFechamentos] = useState([]);
@@ -4179,6 +4374,7 @@ export default function App() {
     {id:"repasse",label:"💰 Repasse"},
     {id:"motoboys",label:"🏍️ Motoboys"},
     {id:"turnofixo",label:"🔒 Turno Fixo"},
+    {id:"turnoslivres",label:"🗓️ Turnos"},
     {id:"estabelecimentos",label:"🏪 Estabelecimentos"},
     {id:"clientes",label:"👤 Clientes"},
     {id:"historico",label:"📋 Histórico"},
@@ -4370,6 +4566,7 @@ export default function App() {
         {aba==="repasse"          && <Repasse historico={historico} setHistorico={setHistorico} motoboys={motoboys} empresarios={empresarios}/>}
         {aba==="motoboys"         && <Motoboys motoboys={motoboys} setMotoboys={setMotoboys} historico={historico} focoBanidos={focoBanidosMb}/>}
         {aba==="turnofixo"        && <TurnoFixo motoboys={motoboys} historico={historico}/>}
+        {aba==="turnoslivres"     && <TurnosLivres motoboys={motoboys}/>}
         {aba==="estabelecimentos" && <Estabelecimentos empresarios={empresarios} setEmpresarios={setEmpresarios} historico={historico} motoboys={motoboys} onRecarregar={carregarTudo} focoBloqueados={focoBloqueadosEstab}/>}
         {aba==="clientes"         && <Clientes clientes={clientes} setClientes={setClientes} historico={historico} empresarios={empresarios}/>}
         {aba==="historico"        && <Historico historico={historico} motoboys={motoboys} empresarios={empresarios}/>}
