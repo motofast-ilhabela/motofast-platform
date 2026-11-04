@@ -1639,12 +1639,18 @@ export default function AppMotoboy() {
         // específico consegue ver ele agora — todo mundo mais espera a
         // janela passar sozinha (o próprio pedido libera geral depois,
         // sem precisar de nada especial, só o tempo passar).
-        const { data: meuTurnoFixo } = await supabase
-          .from("motoboys_turno_fixo")
-          .select("turno")
+        // Atualizado em 04/11/2026: o Turno Fixo antigo foi substituído pelos Turnos
+        // livres. A prioridade agora vale pra quem tem reserva ativa no turno (e não
+        // saiu do online). O pedido carrega a chave 'livre|AAAA-MM-DD|turno'.
+        const ontemISO = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return dataLocalISO(d); })();
+        const { data: minhasReservas } = await supabase
+          .from("turnos_livres_inscricoes")
+          .select("data, turno")
           .eq("motoboy_id", motoboyId)
-          .eq("ativo", true);
-        const meusTurnos = new Set((meuTurnoFixo || []).map(t => t.turno));
+          .is("cancelado_em", null)
+          .eq("perdeu_garantia", false)
+          .gte("data", ontemISO);
+        const meusTurnos = new Set((minhasReservas || []).map(t => `livre|${t.data}|${t.turno}`));
 
         // ─── PRIORIDADE GARANTIDA (B2B) — adicionada em 30/08/2026 ───
         // Entre os pedidos que EU já poderia ver (passou pela checagem do

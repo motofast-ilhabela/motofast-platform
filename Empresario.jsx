@@ -333,29 +333,23 @@ async function calcularPrioridade() {
     }
   }
 
-  // Sem janela por horário ativa agora — cai pro Turno Fixo normal, igual sempre foi
-  const turno = turnoAtual();
-  let idsOnlineTurnoFixo = [];
-  if (turno) {
-    const { data: turnoFixoDB } = await supabase.from("motoboys_turno_fixo").select("motoboy_id").eq("turno", turno).eq("ativo", true);
-    const idsTurnoFixo = (turnoFixoDB || []).map(t => t.motoboy_id);
-    if (idsTurnoFixo.length > 0) {
-      const { data: onlineDB } = await supabase.from("motoboys").select("id").in("id", idsTurnoFixo).eq("online", true).eq("ativo", true).eq("banido", false).eq("bloqueado", false);
-      const idsOnlineBrutos = (onlineDB || []).map(m => m.id);
-      let idsOcupados = [];
-      if (idsOnlineBrutos.length > 0) {
-        const { data: ocupadosDB } = await supabase.from("pedidos").select("motoboy_id").in("motoboy_id", idsOnlineBrutos).in("status", ["aceito", "saiu_estabelecimento"]);
-        idsOcupados = (ocupadosDB || []).map(p => p.motoboy_id);
-      }
-      idsOnlineTurnoFixo = idsOnlineBrutos.filter(id => !idsOcupados.includes(id));
-    }
-  }
-  const temPrioridade = idsOnlineTurnoFixo.length > 0;
+  // Sem janela por horário ativa agora — cai pra prioridade dos Turnos livres
+  // (substituiu o Turno Fixo em 04/11/2026): quem tem reserva ativa no turno que
+  // está rodando agora, está online e livre (sem corrida) tem 20s de prioridade.
+  // Se ninguém do turno estiver livre, o pedido vai direto pra rede.
+  let idsTurno = [];
+  let chaveTurno = null;
+  try {
+    const { data: prioDB } = await supabase.rpc("turnos_livres_prioridade");
+    idsTurno = (prioDB || []).map(r => r.motoboy_id);
+    chaveTurno = (prioDB && prioDB[0]) ? prioDB[0].chave : null;
+  } catch (e) { console.error("Erro ao consultar prioridade dos turnos:", e); }
+  const temPrioridade = idsTurno.length > 0 && !!chaveTurno;
   return {
     prioridadeAte: temPrioridade ? new Date(Date.now() + 20000).toISOString() : null,
-    turnoPrioridade: temPrioridade ? turno : null,
+    turnoPrioridade: temPrioridade ? chaveTurno : null,
     motoboyIdPrioridade: null,
-    idsParaNotificar: idsOnlineTurnoFixo,
+    idsParaNotificar: temPrioridade ? idsTurno : [],
   };
 }
 

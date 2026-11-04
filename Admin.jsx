@@ -4373,7 +4373,6 @@ export default function App() {
     {id:"pendentes",label:"⏳ Pendentes", badge: pendentes.motoboys.length + pendentes.empresarios.length},
     {id:"repasse",label:"💰 Repasse"},
     {id:"motoboys",label:"🏍️ Motoboys"},
-    {id:"turnofixo",label:"🔒 Turno Fixo"},
     {id:"turnoslivres",label:"🗓️ Turnos"},
     {id:"estabelecimentos",label:"🏪 Estabelecimentos"},
     {id:"clientes",label:"👤 Clientes"},
@@ -4565,7 +4564,6 @@ export default function App() {
         {aba==="corridas"         && <CorridasAtivas corridasAtivas={corridasAtivas} onRecarregar={carregarTudo} motoboys={motoboys}/>}
         {aba==="repasse"          && <Repasse historico={historico} setHistorico={setHistorico} motoboys={motoboys} empresarios={empresarios}/>}
         {aba==="motoboys"         && <Motoboys motoboys={motoboys} setMotoboys={setMotoboys} historico={historico} focoBanidos={focoBanidosMb}/>}
-        {aba==="turnofixo"        && <TurnoFixo motoboys={motoboys} historico={historico}/>}
         {aba==="turnoslivres"     && <TurnosLivres motoboys={motoboys}/>}
         {aba==="estabelecimentos" && <Estabelecimentos empresarios={empresarios} setEmpresarios={setEmpresarios} historico={historico} motoboys={motoboys} onRecarregar={carregarTudo} focoBloqueados={focoBloqueadosEstab}/>}
         {aba==="clientes"         && <Clientes clientes={clientes} setClientes={setClientes} historico={historico} empresarios={empresarios}/>}
