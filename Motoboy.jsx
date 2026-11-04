@@ -1377,6 +1377,17 @@ export default function AppMotoboy() {
   // consegue abrir a aba "Cancelados" depois e ver o que aconteceu.
   const [canceladosMes, setCanceladosMes] = useState([]);
   const [naoVistosCancelados, setNaoVistosCancelados] = useState(0);
+  const alarmeCancelamentoRef = useRef(null);
+  const avisadosCancelamentoRef = useRef(new Set());
+
+  // Zera o número vermelho assim que o motoboy entra na aba de Cancelados —
+  // a lista continua toda lá dentro, organizada por dia, com a contagem
+  // certa de cada dia (isso não apaga nada, só o "aviso de novo").
+  useEffect(() => {
+    if (aba === "cancelados") setNaoVistosCancelados(0);
+  }, [aba]);
+  const [motoboyId, setMotoboyId] = useState(null);
+
   // Turnos abertos (04/11/2026): alimenta a bolinha da aba Turnos e o cartão do Início.
   const [turnosAbertos, setTurnosAbertos] = useState(0);
   useEffect(()=>{
@@ -1402,16 +1413,6 @@ export default function AppMotoboy() {
     const t = setInterval(ver, 30000);
     return () => { vivo = false; clearInterval(t); };
   },[motoboyId]);
-  const alarmeCancelamentoRef = useRef(null);
-  const avisadosCancelamentoRef = useRef(new Set());
-
-  // Zera o número vermelho assim que o motoboy entra na aba de Cancelados —
-  // a lista continua toda lá dentro, organizada por dia, com a contagem
-  // certa de cada dia (isso não apaga nada, só o "aviso de novo").
-  useEffect(() => {
-    if (aba === "cancelados") setNaoVistosCancelados(0);
-  }, [aba]);
-  const [motoboyId, setMotoboyId] = useState(null);
   const [motoboy, setMotoboy] = useState(MOTOBOY_VAZIO);
   const [rankingGeral, setRankingGeral] = useState([]);
   const [carregando, setCarregando] = useState(true);
