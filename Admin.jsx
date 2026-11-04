@@ -3485,7 +3485,7 @@ function TurnosLivres({ motoboys }) {
     setInsc(i || []);
     setCarregando(false);
   }
-  useEffect(() => { carregar(); }, []);
+  useEffect(() => { carregar(); const t = setInterval(carregar, 15000); return () => clearInterval(t); }, []);
 
   async function salvarCfg() {
     const { error } = await supabase.from("config_turnos").update({
@@ -3493,6 +3493,7 @@ function TurnosLivres({ motoboys }) {
       almoco_inicio: cfg.almoco_inicio, almoco_fim: cfg.almoco_fim,
       noite_inicio: cfg.noite_inicio, noite_fim: cfg.noite_fim,
       antecedencia_min: Number(cfg.antecedencia_min) || 0,
+      cancelar_ate_min: Number(cfg.cancelar_ate_min) || 0,
     }).eq("id", 1);
     if (error) { alert("Erro ao salvar: " + error.message); return; }
     alert("✅ Configuração dos turnos salva.");
@@ -3502,9 +3503,8 @@ function TurnosLivres({ motoboys }) {
     if (error) { alert("Erro: " + error.message); return; }
     setVagas(p => ({ ...p, [data + "|" + turno]: Number(n) }));
   }
-  async function adicionar(data, turno) {
+  async function adicionar(data, turno, id) {
     const key = data + "|" + turno;
-    const id = addSel[key];
     if (!id) return;
     const { error } = await supabase.from("turnos_livres_inscricoes").insert({ data, turno, motoboy_id: id });
     if (error) { alert("Erro: " + error.message); return; }
@@ -3551,7 +3551,7 @@ function TurnosLivres({ motoboys }) {
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10}}>
           {[
             ["Garantia (R$)","piso","number"],["Almoço começa","almoco_inicio","text"],["Almoço termina","almoco_fim","text"],
-            ["Noite começa","noite_inicio","text"],["Noite termina","noite_fim","text"],["Reservar até (min antes)","antecedencia_min","number"],
+            ["Noite começa","noite_inicio","text"],["Noite termina","noite_fim","text"],["Reservar até (min antes)","antecedencia_min","number"],["Sair do turno até (min antes)","cancelar_ate_min","number"],
           ].map(([rot, k, tp]) => (
             <div key={k}>
               <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:3}}>{rot}</div>
@@ -3588,12 +3588,22 @@ function TurnosLivres({ motoboys }) {
                     <button onClick={() => removerReserva(r.id)} style={{background:"transparent",border:"1px solid #ef444466",color:"#f87171",borderRadius:6,fontSize:11,cursor:"pointer",padding:"2px 8px"}}>remover</button>
                   </div>
                 ))}
-                <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
-                  <select value={addSel[key] || ""} onChange={e => setAddSel(p => ({ ...p, [key]: e.target.value }))} style={{...campo,width:"auto",flex:"1 1 160px"}}>
-                    <option value="">Colocar um motoboy aqui...</option>
-                    {motoboys.filter(m => !m.banido && !jaIds.has(m.id)).map(m => <option key={m.id} value={m.id}>{m.nomeCompleto}</option>)}
-                  </select>
-                  <Btn small onClick={() => adicionar(data, turno)} disabled={!addSel[key]}>+ Colocar</Btn>
+                <div style={{marginTop:6}}>
+                  <input value={addSel[key] || ""} onChange={e => setAddSel(p => ({ ...p, [key]: e.target.value }))}
+                    placeholder="🔎 Buscar motoboy pelo nome para colocar neste turno..." style={campo}/>
+                  {(addSel[key] || "").trim().length >= 1 && (
+                    <div style={{marginTop:4,display:"flex",flexDirection:"column",gap:4}}>
+                      {motoboys
+                        .filter(m => !m.banido && !jaIds.has(m.id) && (m.nomeCompleto || "").toLowerCase().includes((addSel[key] || "").trim().toLowerCase()))
+                        .slice(0, 6)
+                        .map(m => (
+                          <button key={m.id} onClick={() => adicionar(data, turno, m.id)}
+                            style={{textAlign:"left",background:"#111827",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"8px 10px",fontSize:13,cursor:"pointer"}}>
+                            ➕ {m.nomeCompleto}
+                          </button>
+                        ))}
+                    </div>
+                  )}
                 </div>
               </div>
             );

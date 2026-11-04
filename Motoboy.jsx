@@ -364,7 +364,7 @@ function TurnosMotoboy({ motoboyId }) {
     }
     setCarregando(false);
   }
-  useEffect(() => { carregar(); const t = setInterval(carregar, 30000); return () => clearInterval(t); }, [motoboyId]);
+  useEffect(() => { carregar(); const t = setInterval(carregar, 5000); return () => clearInterval(t); }, [motoboyId]);
 
   function horarios(turno) {
     return turno === "almoco" ? [cfg.almoco_inicio, cfg.almoco_fim] : [cfg.noite_inicio, cfg.noite_fim];
@@ -372,6 +372,11 @@ function TurnosMotoboy({ motoboyId }) {
   function prazoAte(data, turno) {
     const [ini] = horarios(turno);
     return new Date(new Date(`${data}T${ini}:00-03:00`).getTime() - (Number(cfg.antecedencia_min) || 0) * 60000);
+  }
+  // Prazo para SAIR do turno por conta própria (depois disso, só pelo suporte).
+  function prazoSair(data, turno) {
+    const [ini] = horarios(turno);
+    return new Date(new Date(`${data}T${ini}:00-03:00`).getTime() - (Number(cfg.cancelar_ate_min ?? 150) || 0) * 60000);
   }
 
   async function reservar(data, turno) {
@@ -407,7 +412,7 @@ function TurnosMotoboy({ motoboyId }) {
       </div>
 
       <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:10,padding:"10px 14px",marginBottom:14,color:"#d1d5db",fontSize:12,lineHeight:1.5}}>
-        <b style={{color:"#fbbf24"}}>Como funciona:</b> você fica <b>online e disponível até o fim do turno</b>. Se as suas entregas somarem menos de {fmtR(cfg.piso)}, a MotoFast completa a diferença no pagamento. Se você <b>sair do online antes do fim</b>, perde a garantia e recebe só as entregas que fez.
+        <b style={{color:"#fbbf24"}}>Como funciona:</b> depois de reservar, você pode sair do turno por conta própria só até {Math.round((Number(cfg.cancelar_ate_min ?? 150))/60*10)/10}h antes do início; depois disso, só pelo suporte. Você fica <b>online e disponível até o fim do turno</b>. Se as suas entregas somarem menos de {fmtR(cfg.piso)}, a MotoFast completa a diferença no pagamento. Se você <b>sair do online antes do fim</b>, perde a garantia e recebe só as entregas que fez.
       </div>
 
       {resumo.length === 0 && (
@@ -433,7 +438,15 @@ function TurnosMotoboy({ motoboyId }) {
                 {r.reservado_por_mim ? (
                   <div style={{textAlign:"right"}}>
                     <div style={{color:"#34d399",fontWeight:800,fontSize:13,marginBottom:4}}>✅ Reservado</div>
-                    {!encerrado && <Btn small cor="cinza" onClick={() => cancelar(r.data, r.turno)}>Cancelar</Btn>}
+                    {agora <= prazoSair(r.data, r.turno)
+                      ? <>
+                          <Btn small cor="cinza" onClick={() => cancelar(r.data, r.turno)}>Sair do turno</Btn>
+                          <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>Você pode sair até {prazoSair(r.data, r.turno).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</div>
+                        </>
+                      : <div style={{maxWidth:220}}>
+                          <div style={{color:"#fbbf24",fontSize:11,lineHeight:1.4,marginBottom:4}}>O prazo para sair deste turno já passou. Para sair, fale com o suporte da MotoFast.</div>
+                          <a href={`https://wa.me/${SUPORTE_TEL}`} target="_blank" rel="noreferrer" style={{background:"#0a2a1e",color:"#34d399",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>💬 Falar com o suporte</a>
+                        </div>}
                   </div>
                 ) : encerrado ? (
                   <span style={{color:"#6b7280",fontSize:12,fontWeight:700}}>Reservas encerradas</span>
@@ -1364,6 +1377,31 @@ export default function AppMotoboy() {
   // consegue abrir a aba "Cancelados" depois e ver o que aconteceu.
   const [canceladosMes, setCanceladosMes] = useState([]);
   const [naoVistosCancelados, setNaoVistosCancelados] = useState(0);
+  // Turnos abertos (04/11/2026): alimenta a bolinha da aba Turnos e o cartão do Início.
+  const [turnosAbertos, setTurnosAbertos] = useState(0);
+  useEffect(()=>{
+    if (!motoboyId) return;
+    let vivo = true;
+    async function ver() {
+      try {
+        const { data: c } = await supabase.from("config_turnos").select("*").eq("id", 1).maybeSingle();
+        if (!c) return;
+        const hoje = dataLocalISO();
+        const fim = (() => { const d = new Date(); d.setDate(d.getDate() + 7); return dataLocalISO(d); })();
+        const { data: r } = await supabase.rpc("turnos_livres_resumo", { p_ini: hoje, p_fim: fim });
+        const agora = Date.now();
+        const n = (r || []).filter(x => {
+          const ini = x.turno === "almoco" ? c.almoco_inicio : c.noite_inicio;
+          const prazo = new Date(`${x.data}T${ini}:00-03:00`).getTime() - (Number(c.antecedencia_min) || 0) * 60000;
+          return !x.reservado_por_mim && x.vagas - x.ocupadas > 0 && agora <= prazo;
+        }).length;
+        if (vivo) setTurnosAbertos(n);
+      } catch (e) { /* sem turnos disponíveis agora */ }
+    }
+    ver();
+    const t = setInterval(ver, 30000);
+    return () => { vivo = false; clearInterval(t); };
+  },[motoboyId]);
   const alarmeCancelamentoRef = useRef(null);
   const avisadosCancelamentoRef = useRef(new Set());
 
@@ -2332,9 +2370,9 @@ export default function AppMotoboy() {
 
   const ABAS = [
     {id:"home",   label:"🏠 Início"},
+    {id:"turnos", label:"🗓️ Turnos", badge:turnosAbertos},
     {id:"corrida",label:"🏍️ Corrida", badge:corridaAtiva?1:0},
     {id:"cancelados", label:"❌ Cancelados", badge:naoVistosCancelados},
-    {id:"turnos", label:"🗓️ Turnos"},
     {id:"ganhos", label:"💰 Ganhos"},
   ];
 
@@ -2405,6 +2443,12 @@ export default function AppMotoboy() {
 
         {aba==="home" && (
           <div>
+            {turnosAbertos > 0 && (
+              <div onClick={()=>setAba("turnos")} style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:12,padding:"12px 16px",marginBottom:14,cursor:"pointer"}}>
+                <div style={{color:"#34d399",fontWeight:800,fontSize:14}}>🗓️ Turno com garantia aberto!</div>
+                <div style={{color:"#d1d5db",fontSize:12,marginTop:2}}>Há {turnosAbertos} turno{turnosAbertos>1?"s":""} com vaga. Reserve e ganhe no mínimo o valor da garantia. Toque para ver.</div>
+              </div>
+            )}
             {/* Caso 1: ainda não pediu permissão — o botão funciona normal,
                 mostra o pedido nativo do navegador */}
             {permissaoNotificacao==="default" && (
