@@ -190,6 +190,48 @@ function abrirTaxa(p) {
   const base = (Number(p.taxa) || 0) - r - d;
   return `${fmtR(base)} entrega${d>0?" + "+fmtR(d)+" deslocamento":""}${r>0?" + "+fmtR(r)+" retorno":""}`;
 }
+// ─── TAXA DE CANCELAMENTO (04/11/2026) ─────────────────────────────────────────
+// Só vale quando o ESTABELECIMENTO cancela depois que um motoboy aceitou:
+// • Motoboy já pegou o pedido, ou chegou na loja DENTRO do prazo → paga a taxa
+//   INTEIRA (como se tivesse entregue): motoboy recebe o que receberia, MotoFast o resto.
+// • Motoboy ainda não chegou e o prazo de chegada não acabou → paga 50% da taxa
+//   (25% motoboy, 25% MotoFast).
+// • Prazo acabou sem o motoboy chegar (ou ele chegou atrasado) → não paga nada.
+// A taxa nunca é cobrada se o motoboy cancelar, nem se ninguém tinha aceitado ainda.
+function calcularCancelamento(p, aceitoEmMs, prazoMin) {
+  const T = Number(p?.taxa) || 0;
+  const M = Number(p?.taxaMotoboy) || 0;
+  const r2 = (v) => Math.round(v * 100) / 100;
+  if (!aceitoEmMs || !(T > 0)) return { tipo: "nenhuma", taxaCancelamento: 0, ganhoMotoboy: 0 };
+  if (p.saiuEstabelecimentoEm) return { tipo: "total", taxaCancelamento: r2(T), ganhoMotoboy: r2(M) };
+  if (p.chegouLojaEm) {
+    const min = (new Date(p.chegouLojaEm).getTime() - aceitoEmMs) / 60000;
+    return min <= prazoMin
+      ? { tipo: "total", taxaCancelamento: r2(T), ganhoMotoboy: r2(M) }
+      : { tipo: "nenhuma", taxaCancelamento: 0, ganhoMotoboy: 0 };
+  }
+  const minDesdeAceite = (Date.now() - aceitoEmMs) / 60000;
+  return minDesdeAceite < prazoMin
+    ? { tipo: "parcial", taxaCancelamento: r2(T * 0.5), ganhoMotoboy: r2(T * 0.25) }
+    : { tipo: "nenhuma", taxaCancelamento: 0, ganhoMotoboy: 0 };
+}
+function camposCancelamento(c, p) {
+  // Quando há cobrança, o pedido passa a "valer" só a taxa de cancelamento: taxa,
+  // taxa_motoboy e taxa_empresario recebem os valores cobrados (assim todas as
+  // somas existentes já funcionam) e o valor original fica em taxa_original.
+  if (c.tipo === "nenhuma") return {};
+  return {
+    cancelamento_cobrado: true,
+    cancelamento_tipo: c.tipo,
+    taxa_cancelamento: c.taxaCancelamento,
+    ganho_cancelamento_motoboy: c.ganhoMotoboy,
+    taxa_original: Number(p?.taxa) || 0,
+    taxa: c.taxaCancelamento,
+    taxa_empresario: c.taxaCancelamento,
+    taxa_motoboy: c.ganhoMotoboy,
+    taxa_chamado: 0, taxa_retorno: 0, taxa_deslocamento: 0,
+  };
+}
 const fmtR = (v) => "R$" + Number(v || 0).toFixed(2).replace(".", ",");
 
 // Bairros com preço FIXO especial, independente da distância calculada por km —
@@ -1473,7 +1515,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
 }
 
 // ─── PEDIDOS EM ANDAMENTO ─────────────────────────────────────────────────────
-function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, onRecarregar, limiteAtingido }) {
+function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, onRecarregar, limiteAtingido, onRepublicar }) {
   const [tick, setTick] = useState(0);
   const [modalMapa, setModalMapa] = useState(null);
   const adicionandoRef = useRef(false);
@@ -1996,17 +2038,34 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                     } else {
                       pergunta = `Por que você está cancelando a entrega de ${p.clienteNome}?`;
                     }
+                    // Taxa de cancelamento (04/11/2026): calcula quanto custa cancelar AGORA
+                    // e avisa antes de confirmar.
+                    const cobranca = calcularCancelamento({ ...p, taxaMotoboy: p.taxaMotoboy }, aceitoEmEfetivo, PRAZO_CHEGADA_MIN);
+                    if (cobranca.tipo === "parcial") {
+                      pergunta += `\n\n⚠️ O motoboy ainda está dentro do prazo (${PRAZO_CHEGADA_MIN} min). Cancelar agora custa ${fmtR(cobranca.taxaCancelamento)} (50% da taxa).`;
+                    } else if (cobranca.tipo === "total") {
+                      pergunta += `\n\n⚠️ O motoboy ${p.saiuEstabelecimentoEm ? "já retirou o pedido" : "já chegou na loja dentro do prazo"}. Cancelar agora custa a taxa inteira: ${fmtR(cobranca.taxaCancelamento)}.`;
+                    } else if (aceitoEmEfetivo) {
+                      pergunta += "\n\nO prazo de chegada do motoboy acabou: cancelar não custa nada.";
+                    }
                     let motivo = window.prompt(pergunta, "");
                     if (motivo === null || !motivo.trim()) { if (motivo !== null) alert("Precisa informar o motivo pra cancelar."); return; }
                     motivo = (aindaNoEstabelecimento && dentroDoPrazo)
                       ? `[Cancelado antes do prazo de chegada — faltavam ${minutosRestantes} min] ${motivo.trim()}`
                       : motivo.trim();
-                    await supabase.from("pedidos").update({
+                    if (cobranca.tipo !== "nenhuma" && !window.confirm(`Confirmar o cancelamento? Será cobrado ${fmtR(cobranca.taxaCancelamento)} deste pedido.`)) return;
+                    const { error: erroCancel } = await supabase.from("pedidos").update({
                       status: "cancelado",
                       motivo_cancelamento: motivo,
                       cancelado_em: new Date().toISOString(),
+                      cancelado_por: "estabelecimento",
+                      ...camposCancelamento(cobranca, p),
                     }).eq("id", p.id);
+                    if (erroCancel) { alert("❌ Não foi possível cancelar: " + erroCancel.message); return; }
                     await onRecarregar();
+                    if (onRepublicar && window.confirm("Pedido cancelado. Quer chamar outro motoboy com os mesmos dados do cliente?")) {
+                      await onRepublicar(p);
+                    }
                   }} style={{flex:"1 1 auto",padding:"7px 10px",borderRadius:8,background:"#3d1010",border:"1px solid #ef444466",color:"#f87171",fontWeight:700,fontSize:12,cursor:"pointer"}}>
                     ❌ Cancelar
                   </button>
@@ -2019,14 +2078,26 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                 cancelar individual acima, que cancela só um cliente por vez. */}
             <div style={{marginTop:6,marginBottom:10,textAlign:"right"}}>
               <button onClick={async()=>{
-                const motivo = window.prompt("Por que está cancelando TODOS os pedidos ainda não entregues desta corrida? (o motoboy vai ver esse motivo)", "");
+                // Taxa de cancelamento (04/11/2026): soma o que custa cancelar cada pedido agora.
+                const PRAZO_TODOS = prazoChegadaMotoboyMin();
+                const temposAceiteTodos = corrida.pedidos.map(x => x.aceitoEm).filter(Boolean).map(x => new Date(x).getTime());
+                const cobrancas = corrida.pedidos.filter(x => x.status!=="entregue").map(x => {
+                  const aceitoMs = x.aceitoEm ? new Date(x.aceitoEm).getTime() : (temposAceiteTodos.length ? Math.min(...temposAceiteTodos) : null);
+                  return { p: x, c: calcularCancelamento(x, aceitoMs, PRAZO_TODOS) };
+                });
+                const totalCobrado = cobrancas.reduce((t, x) => t + x.c.taxaCancelamento, 0);
+                let aviso = "Por que está cancelando TODOS os pedidos ainda não entregues desta corrida? (o motoboy vai ver esse motivo)";
+                if (totalCobrado > 0) aviso += `\n\n⚠️ Cancelar agora custa ${fmtR(totalCobrado)} no total (taxa de cancelamento: o motoboy já está no prazo, já chegou ou já retirou).`;
+                const motivo = window.prompt(aviso, "");
                 if (motivo === null) return;
-                for (const p of corrida.pedidos) {
-                  if (p.status==="entregue") continue; // já finalizado, não mexe
+                if (totalCobrado > 0 && !window.confirm(`Confirmar o cancelamento de todos? Será cobrado ${fmtR(totalCobrado)}.`)) return;
+                for (const { p, c } of cobrancas) {
                   await supabase.from("pedidos").update({
                     status: "cancelado",
                     motivo_cancelamento: motivo.trim() || "Cancelado pelo estabelecimento",
                     cancelado_em: new Date().toISOString(),
+                    cancelado_por: "estabelecimento",
+                    ...camposCancelamento(c, p),
                   }).eq("id", p.id);
                 }
                 await onRecarregar();
@@ -2278,7 +2349,7 @@ function ChamadasMotoboyCard({ empresaId, valor }) {
           .from("pedidos")
           .select("id, taxa, taxa_chamado, criado_em")
           .eq("empresario_id", empresaId)
-          .eq("status", "entregue")
+          .or("status.eq.entregue,cancelamento_cobrado.eq.true")
           .gte("criado_em", inicio.toISOString())
           .order("criado_em", { ascending: true })
           .order("id", { ascending: true }));
@@ -2470,7 +2541,7 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
         .from("pedidos")
         .select("taxa, criado_em")
         .eq("empresario_id", empresa.id)
-        .eq("status", "entregue")
+        .or("status.eq.entregue,cancelamento_cobrado.eq.true")
         .gte("criado_em", inicio)
         .order("criado_em", { ascending: true })
         .order("id", { ascending: true }));
@@ -2781,6 +2852,11 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
                   motivo do cancelamento pro estabelecimento consultar depois
                   — antes só aparecia num aviso rápido na hora, sem ficar
                   registrado pra consulta posterior. */}
+              {e.cancelamentoCobrado && (
+                <div style={{background:"#3d2a08",borderRadius:8,padding:"6px 10px",marginBottom:6,color:"#fbbf24",fontSize:12,fontWeight:700}}>
+                  ⚠️ Cancelada com taxa de cancelamento{e.taxaOriginal ? ` (pedido era R$${e.taxaOriginal})` : ""}
+                </div>
+              )}
               {!entregue && e.motivo && (
                 <div style={{background:"#3d1010",borderRadius:8,padding:"6px 10px",marginBottom:6}}>
                   <div style={{color:"#f87171",fontSize:11,fontWeight:700}}>Motivo do cancelamento:</div>
@@ -3131,7 +3207,7 @@ export default function AppEmpresario() {
         .from("pedidos")
         .select("taxa, criado_em")
         .eq("empresario_id", empresa.id)
-        .eq("status", "entregue")
+        .or("status.eq.entregue,cancelamento_cobrado.eq.true")
         .gte("criado_em", inicioObj.toISOString())
         .order("criado_em", { ascending: true })
         .order("id", { ascending: true }));
@@ -3555,7 +3631,8 @@ export default function AppEmpresario() {
     setHistoricoData((data||[]).map(p=>({
       id: p.id, clienteNome: p.cliente_nome, bairro: p.bairro,
       pagamento: p.forma_pagamento, taxa: p.taxa,
-      status: p.status==="entregue" ? "Entregue" : "Cancelada",
+      status: (p.status==="entregue"||p.cancelamento_cobrado) ? "Entregue" : "Cancelada",
+      cancelamentoCobrado: !!p.cancelamento_cobrado, taxaOriginal: Number(p.taxa_original)||0,
       motoboyNome: mapaMotoboys[p.motoboy_id]?.nome_completo || "—",
       // Adicionado em 06/10/2026: o card de cancelada do histórico já lia
       // e.motivo, mas este mapeamento nunca preenchia esse campo — então o
@@ -3645,6 +3722,27 @@ export default function AppEmpresario() {
     } catch (e) {
       console.log("Erro ao notificar motoboys via push:", e);
     }
+  }
+
+  // "Chamar outro motoboy" (04/11/2026): depois de cancelar, o empresário não precisa
+  // preencher tudo de novo. Monta o mesmo pedido SEM as taxas extras (chamado,
+  // deslocamento, retorno), e passa pelo mesmo caminho de um pedido novo
+  // (publicarPedido), que soma os extras com os valores de AGORA (ex.: modo chuva).
+  async function republicarPedidoCancelado(p) {
+    const extras = (Number(p.taxaChamado)||0) + (Number(p.taxaRetorno)||0) + (Number(p.taxaDeslocamento)||0);
+    const baseTaxa = Math.max(0, (Number(p.taxa)||0) - extras);
+    const baseMotoboy = Math.max(0, (Number(p.taxaMotoboy)||0) - extras);
+    await publicarPedido({
+      id: Date.now(),
+      clienteNome: p.clienteNome, clienteTel: p.clienteTel,
+      rua: p.rua, num: p.num, bairro: p.bairro, ref: p.ref, obs: p.obs,
+      pagamento: p.pagamento,
+      taxa: baseTaxa, taxaMotoboy: baseMotoboy,
+      distanciaKm: p.distanciaKm, metodoCalculoKm: p.metodoCalculoKm,
+      valorPedido: p.valorPedido, valorReceber: p.valorReceber, troco: p.troco,
+      status: "aguardando", criadoEm: Date.now(),
+    });
+    await carregarPedidos(empresa.id);
   }
 
   async function publicarPedido(pedido) {
@@ -3927,7 +4025,7 @@ export default function AppEmpresario() {
         {aba==="nova"      && (limiteAtingido
           ? <BloqueioLimiteEntregas empresa={empresa}/>
           : <SolicitarEntrega clientes={clientes} setClientes={setClientes} onPublicar={publicarPedido} empresa={empresaView}/>)}
-        {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes} empresa={empresaView} onRecarregar={()=>carregarPedidos(empresa.id)} limiteAtingido={limiteAtingido}/>}
+        {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes} empresa={empresaView} onRecarregar={()=>carregarPedidos(empresa.id)} limiteAtingido={limiteAtingido} onRepublicar={republicarPedidoCancelado}/>}
         {aba==="historico" && <HistoricoEmp historico={historicoData} carregando={carregandoHistorico} mesSelecionado={mesHistorico} setMesSelecionado={setMesHistorico} mesesDisponiveis={gerarMesesDisponiveis()} empresa={empresa}/>}
         {aba==="clientes"  && <ClientesSalvos clientes={clientes} setClientes={setClientes} empresaId={empresa.id}/>}
       </div>

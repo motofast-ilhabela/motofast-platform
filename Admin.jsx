@@ -2850,6 +2850,17 @@ function Historico({ historico, motoboys, empresarios }) {
                       <span style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}} title={e.horaCancelamento ? `${e.motivoCancelamento||""} (às ${e.horaCancelamento})` : (e.motivoCancelamento||"")}>
                         {entregue?"✅":"❌"} {e.status}
                       </span>
+                      {e.cancelamentoCobrado && (
+                        <div style={{marginTop:3,fontSize:10,fontWeight:700,color:"#f59e0b"}}>
+                          ⚠️ Taxa de cancelamento ({e.cancelamentoTipo==="total"?"total":"50%"}){e.taxaOriginal?` — pedido era R$${e.taxaOriginal}`:""}
+                          <button onClick={async()=>{
+                            if(!window.confirm("Perdoar a taxa de cancelamento? O pedido volta a valer R$0 (empresário não paga e o motoboy não recebe).")) return;
+                            const {error:errP}=await supabase.from("pedidos").update({cancelamento_cobrado:false,taxa_cancelamento:0,ganho_cancelamento_motoboy:0,taxa:0,taxa_empresario:0,taxa_motoboy:0}).eq("id",e.id);
+                            if(errP){alert("Erro: "+errP.message);return;}
+                            window.location.reload();
+                          }} style={{marginLeft:6,padding:"2px 6px",borderRadius:6,border:"1px solid #f59e0b66",background:"transparent",color:"#f59e0b",fontSize:10,fontWeight:700,cursor:"pointer"}}>Perdoar taxa</button>
+                        </div>
+                      )}
                       {!entregue && (
                         <div style={{marginTop:3,fontSize:10,fontWeight:700,color:e.canceladoPorMotoboy?"#f59e0b":"#6b7280"}}>
                           {e.canceladoPorMotoboy ? "🏍️ pelo motoboy" : "🏪 pelo estabelecimento"}
@@ -3948,7 +3959,8 @@ export default function App() {
             taxaMotoboy: taxaMb,
             taxaChamado: Number(p.taxa_chamado) || 0,
             lucro: lucroEntrega,
-            status: p.status === "entregue" ? "Entregue" : "Cancelada",
+            status: (p.status === "entregue" || p.cancelamento_cobrado) ? "Entregue" : "Cancelada",
+            cancelamentoCobrado: !!p.cancelamento_cobrado, cancelamentoTipo: p.cancelamento_tipo || null, taxaOriginal: Number(p.taxa_original)||0,
             canceladoPorMotoboy: p.cancelado_por_motoboy || false,
             motivoCancelamento: p.motivo_cancelamento || null,
             horaCancelamento: p.cancelado_em ? new Date(p.cancelado_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
