@@ -15,7 +15,7 @@ function estamosNoVerao() {
   return false;
 }
 function prazoChegadaMotoboyMin() {
-  return estamosNoVerao() ? 15 : 12;
+  return 15; // sempre 15 min (verão e baixa temporada) — decisão 04/11
 }
 // Máximo de entregas que UM motoboy leva ao mesmo tempo na mesma corrida.
 // Mudado de 3 pra 4 em 28/09/2026 a pedido do Alessandro (correria de
@@ -1932,7 +1932,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
               const pg = PG[p.pagamento]||{icon:"•",cor:"#9ca3af",label:p.pagamento};
               const finalizado = p.status==="entregue";
               // Adicionado em 24/09/2026 a pedido do Alessandro: cronômetro
-              // do prazo de chegada no estabelecimento (12 minutos a partir
+              // do prazo de chegada no estabelecimento (15 minutos a partir
               // do ACEITE, não da criação do pedido — isso corrige o
               // cronômetro antigo, que contava tempo errado). Só faz sentido
               // enquanto o motoboy ainda não retirou o pedido — depois que
@@ -2087,7 +2087,15 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                 });
                 const totalCobrado = cobrancas.reduce((t, x) => t + x.c.taxaCancelamento, 0);
                 let aviso = "Por que está cancelando TODOS os pedidos ainda não entregues desta corrida? (o motoboy vai ver esse motivo)";
-                if (totalCobrado > 0) aviso += `\n\n⚠️ Cancelar agora custa ${fmtR(totalCobrado)} no total (taxa de cancelamento: o motoboy já está no prazo, já chegou ou já retirou).`;
+                if (totalCobrado > 0) {
+                  const tipos = cobrancas.map(x => x.c.tipo).filter(t => t !== "nenhuma");
+                  const temTotal = tipos.includes("total"), temParcial = tipos.includes("parcial");
+                  let motivoTaxa;
+                  if (temTotal && temParcial) motivoTaxa = "Alguns motoboys ainda estão dentro dos 15 minutos (cobra 50% da taxa) e outros já chegaram na loja ou já retiraram o pedido (cobra a taxa inteira).";
+                  else if (temTotal) motivoTaxa = "O motoboy já chegou na loja ou já retirou o pedido, então cobra a taxa inteira.";
+                  else motivoTaxa = `O motoboy ainda está dentro dos ${PRAZO_TODOS} minutos para chegar, então cobra 50% da taxa.`;
+                  aviso += `\n\n⚠️ Cancelar agora custa ${fmtR(totalCobrado)} no total. ${motivoTaxa}`;
+                }
                 const motivo = window.prompt(aviso, "");
                 if (motivo === null) return;
                 if (totalCobrado > 0 && !window.confirm(`Confirmar o cancelamento de todos? Será cobrado ${fmtR(totalCobrado)}.`)) return;

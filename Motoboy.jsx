@@ -15,7 +15,7 @@ function estamosNoVerao() {
   return false;
 }
 function prazoChegadaMotoboyMin() {
-  return estamosNoVerao() ? 15 : 12;
+  return 15; // sempre 15 min (verão e baixa temporada) — decisão 04/11
 }
 // Busca TODAS as linhas de uma consulta do Supabase, em páginas de 1.000.
 // Adicionado em 28/09/2026: o Supabase devolve no MÁXIMO 1.000 linhas por
