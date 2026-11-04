@@ -1171,6 +1171,9 @@ export default function AppMotoboy() {
   const [historico, setHistorico] = useState([]);
   const [pedidoDisponivel, setPedidoDisponivel] = useState(null);
   const [corridaAtiva, setCorridaAtiva] = useState(null);
+  // Localização bloqueada/negada pelo motoboy (04/11/2026): o app para de pedir sozinho.
+  const [gpsNegado, setGpsNegado] = useState(false);
+  const [gpsTentar, setGpsTentar] = useState(0);
   const [tipoSom, setTipoSom] = useState("two_tone");
   const [pedidoCancelado, setPedidoCancelado] = useState(false);
   const [pedidoPegoOutro, setPedidoPegoOutro] = useState(false);
@@ -1771,28 +1774,70 @@ export default function AppMotoboy() {
     return () => clearInterval(intervalo);
   },[motoboyId]);
 
+  // CORRIGIDO em 04/11/2026: antes o app pedia o GPS de novo (getCurrentPosition)
+  // a cada 5 segundos. Em vários navegadores (principalmente o do Instagram e o
+  // Safari do iPhone) isso fazia o aviso "permitir localização" reaparecer o
+  // tempo todo, mesmo depois de tocar em Permitir. Agora é UMA vigia só
+  // (watchPosition): pergunta uma vez. Se o motoboy bloquear, o app PARA de
+  // perguntar e mostra um aviso com botão pra tentar de novo (só quando ele toca).
   useEffect(()=>{
     if (!motoboyId || !corridaAtiva) return;
+    if (!navigator.geolocation) return;
 
-    function enviarLocalizacao() {
-      if (!navigator.geolocation) return;
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          await supabase.from("motoboys").update({
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            ultima_localizacao: new Date().toISOString(),
-          }).eq("id", motoboyId);
+    let cancelado = false;
+    let watchId = null;
+    let ultimaPos = null;
+    let ultimoEnvio = 0;
+
+    function gravar(pos) {
+      ultimoEnvio = Date.now();
+      supabase.from("motoboys").update({
+        latitude: pos.latitude,
+        longitude: pos.longitude,
+        ultima_localizacao: new Date().toISOString(),
+      }).eq("id", motoboyId).then(()=>{});
+    }
+    function iniciar() {
+      if (cancelado || watchId !== null) return;
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          setGpsNegado(false);
+          ultimaPos = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+          if (Date.now() - ultimoEnvio >= 5000) gravar(ultimaPos);
         },
-        (err) => console.log("GPS erro:", err.message),
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        (err) => {
+          console.log("GPS erro:", err.message);
+          if (err.code === 1) { // permissão negada: para de vez
+            setGpsNegado(true);
+            if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+          }
+        },
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
       );
     }
 
-    enviarLocalizacao();
-    const intervalo = setInterval(enviarLocalizacao, 5000);
-    return () => clearInterval(intervalo);
-  },[motoboyId, corridaAtiva?.id]);
+    // Se o navegador já sabe que está bloqueado, nem tenta (não abre aviso nenhum).
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: "geolocation" }).then((st)=>{
+        if (cancelado) return;
+        if (st.state === "denied") setGpsNegado(true); else iniciar();
+      }).catch(()=>iniciar());
+    } else {
+      iniciar();
+    }
+
+    // Parado no mesmo lugar o GPS não manda posição nova: reenvia a última a cada 15s
+    // pra o painel continuar vendo o motoboy como ativo.
+    const batida = setInterval(()=>{
+      if (ultimaPos && Date.now() - ultimoEnvio >= 15000) gravar(ultimaPos);
+    }, 5000);
+
+    return () => {
+      cancelado = true;
+      clearInterval(batida);
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    };
+  },[motoboyId, corridaAtiva?.id, gpsTentar]);
 
   async function aceitar() {
     if (!pedidoDisponivel || !motoboyId) return;
@@ -2307,6 +2352,18 @@ export default function AppMotoboy() {
           </div>
         )}
 
+        {aba==="corrida" && corridaAtiva && gpsNegado && (
+          <div style={{background:"#3d2a00",border:"1px solid #f59e0b",borderRadius:10,padding:"10px 14px",marginBottom:12}}>
+            <div style={{color:"#fbbf24",fontSize:13,fontWeight:800}}>📍 Localização bloqueada</div>
+            <div style={{color:"#d1d5db",fontSize:12,marginTop:3,lineHeight:1.5}}>
+              O estabelecimento e a MotoFast não conseguem acompanhar sua entrega. Libere a localização nas configurações do navegador (ou do app) para este site e toque no botão abaixo.
+            </div>
+            <button onClick={()=>{ setGpsNegado(false); setGpsTentar(n=>n+1); }}
+              style={{marginTop:8,background:"#f59e0b",color:"#000",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:800,cursor:"pointer"}}>
+              Tentar de novo
+            </button>
+          </div>
+        )}
         {aba==="corrida" && (
           corridaAtiva
             ? <CorridaAtiva corrida={corridaAtiva} onEntregar={finalizarCorrida} onEntregarItem={entregarItemIndividual} onCancelar={cancelarCorrida} onCancelarItem={cancelarPedidoIndividual}/>
