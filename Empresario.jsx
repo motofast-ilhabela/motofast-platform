@@ -1621,8 +1621,25 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
         }
       }
     } catch (e) { console.error("Erro ao ajustar taxa de retorno na edição (segue sem ajustar):", e); }
+    // Prova de cobrança (04/11/2026): guarda cada alteração de valor/forma de pagamento
+    let edicoesNovas = null;
+    try {
+      const { data: antes } = await supabase.from("pedidos")
+        .select("valor_pedido, valor_receber, forma_pagamento, edicoes")
+        .eq("id", pedidoId).maybeSingle();
+      if (antes && (Number(antes.valor_pedido)||0) !== (Number(dados.valorPedido)||0
+        ) || (antes && antes.forma_pagamento !== dados.pagamento)
+        || (antes && (Number(antes.valor_receber)||0) !== (Number(dados.valorReceber)||0))) {
+        edicoesNovas = [...(Array.isArray(antes.edicoes) ? antes.edicoes : []), {
+          em: new Date().toISOString(),
+          de: { valor_pedido: antes.valor_pedido, valor_receber: antes.valor_receber, forma_pagamento: antes.forma_pagamento },
+          para: { valor_pedido: dados.valorPedido, valor_receber: dados.valorReceber, forma_pagamento: dados.pagamento },
+        }];
+      }
+    } catch (e) { console.error("Erro ao registrar edição (segue sem registrar):", e); }
     const { error } = await supabase.from("pedidos").update({
       ...ajusteRetorno,
+      ...(edicoesNovas ? { edicoes: edicoesNovas } : {}),
       cliente_telefone: dados.clienteTel,
       rua: dados.rua,
       numero: dados.num,
@@ -2920,6 +2937,7 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
               </div>
               {/* Linha 3: Motoboy */}
               {e.motoboyNome && <div style={{color:"#9ca3af",fontSize:12,marginBottom:6}}>🏍️ {e.motoboyNome}</div>}
+              <ProvaCobranca e={e}/>
               {/* Adicionado em 24/09/2026 a pedido do Alessandro: mostra o
                   motivo do cancelamento pro estabelecimento consultar depois
                   — antes só aparecia num aviso rápido na hora, sem ficar
@@ -3222,6 +3240,34 @@ function BloqueioLimiteEntregas({ empresa }) {
 }
 
 // ─── APP EMPRESÁRIO ───────────────────────────────────────────────────────────
+
+// Prova de cobrança (04/11/2026): mostra o valor que a loja digitou + forma de pagamento + edições.
+function ProvaCobranca({ e }) {
+  const nomes = { pix: "Pix", cartao: "Cartão", dinheiro: "Dinheiro" };
+  const f = (v) => "R$" + Number(v).toFixed(2).replace(".", ",");
+  const forma = nomes[e.pagamento] || e.pagamento || "—";
+  const temValor = e.valorPedido != null && Number(e.valorPedido) > 0;
+  const eds = Array.isArray(e.edicoes) ? e.edicoes : [];
+  if (!temValor && eds.length === 0) return (
+    <div style={{color:"#6b7280",fontSize:11,marginBottom:6}}>💳 Valor do pedido não informado · {forma}</div>
+  );
+  return (
+    <div style={{background:"#0f172a",border:"1px solid #1e3a5f",borderRadius:8,padding:"6px 10px",marginBottom:6}}>
+      <div style={{color:"#93c5fd",fontSize:12,fontWeight:800}}>
+        💳 Cobrar do cliente: {temValor ? f(e.valorPedido) : "—"} · {forma}
+      </div>
+      {e.pagamento==="dinheiro" && e.valorReceber>0 && Number(e.valorReceber)>Number(e.valorPedido||0) && (
+        <div style={{color:"#9ca3af",fontSize:11}}>Cliente paga {f(e.valorReceber)} · troco {f(Number(e.valorReceber)-Number(e.valorPedido||0))}</div>
+      )}
+      {eds.map((x,i)=>(
+        <div key={i} style={{color:"#fbbf24",fontSize:11,marginTop:2}}>
+          ✏️ Editado às {new Date(x.em).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}: de {x.de?.valor_pedido!=null?f(x.de.valor_pedido):"—"} {nomes[x.de?.forma_pagamento]||""} para {x.para?.valor_pedido!=null?f(x.para.valor_pedido):"—"} {nomes[x.para?.forma_pagamento]||""}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function AppEmpresario() {
   const [aba, setAba] = useState("nova");
   const [entregasMesAtual, setEntregasMesAtual] = useState(0);
@@ -3629,7 +3675,7 @@ export default function AppEmpresario() {
       taxaChamado: Number(p.taxa_chamado) || 0,
       taxaRetorno: Number(p.taxa_retorno) || 0,
       taxaDeslocamento: Number(p.taxa_deslocamento) || 0,
-      valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
+      valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco, edicoes: p.edicoes||[],
       status: p.status==="aceito"||p.status==="saiu_estabelecimento" ? "em_rota" : p.status,
       criadoEm: new Date(p.criado_em).getTime(),
       motoboyId: p.motoboy_id,

@@ -2842,7 +2842,15 @@ function Historico({ historico, motoboys, empresarios }) {
                     <td style={{padding:"8px 12px",color:"#a78bfa"}} title={e.metodoCalculoKm||"Sem registro do método de cálculo"}>{e.distanciaKm?`${e.distanciaKm}km`:"—"}</td>
                     <td style={{padding:"8px 12px",color:"#d1d5db"}}>{mb?.nomeCompleto||"—"}</td>
                     <td style={{padding:"8px 12px",color:"#d1d5db",fontSize:11}}>{emp?.nome?.split(" ").slice(0,2).join(" ")||"—"}</td>
-                    <td style={{padding:"8px 12px"}}><span style={{color:pg.cor,fontWeight:700}}>{pg.icon}</span></td>
+                    <td style={{padding:"8px 12px",whiteSpace:"nowrap"}}>
+                      {/* Prova de cobrança (04/11/2026): valor que a loja digitou + forma de pagamento + edições */}
+                      <span style={{color:pg.cor,fontWeight:700}}>{pg.icon} {e.valorPedido!=null&&Number(e.valorPedido)>0?"R$"+Number(e.valorPedido).toFixed(2).replace(".",","):"s/ valor"} {({pix:"Pix",cartao:"Cartão",dinheiro:"Dinheiro"})[e.pagamento]||""}</span>
+                      {(e.edicoes||[]).map((x,i)=>(
+                        <div key={i} style={{color:"#fbbf24",fontSize:10,fontWeight:700}} title="Valor/forma de pagamento alterados depois de publicar">
+                          ✏️ {new Date(x.em).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}: {x.de?.valor_pedido!=null?"R$"+Number(x.de.valor_pedido).toFixed(2).replace(".",","):"—"} {({pix:"Pix",cartao:"Cartão",dinheiro:"Dinheiro"})[x.de?.forma_pagamento]||""} → {x.para?.valor_pedido!=null?"R$"+Number(x.para.valor_pedido).toFixed(2).replace(".",","):"—"} {({pix:"Pix",cartao:"Cartão",dinheiro:"Dinheiro"})[x.para?.forma_pagamento]||""}
+                        </div>
+                      ))}
+                    </td>
                     <td style={{padding:"8px 12px",color:"#60a5fa",fontWeight:700}}>R${e.taxaEmpresario}</td>
                     <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700}}>R${e.taxaMotoboy}</td>
                     <td style={{padding:"8px 12px",color:"#a78bfa",fontWeight:700}}>R${e.lucro}</td>
@@ -4263,6 +4271,7 @@ export default function App() {
             lucro: lucroEntrega,
             status: (p.status === "entregue" || p.cancelamento_cobrado) ? "Entregue" : "Cancelada",
             cancelamentoCobrado: !!p.cancelamento_cobrado, cancelamentoTipo: p.cancelamento_tipo || null, taxaOriginal: Number(p.taxa_original)||0,
+            valorPedido: p.valor_pedido, valorReceber: p.valor_receber, edicoes: Array.isArray(p.edicoes) ? p.edicoes : [],
             canceladoPorMotoboy: p.cancelado_por_motoboy || false,
             motivoCancelamento: p.motivo_cancelamento || null,
             horaCancelamento: p.cancelado_em ? new Date(p.cancelado_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,

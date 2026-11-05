@@ -1111,6 +1111,11 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
                   <span style={{color:"#6b7280",fontSize:12,margin:"0 6px"}}>·</span>
                   <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
                 </div>
+                {e.valorPedido!=null && Number(e.valorPedido)>0 && (
+                  <div style={{color:"#93c5fd",fontSize:11,marginTop:3,fontWeight:700}}>
+                    💳 Cobrado do cliente: R${Number(e.valorPedido).toFixed(2).replace(".",",")} · {({pix:"Pix",cartao:"Cartão",dinheiro:"Dinheiro"})[e.pagamento]||e.pagamento}
+                  </div>
+                )}
                 {e.cancelamentoCobrado ? (
                   <div style={{background:"#3d2a08",border:"1px solid #f59e0b55",borderRadius:8,padding:"6px 8px",marginTop:5,color:"#fbbf24",fontSize:11,fontWeight:700,lineHeight:1.4}}>
                     ❌ Entrega cancelada pelo estabelecimento — você recebe a taxa de cancelamento{e.cancelamentoTipo==="total" ? " (valor inteiro da sua entrega, porque você já tinha chegado na loja ou retirado o pedido)" : " (25% da entrega: o estabelecimento cancelou antes dos 15 minutos que você tinha pra chegar)"}.
@@ -1541,6 +1546,7 @@ export default function AppMotoboy() {
                 taxa: p.taxa_motoboy || p.taxa,
                 status: (p.status==="entregue"||p.cancelamento_cobrado) ? "Entregue" : "Cancelada",
                 cancelamentoCobrado: !!p.cancelamento_cobrado, cancelamentoTipo: p.cancelamento_tipo || null,
+                valorPedido: p.valor_pedido,
                 data: d.toLocaleDateString("pt-BR"),
                 dataISO: dataLocalISO(d),
                 hora: d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
