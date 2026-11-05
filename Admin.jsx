@@ -2821,7 +2821,7 @@ function Historico({ historico, motoboys, empresarios }) {
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead>
               <tr style={{background:"#0f172a",borderBottom:"1px solid #1f2937"}}>
-                {["Data","Saiu às","Entregue às","Cliente","Bairro","Km","Motoboy","Estabelecimento","Pgto","Cobrado","Motoboy","Lucro","Status"].map(h=>(
+                {["Data","Saiu às","Entregue às","Cliente","Bairro","Km","Motoboy","Estabelecimento","Pgto (cliente)","Taxa loja","Motoboy","Lucro","Status"].map(h=>(
                   <th key={h} style={{padding:"10px 12px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
