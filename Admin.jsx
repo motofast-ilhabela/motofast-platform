@@ -3462,6 +3462,9 @@ function TurnosLivres({ motoboys }) {
   const [insc, setInsc] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [addSel, setAddSel] = useState({});
+  const [diasSel, setDiasSel] = useState([]);
+  const [qtdAlmoco, setQtdAlmoco] = useState(1);
+  const [qtdNoite, setQtdNoite] = useState(1);
   const hoje = dataLocalISO();
   const nomeDe = (id) => (motoboys.find(m => m.id === id)?.nomeCompleto) || "Motoboy";
   const rotulo = (t) => t === "almoco" ? "☀️ Almoço" : "🌙 Noite";
@@ -3469,9 +3472,30 @@ function TurnosLivres({ motoboys }) {
     const d = new Date(iso + "T12:00:00-03:00");
     return d.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
   };
-  const dias = Array.from({ length: 7 }, (_, i) => {
+  const proximos7 = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(); d.setDate(d.getDate() + i); return dataLocalISO(d);
   });
+  // Dias mostrados nos cartões: os próximos 7 + qualquer dia futuro que já tenha vaga aberta ou reserva.
+  const diasComVaga = Object.keys(vagas).filter(k => vagas[k] > 0).map(k => k.split("|")[0]);
+  const diasComReserva = insc.filter(i => !i.cancelado_em && i.data >= hoje).map(i => i.data);
+  const dias = [...new Set([...proximos7, ...diasComVaga.filter(d => d >= hoje), ...diasComReserva])].sort();
+  // Calendário (só do Admin) para escolher dias de qualquer mês.
+  const [mesCal, setMesCal] = useState(() => { const n = new Date(); return { y: n.getFullYear(), m: n.getMonth() }; });
+  const nomeMes = new Date(mesCal.y, mesCal.m, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const diasDoMes = new Date(mesCal.y, mesCal.m + 1, 0).getDate();
+  const primeiroDow = new Date(mesCal.y, mesCal.m, 1).getDay();
+  const isoDia = (n) => `${mesCal.y}-${String(mesCal.m + 1).padStart(2, "0")}-${String(n).padStart(2, "0")}`;
+  function mudarMes(delta) {
+    setMesCal(c => { const d = new Date(c.y, c.m + delta, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
+  }
+  function alternarDiaSemana(dow) {
+    const doDow = [];
+    for (let n = 1; n <= diasDoMes; n++) {
+      if (new Date(mesCal.y, mesCal.m, n).getDay() === dow && isoDia(n) >= hoje) doDow.push(isoDia(n));
+    }
+    if (doDow.length === 0) return;
+    setDiasSel(p => doDow.every(d => p.includes(d)) ? p.filter(d => !doDow.includes(d)) : [...new Set([...p, ...doDow])]);
+  }
 
   async function carregar() {
     const { data: c } = await supabase.from("config_turnos").select("*").eq("id", 1).maybeSingle();
@@ -3502,6 +3526,28 @@ function TurnosLivres({ motoboys }) {
     const { error } = await supabase.from("turnos_livres_vagas").upsert({ data, turno, vagas: Number(n) }, { onConflict: "data,turno" });
     if (error) { alert("Erro: " + error.message); return; }
     setVagas(p => ({ ...p, [data + "|" + turno]: Number(n) }));
+  }
+  async function abrirDiasMarcados() {
+    if (diasSel.length === 0) { alert("Marque pelo menos um dia."); return; }
+    const lista = [...diasSel].sort();
+    const nomes = lista.map(diaFmt).join(", ");
+    if (!window.confirm(`Abrir ${qtdAlmoco} vaga(s) no almoço e ${qtdNoite} na noite em: ${nomes}?`)) return;
+    const linhas = [];
+    const pulados = [];
+    lista.forEach(data => {
+      [["almoco", Number(qtdAlmoco)], ["noite", Number(qtdNoite)]].forEach(([turno, n]) => {
+        const reservadas = insc.filter(i => i.data === data && i.turno === turno && !i.cancelado_em).length;
+        if (n < reservadas) { pulados.push(`${diaFmt(data)} ${turno === "almoco" ? "almoço" : "noite"}`); return; }
+        linhas.push({ data, turno, vagas: n });
+      });
+    });
+    if (linhas.length > 0) {
+      const { error } = await supabase.from("turnos_livres_vagas").upsert(linhas, { onConflict: "data,turno" });
+      if (error) { alert("Erro: " + error.message); return; }
+    }
+    if (pulados.length > 0) alert("Estes turnos não foram alterados porque já têm mais motoboys reservados do que o número de vagas pedido: " + pulados.join("; "));
+    setDiasSel([]);
+    carregar();
   }
   async function adicionar(data, turno, id) {
     const key = data + "|" + turno;
@@ -3562,7 +3608,58 @@ function TurnosLivres({ motoboys }) {
         <div style={{marginTop:10}}><Btn onClick={salvarCfg}>💾 Salvar</Btn></div>
       </Card>
 
-      <SectionTitle>Próximos dias — escolha quantas vagas abrir (0 = fechado)</SectionTitle>
+      <Card style={{marginBottom:16,background:"#0f172a"}}>
+        <SectionTitle>⚡ Abrir vários dias de uma vez</SectionTitle>
+        <div style={{color:"#9ca3af",fontSize:12,marginBottom:8}}>Escolha os dias no calendário (de qualquer mês, em qualquer ordem), defina as vagas e clique em Abrir.</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <button onClick={() => mudarMes(-1)} style={{background:"#111827",border:"1px solid #374151",borderRadius:8,color:"#d1d5db",padding:"6px 12px",cursor:"pointer",fontWeight:800}}>‹</button>
+          <div style={{color:"#f9fafb",fontWeight:800,fontSize:14,textTransform:"capitalize"}}>{nomeMes}</div>
+          <button onClick={() => mudarMes(1)} style={{background:"#111827",border:"1px solid #374151",borderRadius:8,color:"#d1d5db",padding:"6px 12px",cursor:"pointer",fontWeight:800}}>›</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:8}}>
+          {["D","S","T","Q","Q","S","S"].map((l, i) => <div key={i} style={{textAlign:"center",color:"#6b7280",fontSize:11,fontWeight:700}}>{l}</div>)}
+          {Array.from({ length: primeiroDow }, (_, i) => <div key={"v" + i}/>)}
+          {Array.from({ length: diasDoMes }, (_, i) => {
+            const n = i + 1, iso = isoDia(n);
+            const passado = iso < hoje;
+            const on = diasSel.includes(iso);
+            const aberto = (vagas[iso + "|almoco"] || 0) > 0 || (vagas[iso + "|noite"] || 0) > 0;
+            return (
+              <button key={iso} disabled={passado}
+                onClick={() => setDiasSel(p => on ? p.filter(x => x !== iso) : [...p, iso])}
+                style={{padding:"8px 0",borderRadius:8,border:`1px solid ${on?"#34d399":aberto?"#3b82f6":"#1f2937"}`,background:on?"#0d3d2e":"#111827",color:passado?"#374151":on?"#34d399":"#d1d5db",fontSize:13,fontWeight:700,cursor:passado?"not-allowed":"pointer",position:"relative"}}>
+                {n}{aberto && <span style={{position:"absolute",top:2,right:4,width:5,height:5,borderRadius:"50%",background:"#3b82f6"}}/>}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,alignItems:"center"}}>
+          <span style={{color:"#6b7280",fontSize:11,fontWeight:700}}>Atalhos do mês:</span>
+          {[["Domingos",0],["Segundas",1],["Terças",2],["Quartas",3],["Quintas",4],["Sextas",5],["Sábados",6]].map(([rot, dow]) => (
+            <button key={dow} onClick={() => alternarDiaSemana(dow)}
+              style={{padding:"5px 9px",borderRadius:8,border:"1px solid #374151",background:"transparent",color:"#9ca3af",fontSize:11,fontWeight:700,cursor:"pointer"}}>{rot}</button>
+          ))}
+          <button onClick={() => setDiasSel([])} style={{padding:"5px 9px",borderRadius:8,border:"1px solid #ef444466",background:"transparent",color:"#f87171",fontSize:11,fontWeight:700,cursor:"pointer"}}>Limpar</button>
+        </div>
+        <div style={{color:"#6b7280",fontSize:11,marginBottom:8}}>🔵 = dia que já tem vaga aberta · {diasSel.length} dia{diasSel.length!==1?"s":""} marcado{diasSel.length!==1?"s":""} (a marcação continua ao trocar de mês)</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
+          <div>
+            <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:3}}>☀️ Vagas no almoço</div>
+            <select value={qtdAlmoco} onChange={e => setQtdAlmoco(e.target.value)} style={{...campo,width:"auto"}}>
+              {[0,1,2,3,4,5].map(x => <option key={x} value={x}>{x===0?"Fechado":`${x} vaga${x>1?"s":""}`}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:3}}>🌙 Vagas na noite</div>
+            <select value={qtdNoite} onChange={e => setQtdNoite(e.target.value)} style={{...campo,width:"auto"}}>
+              {[0,1,2,3,4,5].map(x => <option key={x} value={x}>{x===0?"Fechado":`${x} vaga${x>1?"s":""}`}</option>)}
+            </select>
+          </div>
+          <Btn onClick={abrirDiasMarcados} disabled={diasSel.length === 0}>Abrir os dias marcados</Btn>
+        </div>
+      </Card>
+
+      <SectionTitle>Dias abertos e próximos 7 dias — ajuste as vagas de cada um (0 = fechado)</SectionTitle>
       {dias.map(data => (
         <Card key={data} style={{marginBottom:10}}>
           <div style={{color:"#f9fafb",fontWeight:800,fontSize:14,marginBottom:8,textTransform:"capitalize"}}>{diaFmt(data)}{data===hoje?" · hoje":""}</div>

@@ -346,7 +346,7 @@ function TurnosMotoboy({ motoboyId }) {
   const [carregando, setCarregando] = useState(true);
   const [ocupado, setOcupado] = useState(false);
   const hoje = dataLocalISO();
-  const fim7 = (() => { const d = new Date(); d.setDate(d.getDate() + 7); return dataLocalISO(d); })();
+  const fim7 = (() => { const d = new Date(); d.setDate(d.getDate() + 62); return dataLocalISO(d); })();
   const ini14 = (() => { const d = new Date(); d.setDate(d.getDate() - 14); return dataLocalISO(d); })();
   const rotulo = (t) => t === "almoco" ? "☀️ Almoço" : "🌙 Noite";
   const diaFmt = (iso) => new Date(iso + "T12:00:00-03:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" });
@@ -419,17 +419,23 @@ function TurnosMotoboy({ motoboyId }) {
         <div style={{color:"#6b7280",fontSize:14,padding:"16px 4px"}}>Nenhuma vaga aberta nos próximos dias. Volte mais tarde.</div>
       )}
 
-      {resumo.map(r => {
+      {resumo.map((r, idx) => {
+        const mesTitulo = new Date(r.data + "T12:00:00-03:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+        const mostrarMes = idx === 0 || mesTitulo !== new Date(resumo[idx-1].data + "T12:00:00-03:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
         const [ini, fim] = horarios(r.turno);
         const livres = Math.max(0, r.vagas - r.ocupadas);
         const prazo = prazoAte(r.data, r.turno);
         const encerrado = agora > prazo;
+        const minhaRes = minhas.find(x => x.data === r.data && x.turno === r.turno && !x.cancelado_em);
         return (
-          <div key={r.data + r.turno} style={{background:"#111827",border:`1px solid ${r.reservado_por_mim?"#34d399":"#1f2937"}`,borderRadius:12,padding:"14px 16px",marginBottom:10}}>
+          <div key={r.data + r.turno}>
+          {mostrarMes && <div style={{color:"#9ca3af",fontSize:12,fontWeight:800,textTransform:"uppercase",letterSpacing:1,margin:"14px 0 8px"}}>{mesTitulo}</div>}
+          <div style={{background:"#111827",border:`1px solid ${r.reservado_por_mim?"#34d399":"#1f2937"}`,borderRadius:12,padding:"14px 16px",marginBottom:10}}>
             <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
               <div>
                 <div style={{color:"#f9fafb",fontWeight:800,fontSize:15,textTransform:"capitalize"}}>{diaFmt(r.data)}</div>
                 <div style={{color:"#9ca3af",fontSize:13,marginTop:2}}>{rotulo(r.turno)} · {ini} às {fim}</div>
+                <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginTop:2}}>💰 Garantia de {fmtR(minhaRes?.piso ?? cfg.piso)}</div>
                 <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>
                   {livres > 0 ? `${livres} vaga${livres>1?"s":""} livre${livres>1?"s":""}` : "Sem vagas"} · reservas até {prazo.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}
                 </div>
@@ -457,6 +463,7 @@ function TurnosMotoboy({ motoboyId }) {
                 )}
               </div>
             </div>
+          </div>
           </div>
         );
       })}
@@ -1398,7 +1405,7 @@ export default function AppMotoboy() {
         const { data: c } = await supabase.from("config_turnos").select("*").eq("id", 1).maybeSingle();
         if (!c) return;
         const hoje = dataLocalISO();
-        const fim = (() => { const d = new Date(); d.setDate(d.getDate() + 7); return dataLocalISO(d); })();
+        const fim = (() => { const d = new Date(); d.setDate(d.getDate() + 62); return dataLocalISO(d); })();
         const { data: r } = await supabase.rpc("turnos_livres_resumo", { p_ini: hoje, p_fim: fim });
         const agora = Date.now();
         const n = (r || []).filter(x => {
