@@ -994,7 +994,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
     try {
       const resp = await fetch("/api/bloquear-motoboy", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + (await tokenDoAdmin()) },
         body: JSON.stringify({ id, acao }),
       });
       const result = await resp.json();
@@ -1015,7 +1015,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
     try {
       const resp = await fetch("/api/bloquear-motoboy", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + (await tokenDoAdmin()) },
         body: JSON.stringify({ id, acao: "banir", motivo }),
       });
       const result = await resp.json();
@@ -1034,7 +1034,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
     try {
       const resp = await fetch("/api/bloquear-motoboy", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + (await tokenDoAdmin()) },
         body: JSON.stringify({ id, acao: "desbanir" }),
       });
       const result = await resp.json();
@@ -1201,7 +1201,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
                 if (senha.length < 6) { alert("A senha precisa ter pelo menos 6 caracteres."); return; }
                 const resp = await fetch("/api/redefinir-senha", {
                   method: "POST",
-                  headers: {"Content-Type":"application/json"},
+                  headers: {"Content-Type":"application/json", "Authorization": "Bearer " + (await tokenDoAdmin())},
                   body: JSON.stringify({ userId: mbDet.userId, novaSenha: senha }),
                 });
                 const data = await resp.json();
@@ -1888,7 +1888,7 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                     if (senha.length < 6) { alert("A senha precisa ter pelo menos 6 caracteres."); return; }
                     const resp = await fetch("/api/redefinir-senha", {
                       method: "POST",
-                      headers: {"Content-Type":"application/json"},
+                      headers: {"Content-Type":"application/json", "Authorization": "Bearer " + (await tokenDoAdmin())},
                       body: JSON.stringify({ userId: empSel.userId, novaSenha: senha }),
                     });
                     const data = await resp.json();
