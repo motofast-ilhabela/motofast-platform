@@ -2847,6 +2847,7 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
                   {e.horaSaida && <> · saiu {e.horaSaida}</>}
                   {e.horaEntrega && <> · entregou {e.horaEntrega}</>}
                 </div>
+                <div style={{marginTop:4}}><ProvaCobranca e={e}/></div>
                 {(e.minutosAteChegar!=null || e.minutosNaLoja!=null || e.minutosAteCliente!=null) && (
                   <div style={{color:"#6b7280",fontSize:11,lineHeight:1.5}}>
                     {e.minutosAteChegar!=null && <>🏪 até chegar <b style={{color:"#d1d5db"}}>{formatarDuracaoHist(e.minutosAteChegar)}</b></>}
@@ -3757,6 +3758,7 @@ export default function AppEmpresario() {
     setHistoricoData((data||[]).map(p=>({
       id: p.id, clienteNome: p.cliente_nome, bairro: p.bairro,
       pagamento: p.forma_pagamento, taxa: p.taxa,
+      valorPedido: p.valor_pedido, valorReceber: p.valor_receber, edicoes: Array.isArray(p.edicoes) ? p.edicoes : [],
       status: (p.status==="entregue"||p.cancelamento_cobrado) ? "Entregue" : "Cancelada",
       cancelamentoCobrado: !!p.cancelamento_cobrado, taxaOriginal: Number(p.taxa_original)||0,
       motoboyNome: mapaMotoboys[p.motoboy_id]?.nome_completo || "—",
