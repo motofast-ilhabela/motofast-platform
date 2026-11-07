@@ -5,6 +5,22 @@ const CONTAS_MONITORAMENTO_IDS = [
   "a8cc6740-ca4d-4bb1-9292-0b81ce8f18be",
 ];
 
+
+// Trava de segurança (07/11/2026): só envia o push se o pedido existir e ainda
+// estiver aguardando motoboy, e não repete o mesmo push em menos de 30 s.
+// O conteúdo do push (título, corpo, data.pedidoId, canal, prioridade) NÃO muda.
+// Obs.: o limite de 30 s fica na memória da instância do servidor (Vercel), então
+// é um freio simples, não uma garantia absoluta.
+const JANELA_REPETICAO_MS = 30 * 1000;
+const ultimosEnvios = new Map();
+function repetidoRecente(chave) {
+  const agora = Date.now();
+  for (const [k, t] of ultimosEnvios) if (agora - t > JANELA_REPETICAO_MS) ultimosEnvios.delete(k);
+  if (ultimosEnvios.has(chave)) return true;
+  ultimosEnvios.set(chave, agora);
+  return false;
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
@@ -20,6 +36,9 @@ export default async function handler(req, res) {
   if (!titulo || !corpo) {
     return res.status(400).json({ error: "titulo e corpo são obrigatórios" });
   }
+  if (!pedidoId) {
+    return res.status(400).json({ error: "pedidoId é obrigatório" });
+  }
   const REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
   const APP_ID = "df32f4f0-4280-4127-9d84-ec8a0a05328c";
   const SUPABASE_URL = "https://eynpjqhjkwwdpemsospy.supabase.co";
@@ -34,6 +53,19 @@ export default async function handler(req, res) {
   }
   try {
     const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+    // Só toca o alarme de pedido que existe e ainda está aguardando motoboy.
+    const { data: pedidoAlvo, error: erroPedido } = await supabaseAdmin
+      .from("pedidos").select("id, status").eq("id", pedidoId).maybeSingle();
+    if (erroPedido) return res.status(400).json({ error: erroPedido.message });
+    if (!pedidoAlvo || pedidoAlvo.status !== "aguardando") {
+      console.log("[notificar-motoboys] Pedido inexistente ou não está aguardando — nada enviado.", pedidoId);
+      return res.status(409).json({ error: "Pedido não está aguardando motoboy" });
+    }
+    if (repetidoRecente("todos:" + pedidoId)) {
+      console.log("[notificar-motoboys] Mesmo push enviado há menos de 30 s — ignorado.", pedidoId);
+      return res.status(200).json({ success: true, ignorado: "repetido_30s" });
+    }
 
     // CORRIGIDO em 02/10/2026: antes esse endpoint mandava o push pra "Total
     // Subscriptions" — todo aparelho que já autorizou notificação alguma

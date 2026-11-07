@@ -1,3 +1,5 @@
+import { createClient } from '@supabase/supabase-js';
+
 // Função de servidor — dispara notificação push SÓ PRA UM motoboy específico,
 // via OneSignal. Diferente de /api/notificar-motoboys.js (que manda pra todo
 // mundo de uma vez, usado no sistema antigo de "quem pegar, pegou"), esse
@@ -15,6 +17,22 @@
 // OneSignal.login(motoboyId) ao entrar (associando o external_id dele ao ID
 // real na tabela motoboys). Precisa confirmar isso no Motoboy.jsx antes de
 // usar isso em produção.
+
+// Trava de segurança (07/11/2026): só envia o push se o pedido existir e ainda
+// estiver aguardando motoboy, e não repete o mesmo push em menos de 30 s.
+// O conteúdo do push (título, corpo, data.pedidoId, canal, prioridade) NÃO muda.
+// Obs.: o limite de 30 s fica na memória da instância do servidor (Vercel), então
+// é um freio simples, não uma garantia absoluta.
+const JANELA_REPETICAO_MS = 30 * 1000;
+const ultimosEnvios = new Map();
+function repetidoRecente(chave) {
+  const agora = Date.now();
+  for (const [k, t] of ultimosEnvios) if (agora - t > JANELA_REPETICAO_MS) ultimosEnvios.delete(k);
+  if (ultimosEnvios.has(chave)) return true;
+  ultimosEnvios.set(chave, agora);
+  return false;
+}
+
 export default async function handler(req, res) {
   // CORS — adicionado em 07/09/2026 pra permitir chamadas vindas do app
   // nativo (Capacitor/WebView), que faz preflight OPTIONS antes do POST de
@@ -33,6 +51,32 @@ export default async function handler(req, res) {
   const { motoboyId, titulo, corpo, pedidoId } = req.body || {};
   if (!motoboyId || !titulo || !corpo) {
     return res.status(400).json({ error: "motoboyId, titulo e corpo são obrigatórios" });
+  }
+  if (!pedidoId) {
+    return res.status(400).json({ error: "pedidoId é obrigatório" });
+  }
+  const SUPABASE_URL = "https://eynpjqhjkwwdpemsospy.supabase.co";
+  const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!SERVICE_ROLE_KEY) {
+    console.error("SUPABASE_SERVICE_ROLE_KEY não configurada nas variáveis de ambiente da Vercel");
+    return res.status(500).json({ error: "Chave do Supabase não configurada no servidor" });
+  }
+  try {
+    const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+    const { data: pedidoAlvo, error: erroPedido } = await supabaseAdmin
+      .from("pedidos").select("id, status").eq("id", pedidoId).maybeSingle();
+    if (erroPedido) return res.status(400).json({ error: erroPedido.message });
+    if (!pedidoAlvo || pedidoAlvo.status !== "aguardando") {
+      console.log("[notificar-motoboy-especifico] Pedido inexistente ou não está aguardando — nada enviado.", pedidoId);
+      return res.status(409).json({ error: "Pedido não está aguardando motoboy" });
+    }
+  } catch (e) {
+    console.error("[notificar-motoboy-especifico] Erro ao conferir o pedido:", e);
+    return res.status(500).json({ error: e.message });
+  }
+  if (repetidoRecente(String(motoboyId) + ":" + pedidoId)) {
+    console.log("[notificar-motoboy-especifico] Mesmo push enviado há menos de 30 s — ignorado.", motoboyId, pedidoId);
+    return res.status(200).json({ success: true, ignorado: "repetido_30s" });
   }
   const REST_API_KEY = process.env.ONESIGNAL_REST_API_KEY;
   const APP_ID = "df32f4f0-4280-4127-9d84-ec8a0a05328c";
