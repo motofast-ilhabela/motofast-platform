@@ -2846,7 +2846,7 @@ function Historico({ historico, motoboys, empresarios }) {
                     <td style={{padding:"7px 7px",minWidth:150,maxWidth:210}}>
                       {/* Prova de cobrança (04/11/2026): valor que a loja digitou + forma de pagamento + edições */}
                       <span style={{color:pg.cor,fontWeight:700,whiteSpace:"nowrap"}}>{pg.icon} {e.valorPedido!=null&&Number(e.valorPedido)>0?"R$"+Number(e.valorPedido).toFixed(2).replace(".",","):"s/ valor"} {({pix:"Pix",cartao:"Cartão",dinheiro:"Dinheiro"})[e.pagamento]||""}</span>
-                      {(e.edicoes||[]).map((x,i)=>(
+                      {(e.edicoes||[]).filter(x=>(Number(x.de?.valor_pedido)||0)!==(Number(x.para?.valor_pedido)||0)||x.de?.forma_pagamento!==x.para?.forma_pagamento).map((x,i)=>(
                         <div key={i} style={{color:"#fbbf24",fontSize:10,fontWeight:700}} title="Valor/forma de pagamento alterados depois de publicar">
                           ✏️ {new Date(x.em).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}: {x.de?.valor_pedido!=null?"R$"+Number(x.de.valor_pedido).toFixed(2).replace(".",","):"—"} {({pix:"Pix",cartao:"Cartão",dinheiro:"Dinheiro"})[x.de?.forma_pagamento]||""} → {x.para?.valor_pedido!=null?"R$"+Number(x.para.valor_pedido).toFixed(2).replace(".",","):"—"} {({pix:"Pix",cartao:"Cartão",dinheiro:"Dinheiro"})[x.para?.forma_pagamento]||""}
                         </div>

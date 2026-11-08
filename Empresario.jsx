@@ -1627,9 +1627,8 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
       const { data: antes } = await supabase.from("pedidos")
         .select("valor_pedido, valor_receber, forma_pagamento, edicoes")
         .eq("id", pedidoId).maybeSingle();
-      if (antes && (Number(antes.valor_pedido)||0) !== (Number(dados.valorPedido)||0
-        ) || (antes && antes.forma_pagamento !== dados.pagamento)
-        || (antes && (Number(antes.valor_receber)||0) !== (Number(dados.valorReceber)||0))) {
+      if (antes && ((Number(antes.valor_pedido)||0) !== (Number(dados.valorPedido)||0)
+        || antes.forma_pagamento !== dados.pagamento)) {
         edicoesNovas = [...(Array.isArray(antes.edicoes) ? antes.edicoes : []), {
           em: new Date().toISOString(),
           de: { valor_pedido: antes.valor_pedido, valor_receber: antes.valor_receber, forma_pagamento: antes.forma_pagamento },
@@ -3248,7 +3247,9 @@ function ProvaCobranca({ e }) {
   const f = (v) => "R$" + Number(v).toFixed(2).replace(".", ",");
   const forma = nomes[e.pagamento] || e.pagamento || "—";
   const temValor = e.valorPedido != null && Number(e.valorPedido) > 0;
-  const eds = Array.isArray(e.edicoes) ? e.edicoes : [];
+  // Mostra só edições em que o valor do pedido ou a forma de pagamento mudaram de verdade
+  const eds = (Array.isArray(e.edicoes) ? e.edicoes : []).filter(x =>
+    (Number(x.de?.valor_pedido)||0) !== (Number(x.para?.valor_pedido)||0) || x.de?.forma_pagamento !== x.para?.forma_pagamento);
   if (!temValor && eds.length === 0) return (
     <div style={{color:"#6b7280",fontSize:11,marginBottom:6}}>💳 Valor do pedido não informado · {forma}</div>
   );
