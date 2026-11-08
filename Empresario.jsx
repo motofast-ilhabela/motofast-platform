@@ -1792,6 +1792,10 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
     // avisa e mantém a janela aberta pra tentar de novo.
     if (erroAdicionar || !pedidoDB) {
       console.error("Erro ao adicionar pedido à corrida:", erroAdicionar);
+      if (erroAdicionar?.code === "23505") {
+        alert("⚠️ Esse pedido já foi publicado e está em andamento.\n\nÉ o mesmo cliente, endereço, forma de pagamento e valor de um pedido que ainda não foi entregue. Confira em Pedidos Ativos.");
+        return;
+      }
       alert("❌ Não foi possível adicionar o pedido a esta corrida." + (erroAdicionar?.message ? "\n\n" + erroAdicionar.message : " Tente de novo."));
       return;
     }
@@ -3942,7 +3946,7 @@ export default function AppEmpresario() {
     const agoraISO = new Date().toISOString();
 
     // Salva o pedido no Supabase
-    const { data: pedidoDB } = await supabase.from("pedidos").insert({
+    const { data: pedidoDB, error: erroPublicar } = await supabase.from("pedidos").insert({
       empresario_id: empresa.id,
       cliente_nome: pedido.clienteNome,
       cliente_telefone: pedido.clienteTel,
@@ -3970,6 +3974,18 @@ export default function AppEmpresario() {
       turno_prioridade: turnoPrioridade,
       prioridade_motoboy_id: motoboyIdPrioridade,
     }).select().single();
+
+    // Trava de pedido duplicado (08/11/2026): o banco recusa (erro 23505) um pedido igual
+    // a outro que ainda está em andamento — mesmo cliente, endereço, pagamento e valor.
+    if (erroPublicar || !pedidoDB) {
+      console.error("Erro ao publicar pedido:", erroPublicar);
+      if (erroPublicar?.code === "23505") {
+        alert("⚠️ Esse pedido já foi publicado e está em andamento.\n\nÉ o mesmo cliente, endereço, forma de pagamento e valor de um pedido que ainda não foi entregue. Confira em Pedidos Ativos.");
+      } else {
+        alert("❌ Não foi possível publicar o pedido." + (erroPublicar?.message ? "\n\n" + erroPublicar.message : " Tente de novo."));
+      }
+      return;
+    }
 
     // Notifica os motoboys via push real — chega mesmo com o app fechado.
     if (temPrioridadeAtiva) {
@@ -4213,7 +4229,7 @@ export default function AppEmpresario() {
                   turno_prioridade: turnoPrioridadeReenvio,
                   prioridade_motoboy_id: motoboyIdPrioridadeReenvio,
                 }).select().single();
-                if (error) { console.error("Erro ao reenviar pedido:", error); return; }
+                if (error) { console.error("Erro ao reenviar pedido:", error); if (error.code === "23505") alert("⚠️ Esse pedido já foi publicado e está em andamento.\n\nÉ o mesmo cliente, endereço, forma de pagamento e valor de um pedido que ainda não foi entregue. Confira em Pedidos Ativos."); return; }
                 if (temPrioridadeReenvio) {
                   idsParaNotificarReenvio.forEach(motoboyId => {
                     fetch("/api/notificar-motoboy-especifico", {
