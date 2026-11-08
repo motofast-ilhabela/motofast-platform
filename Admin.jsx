@@ -2812,17 +2812,18 @@ function Historico({ historico, motoboys, empresarios }) {
       </div>
       {historico.length===0 && <Card style={{textAlign:"center",padding:30}}><div style={{color:"#4b5563"}}>Nenhuma entrega registrada ainda.</div></Card>}
       {historico.length>0 && (
-        <Card style={{padding:0,overflow:"hidden"}}>
+        <Card style={{padding:0,overflow:"visible"}}>
           {filtroMes==="Todos" && filtroMb==="Todos" && lista.length>100 && (
             <div style={{background:"#1a1000",borderBottom:"1px solid #f59e0b",padding:"9px 14px"}}>
               <span style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>⚠️ Mostrando as 100 entregas mais recentes de {lista.length} no total. Escolha um mês ou motoboy no filtro acima pra ver o período completo, sem cortar nada.</span>
             </div>
           )}
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+          <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
             <thead>
               <tr style={{background:"#0f172a",borderBottom:"1px solid #1f2937"}}>
                 {["Data","Saiu às","Entregue às","Cliente","Bairro","Km","Motoboy","Estabelecimento","Pgto (cliente)","Taxa loja","Motoboy","Lucro","Status"].map(h=>(
-                  <th key={h} style={{padding:"10px 12px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
+                  <th key={h} style={{padding:"9px 7px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -2834,27 +2835,27 @@ function Historico({ historico, motoboys, empresarios }) {
                 const entregue = e.status==="Entregue";
                 return (
                   <tr key={e.id} style={{borderBottom:"1px solid #1a2035"}} onMouseOver={ev=>ev.currentTarget.style.background="#0f172a"} onMouseOut={ev=>ev.currentTarget.style.background="transparent"}>
-                    <td style={{padding:"8px 12px",color:"#9ca3af",whiteSpace:"nowrap"}}>{e.data.split("-").reverse().join("/")}</td>
-                    <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700,whiteSpace:"nowrap"}}>🏍️ {e.horaSaida||"—"}</td>
-                    <td style={{padding:"8px 12px",color:"#34d399",fontWeight:700,whiteSpace:"nowrap"}}>✅ {e.horaEntrega||"—"}</td>
-                    <td style={{padding:"8px 12px",color:"#f9fafb",fontWeight:600}}>{e.clienteNome}</td>
-                    <td style={{padding:"8px 12px",color:"#34d399"}}>{e.bairro}</td>
-                    <td style={{padding:"8px 12px",color:"#a78bfa"}} title={e.metodoCalculoKm||"Sem registro do método de cálculo"}>{e.distanciaKm?`${e.distanciaKm}km`:"—"}</td>
-                    <td style={{padding:"8px 12px",color:"#d1d5db"}}>{mb?.nomeCompleto||"—"}</td>
-                    <td style={{padding:"8px 12px",color:"#d1d5db",fontSize:11}}>{emp?.nome?.split(" ").slice(0,2).join(" ")||"—"}</td>
-                    <td style={{padding:"8px 12px",whiteSpace:"nowrap"}}>
+                    <td style={{padding:"7px 7px",color:"#9ca3af",whiteSpace:"nowrap"}}>{e.data.split("-").reverse().join("/")}</td>
+                    <td style={{padding:"7px 7px",color:"#fbbf24",fontWeight:700,whiteSpace:"nowrap"}}>🏍️ {e.horaSaida||"—"}</td>
+                    <td style={{padding:"7px 7px",color:"#34d399",fontWeight:700,whiteSpace:"nowrap"}}>✅ {e.horaEntrega||"—"}</td>
+                    <td style={{padding:"7px 7px",color:"#f9fafb",fontWeight:600}}>{e.clienteNome}</td>
+                    <td style={{padding:"7px 7px",color:"#34d399"}}>{e.bairro}</td>
+                    <td style={{padding:"7px 7px",color:"#a78bfa"}} title={e.metodoCalculoKm||"Sem registro do método de cálculo"}>{e.distanciaKm?`${e.distanciaKm}km`:"—"}</td>
+                    <td style={{padding:"7px 7px",color:"#d1d5db"}}>{mb?.nomeCompleto||"—"}</td>
+                    <td style={{padding:"7px 7px",color:"#d1d5db",fontSize:11}}>{emp?.nome?.split(" ").slice(0,2).join(" ")||"—"}</td>
+                    <td style={{padding:"7px 7px",minWidth:150,maxWidth:210}}>
                       {/* Prova de cobrança (04/11/2026): valor que a loja digitou + forma de pagamento + edições */}
-                      <span style={{color:pg.cor,fontWeight:700}}>{pg.icon} {e.valorPedido!=null&&Number(e.valorPedido)>0?"R$"+Number(e.valorPedido).toFixed(2).replace(".",","):"s/ valor"} {({pix:"Pix",cartao:"Cartão",dinheiro:"Dinheiro"})[e.pagamento]||""}</span>
+                      <span style={{color:pg.cor,fontWeight:700,whiteSpace:"nowrap"}}>{pg.icon} {e.valorPedido!=null&&Number(e.valorPedido)>0?"R$"+Number(e.valorPedido).toFixed(2).replace(".",","):"s/ valor"} {({pix:"Pix",cartao:"Cartão",dinheiro:"Dinheiro"})[e.pagamento]||""}</span>
                       {(e.edicoes||[]).map((x,i)=>(
                         <div key={i} style={{color:"#fbbf24",fontSize:10,fontWeight:700}} title="Valor/forma de pagamento alterados depois de publicar">
                           ✏️ {new Date(x.em).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}: {x.de?.valor_pedido!=null?"R$"+Number(x.de.valor_pedido).toFixed(2).replace(".",","):"—"} {({pix:"Pix",cartao:"Cartão",dinheiro:"Dinheiro"})[x.de?.forma_pagamento]||""} → {x.para?.valor_pedido!=null?"R$"+Number(x.para.valor_pedido).toFixed(2).replace(".",","):"—"} {({pix:"Pix",cartao:"Cartão",dinheiro:"Dinheiro"})[x.para?.forma_pagamento]||""}
                         </div>
                       ))}
                     </td>
-                    <td style={{padding:"8px 12px",color:"#60a5fa",fontWeight:700}}>R${e.taxaEmpresario}</td>
-                    <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700}}>R${e.taxaMotoboy}</td>
-                    <td style={{padding:"8px 12px",color:"#a78bfa",fontWeight:700}}>R${e.lucro}</td>
-                    <td style={{padding:"8px 12px"}}>
+                    <td style={{padding:"7px 7px",color:"#60a5fa",fontWeight:700}}>R${e.taxaEmpresario}</td>
+                    <td style={{padding:"7px 7px",color:"#fbbf24",fontWeight:700}}>R${e.taxaMotoboy}</td>
+                    <td style={{padding:"7px 7px",color:"#a78bfa",fontWeight:700}}>R${e.lucro}</td>
+                    <td style={{padding:"7px 7px"}}>
                       <span style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700}} title={e.horaCancelamento ? `${e.motivoCancelamento||""} (às ${e.horaCancelamento})` : (e.motivoCancelamento||"")}>
                         {entregue?"✅":"❌"} {e.status}
                       </span>
@@ -2880,6 +2881,7 @@ function Historico({ historico, motoboys, empresarios }) {
               })}
             </tbody>
           </table>
+          </div>
           {lista.length===0 && <div style={{textAlign:"center",padding:30,color:"#4b5563"}}>Nenhum registro encontrado.</div>}
         </Card>
       )}
