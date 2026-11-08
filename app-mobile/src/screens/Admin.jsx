@@ -54,7 +54,7 @@ function estamosNoVerao() {
   return false;
 }
 function prazoChegadaMotoboyMin() {
-  return estamosNoVerao() ? 15 : 12;
+  return 15; // sempre 15 min (verão e baixa temporada) — decisão 04/11
 }
 
 // Formata minutos de atraso de um jeito fácil de ler: "5 min", "45 min",
@@ -271,6 +271,56 @@ function OvHeader({ titulo, sub, onClose }) {
   );
 }
 function Divider() { return <div style={{height:1,background:"#1f2937",margin:"12px 0"}}/>; }
+// ─── Taxas do chamado (retorno e deslocamento) — adicionado em 04/11/2026 ──────
+// Valores que o Alessandro edita a qualquer hora. "Modo chuva" troca o deslocamento
+// pelo valor de chuva em todos os chamados NOVOS (os já criados não mudam).
+function ConfigTaxasCard() {
+  const [cfg, setCfg] = useState(null);
+  const [form, setForm] = useState({ retorno:"", desloc:"", chuva:"" });
+  const [msg, setMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const num = (v) => parseFloat(String(v).replace(",", "."));
+  const fmt = (v) => String(Number(v)).replace(".", ",");
+  useEffect(()=>{ (async()=>{
+    const { data, error } = await supabase.from("config_taxas").select("*").eq("id",1).maybeSingle();
+    if (error || !data) { setMsg("Não foi possível carregar as taxas (a tabela config_taxas existe?)."); return; }
+    setCfg(data);
+    setForm({ retorno: fmt(data.taxa_retorno), desloc: fmt(data.taxa_deslocamento), chuva: fmt(data.taxa_deslocamento_chuva) });
+  })(); }, []);
+  async function salvar(extra={}) {
+    const r = num(form.retorno), d = num(form.desloc), c = num(form.chuva);
+    if ([r,d,c].some(v => isNaN(v) || v < 0 || v > 50)) { setMsg("Use valores entre 0 e 50."); return; }
+    setBusy(true); setMsg("");
+    const { data, error } = await supabase.from("config_taxas")
+      .update({ taxa_retorno:r, taxa_deslocamento:d, taxa_deslocamento_chuva:c, ...extra }).eq("id",1).select().maybeSingle();
+    setBusy(false);
+    if (error || !data) { setMsg("❌ Não salvou" + (error?.message ? ": " + error.message : ".")); return; }
+    setCfg(data); setMsg("✅ Salvo. Vale para os próximos chamados.");
+  }
+  if (!cfg) return msg ? <Card style={{marginBottom:14}}><div style={{color:"#f87171",fontSize:13}}>{msg}</div></Card> : null;
+  return (
+    <Card style={{marginBottom:14,border:cfg.modo_chuva?"1px solid #60a5fa":undefined}}>
+      <SectionTitle>🏍️ Taxas do chamado (valem para os próximos chamados)</SectionTitle>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10}}>
+        <Inp label="Retorno cartão/dinheiro (R$)" value={form.retorno} onChange={v=>setForm(f=>({...f,retorno:v}))}/>
+        <Inp label="Deslocamento no dia normal (R$)" value={form.desloc} onChange={v=>setForm(f=>({...f,desloc:v}))}/>
+        <Inp label="Deslocamento quando chover (R$) — troca o normal, não soma" value={form.chuva} onChange={v=>setForm(f=>({...f,chuva:v}))}/>
+      </div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6}}>
+        <Btn onClick={()=>salvar()} disabled={busy}>{busy?"Salvando...":"💾 Salvar valores"}</Btn>
+        <Btn cor={cfg.modo_chuva?"amarelo":"azul"} onClick={()=>salvar({modo_chuva:!cfg.modo_chuva})} disabled={busy}>
+          {cfg.modo_chuva ? "☀️ Desligar modo chuva" : "🌧️ Ligar modo chuva"}
+        </Btn>
+      </div>
+      <div style={{color:"#9ca3af",fontSize:12,marginTop:8}}>É só apertar o botão: ligando a chuva, o deslocamento passa de R${fmt(cfg.taxa_deslocamento)} para R${fmt(cfg.taxa_deslocamento_chuva)} (troca, não soma); desligando, volta ao normal. Vale só para os chamados novos.</div>
+      <div style={{color:cfg.modo_chuva?"#93c5fd":"#6b7280",fontSize:12,marginTop:8}}>
+        {cfg.modo_chuva ? "🌧️ MODO CHUVA LIGADO: deslocamento de R$"+fmt(cfg.taxa_deslocamento_chuva)+" por chamado." : "Deslocamento atual: R$"+fmt(cfg.taxa_deslocamento)+" por chamado."} Retorno: R${fmt(cfg.taxa_retorno)} (só cartão/dinheiro, 1 vez por chamado). Açaí da Hora não paga deslocamento.
+      </div>
+      {msg && <div style={{fontSize:12,marginTop:6,color:msg.startsWith("✅")?"#34d399":"#f87171"}}>{msg}</div>}
+    </Card>
+  );
+}
+
 function SectionTitle({ children }) { return <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>{children}</div>; }
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
@@ -1075,7 +1125,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
                   <Tag label={mb.online?"🟢 Online":"⚫ Offline"} cor={mb.online?"#34d399":"#4b5563"}/>
                   {!mb.ativo && <Tag label="🔒 Bloqueado" cor="#f59e0b"/>}
                 </div>
-                <div style={{color:"#6b7280",fontSize:12}}>📞 {mb.tel} · PIX: {mb.pix} · Bairro base: {mb.bairroBase}</div>
+                <div style={{color:"#6b7280",fontSize:12}}>📞 {mb.tel} · PIX: {mb.pix} · Bairro base: {mb.bairroBase} · {mb.tipoCelular==="iphone"?"🍎 iPhone":mb.tipoCelular==="android"?"🤖 Android":"📱 celular não informado"}</div>
                 {mb.cpf && <div style={{color:"#4b5563",fontSize:11,marginTop:2}}>CPF: {mb.cpf}</div>}
               </div>
               <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
@@ -1129,7 +1179,7 @@ function Motoboys({ motoboys, setMotoboys, historico, focoBanidos }) {
           <Card style={{marginBottom:14,padding:"14px 16px",background:"#0f172a"}}>
             <SectionTitle>📋 Dados Cadastrais</SectionTitle>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              {[["Nome completo",mbDet.nomeCompleto],["CPF",mbDet.cpf],["RG",mbDet.rg],["Nascimento",mbDet.nascimento],["Nome do pai",mbDet.nomePai],["Nome da mãe",mbDet.nomeMae],["Endereço",mbDet.endereco],["Bairro base",mbDet.bairroBase]].map(([l,v])=>(
+              {[["Nome completo",mbDet.nomeCompleto],["CPF",mbDet.cpf],["RG",mbDet.rg],["Nascimento",mbDet.nascimento],["Nome do pai",mbDet.nomePai],["Nome da mãe",mbDet.nomeMae],["Endereço",mbDet.endereco],["Bairro base",mbDet.bairroBase],["Celular",mbDet.tipoCelular==="iphone"?"🍎 iPhone":mbDet.tipoCelular==="android"?"🤖 Android":""]].map(([l,v])=>(
                 <div key={l}><div style={{color:"#4b5563",fontSize:11}}>{l}</div><div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{v||"—"}</div></div>
               ))}
             </div>
@@ -1240,6 +1290,13 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
   const [buscaEstab, setBuscaEstab] = useState("");
   const [somenteBloqueados, setSomenteBloqueados] = useState(false);
   const [abaEmp, setAbaEmp] = useState("geral");
+  // Recalcular taxa de uma entrega já feita (26/10/2026): corrige preço quando o endereço
+  // foi calculado errado (Google não achou a rua) usando a localização exata do cliente.
+  const [recalcE, setRecalcE] = useState(null);
+  const [recalcLink, setRecalcLink] = useState("");
+  const [recalcKm, setRecalcKm] = useState("");
+  const [recalcMsg, setRecalcMsg] = useState("");
+  const [recalcBusy, setRecalcBusy] = useState(false);
   const [taxasEdit, setTaxasEdit] = useState({});
   const [taxaSalva, setTaxaSalva] = useState(false);
   const [novoBairro, setNovoBairro] = useState("");
@@ -2050,12 +2107,76 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
                         <div style={{textAlign:"right"}}>
                           <div style={{color:"#60a5fa",fontWeight:700,fontSize:13}}>R${e.taxaEmpresario}</div>
                           {e.taxaChamado > 0 && <div style={{color:"#fbbf24",fontSize:10,fontWeight:700}}>inclui R${e.taxaChamado} de locação</div>}
+                          {e.status==="Entregue" && (
+                            <button onClick={()=>{ setRecalcE(e); setRecalcLink(""); setRecalcKm(""); setRecalcMsg(""); }}
+                              style={{marginTop:4,padding:"3px 8px",borderRadius:6,background:"transparent",border:"1px solid #374151",color:"#9ca3af",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+                              🔧 Recalcular taxa
+                            </button>
+                          )}
                         </div>
                       </div>
                       );
                     })}
                   </Card>
                 )}
+
+                {recalcE && (() => {
+                  const kmNum = parseFloat(String(recalcKm).replace(",", "."));
+                  const base = Number.isFinite(kmNum) && kmNum > 0 ? calcularTaxaPorKmReg(kmNum) : null;
+                  const chamado = Number(recalcE.taxaChamado) || 0;
+                  const novo = base ? { e: +(base.e + chamado).toFixed(2), m: +(base.m + chamado).toFixed(2) } : null;
+                  const origemTaxas = empSel.enderecoTaxas || empSel.enderecoEstab || "";
+                  async function calcularPeloMapa() {
+                    const c = extrairCoordenadasMaps(recalcLink);
+                    if (!c || c.fora) { setRecalcMsg(c && c.fora ? "Essa localização está fora de Ilhabela." : "Não consegui ler o link. Cole o link completo do Google Maps (com as coordenadas) ou \"-23.81235, -45.352342\"."); return; }
+                    if (!origemTaxas) { setRecalcMsg("Esse estabelecimento não tem endereço cadastrado para calcular."); return; }
+                    setRecalcBusy(true); setRecalcMsg("");
+                    try {
+                      const r = await fetch(`${WEB_APP_URL}/api/calcular-distancia`, { method: "POST", headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ origem: `${origemTaxas}, Ilhabela, SP, Brasil`, destinoLatLng: c }) });
+                      const d = await r.json();
+                      if (d.ok) { setRecalcKm(d.km.toFixed(1)); setRecalcMsg(`Distância de moto até o ponto: ${d.km.toFixed(1)} km (saindo de: ${origemTaxas}).`); }
+                      else setRecalcMsg("Não consegui calcular: " + (d.erro || "erro desconhecido"));
+                    } catch (err) { setRecalcMsg("Erro de conexão ao calcular."); }
+                    setRecalcBusy(false);
+                  }
+                  async function aplicar() {
+                    if (!novo) return;
+                    if (!window.confirm(`Confirma? A entrega de ${recalcE.clienteNome} passa de R$${recalcE.taxaEmpresario} para R$${novo.e} (motoboy recebe R$${novo.m}).`)) return;
+                    setRecalcBusy(true);
+                    const { error } = await supabase.from("pedidos").update({
+                      taxa: novo.e, taxa_empresario: novo.e, taxa_motoboy: novo.m,
+                      distancia_km: kmNum, metodo_calculo_km: "Recalculado pelo Admin (localização exata do cliente)",
+                    }).eq("id", recalcE.id);
+                    setRecalcBusy(false);
+                    if (error) { setRecalcMsg("Erro ao salvar: " + error.message); return; }
+                    setRecalcE(null);
+                    if (onRecarregar) await onRecarregar();
+                  }
+                  return (
+                    <Overlay onClose={()=>setRecalcE(null)} maxW={460}>
+                      <OvHeader titulo="🔧 Recalcular taxa da entrega" onClose={()=>setRecalcE(null)}/>
+                      <div style={{color:"#d1d5db",fontSize:13,marginBottom:4}}><b>{recalcE.clienteNome}</b> · {recalcE.bairro}</div>
+                      <div style={{color:"#9ca3af",fontSize:12,marginBottom:12}}>Cobrado hoje: R${recalcE.taxaEmpresario}{chamado>0 ? ` (inclui R$${chamado} de locação, que continua)` : ""}</div>
+                      <Inp label="📍 Localização do cliente (link do Google Maps)" value={recalcLink} onChange={setRecalcLink} placeholder="Cole o link ou as coordenadas"/>
+                      <Btn onClick={calcularPeloMapa} full disabled={recalcBusy || !recalcLink.trim()}>{recalcBusy ? "Calculando..." : "📏 Calcular distância pelo mapa"}</Btn>
+                      <div style={{height:10}}/>
+                      <Inp label="Distância (km) — preenchida sozinha, ou digite" value={recalcKm} onChange={setRecalcKm} placeholder="Ex: 8,4"/>
+                      {recalcMsg && <div style={{color:"#fbbf24",fontSize:12,margin:"4px 0 8px",lineHeight:1.5}}>{recalcMsg}</div>}
+                      {novo && (
+                        <div style={{background:"#0f172a",border:"1px solid #34d399",borderRadius:10,padding:"10px 14px",marginBottom:10}}>
+                          <div style={{color:"#9ca3af",fontSize:11}}>Valor certo para {kmNum} km</div>
+                          <div style={{color:"#34d399",fontWeight:900,fontSize:22}}>R${novo.e.toFixed(2)} <span style={{color:"#9ca3af",fontSize:12,fontWeight:600}}>(estabelecimento paga)</span></div>
+                          <div style={{color:"#fbbf24",fontWeight:700,fontSize:14}}>Motoboy recebe R${novo.m.toFixed(2)}</div>
+                        </div>
+                      )}
+                      <div style={{display:"flex",gap:8}}>
+                        <Btn onClick={aplicar} full disabled={!novo || recalcBusy}>✅ Aplicar essa taxa</Btn>
+                        <Btn cor="cinza" onClick={()=>setRecalcE(null)}>Cancelar</Btn>
+                      </div>
+                    </Overlay>
+                  );
+                })()}
 
                 {diasOrdenados.length>0 && (
                   <Card>
@@ -2507,25 +2628,63 @@ function Estabelecimentos({ empresarios, setEmpresarios, historico, motoboys, on
 }
 
 // ─── CLIENTES ─────────────────────────────────────────────────────────────────
+// Adicionado em 26/10/2026: LOCALIZAÇÃO EXATA do cliente. Quando o Google não conhece a
+// rua (ex.: Rua do Retiro, 158, Cocaia), o empresário cola o link do Google Maps que o
+// cliente mandou; guardamos latitude/longitude e a distância passa a ser calculada até
+// esse ponto exato, sem depender do Google achar o nome da rua.
+function extrairCoordenadasMaps(texto) {
+  const t = String(texto || "").trim();
+  if (!t) return null;
+  const padroes = [
+    /[?&](?:q|query|ll|destination)=(-?\d{1,3}\.\d+)[,%2C\s]+(-?\d{1,3}\.\d+)/i,
+    /@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/,
+    /!3d(-?\d{1,3}\.\d+)!4d(-?\d{1,3}\.\d+)/,
+    /^(-?\d{1,3}\.\d+)\s*[,;]\s*(-?\d{1,3}\.\d+)$/,
+  ];
+  for (const p of padroes) {
+    const m = t.match(p);
+    if (m) {
+      const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+      // Só aceita pontos dentro de Ilhabela (evita colar link de outra cidade por engano).
+      if (lat >= -23.98 && lat <= -23.70 && lng >= -45.52 && lng <= -45.25) return { lat, lng };
+      return { fora: true };
+    }
+  }
+  return null;
+}
+
 function Clientes({ clientes, setClientes, historico, empresarios }) {
   const [busca, setBusca] = useState("");
   const [editId, setEditId] = useState(null);
   const [detalheId, setDetalheId] = useState(null);
-  const [form, setForm] = useState({nome:"",tel:"",endereco:{rua:"",num:"",bairro:BAIRROS[0],ref:""}});
+  const [form, setForm] = useState({nome:"",tel:"",endereco:{rua:"",num:"",bairro:BAIRROS[0],ref:"",mapa:""}});
+  const [erroEd, setErroEd] = useState("");
 
   const filtrados = clientes.filter(c=>!busca||c.nome.toLowerCase().includes(busca.toLowerCase())||c.tel.includes(busca));
   const editCli = editId ? clientes.find(c=>c.id===editId) : null;
   const detCli  = detalheId ? clientes.find(c=>c.id===detalheId) : null;
 
-  function abrirEdicao(c) { setEditId(c.id); setForm({nome:c.nome,tel:c.tel,endereco:{...c.endereco}}); }
+  function abrirEdicao(c) { setErroEd(""); setEditId(c.id); setForm({nome:c.nome,tel:c.tel,endereco:{...c.endereco,mapa:(c.lat!=null&&c.lng!=null)?`${c.lat}, ${c.lng}`:""}}); }
 
   async function salvar() {
-    await supabase.from("clientes").update({
+    // Localização exata (26/10/2026): link do Google Maps ou coordenadas. Vazio = sem localização.
+    const txt = (form.endereco.mapa || "").trim();
+    let lat = null, lng = null;
+    if (txt) {
+      const c = extrairCoordenadasMaps(txt);
+      if (c && !c.fora) { lat = c.lat; lng = c.lng; }
+      else if (c && c.fora) { setErroEd("Essa localização está fora de Ilhabela. Confira o link."); return; }
+      else { setErroEd("Não consegui ler a localização. Cole o link completo do Google Maps (ex.: maps.google.com/?q=-23.81,-45.35) ou as coordenadas \"-23.81235, -45.352342\". Link curto (maps.app.goo.gl) não funciona: abra o link e copie o endereço da barra."); return; }
+    }
+    const { error } = await supabase.from("clientes").update({
       nome: form.nome, telefone: form.tel,
       rua: form.endereco.rua, numero: form.endereco.num,
       bairro: form.endereco.bairro, referencia: form.endereco.ref,
+      latitude: lat, longitude: lng,
     }).eq("id", editId);
-    setClientes(p=>p.map(c=>c.id===editId?{...c,...form}:c));
+    if (error) { setErroEd("Erro ao salvar: " + error.message); return; }
+    setClientes(p=>p.map(c=>c.id===editId?{...c,nome:form.nome,tel:form.tel,endereco:{rua:form.endereco.rua,num:form.endereco.num,bairro:form.endereco.bairro,ref:form.endereco.ref},lat,lng}:c));
+    setErroEd("");
     setEditId(null);
   }
 
@@ -2602,6 +2761,7 @@ function Clientes({ clientes, setClientes, historico, empresarios }) {
       {editId && editCli && (
         <Overlay onClose={()=>setEditId(null)} maxW={440}>
           <OvHeader titulo="✏️ Editar Cliente" onClose={()=>setEditId(null)}/>
+          {erroEd && <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#f87171",fontSize:13}}>{erroEd}</div>}
           <Inp label="Nome" value={form.nome} onChange={v=>setForm(f=>({...f,nome:v}))}/>
           <Inp label="Telefone" value={form.tel} onChange={v=>setForm(f=>({...f,tel:v}))}/>
           <Divider/>
@@ -2614,6 +2774,9 @@ function Clientes({ clientes, setClientes, historico, empresarios }) {
             {BAIRROS.map(b=><option key={b}>{b}</option>)}
           </SelInput>
           <Inp label="Ponto de referência" value={form.endereco.ref} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,ref:v}}))} placeholder="Casa de cor, portão..."/>
+          <Inp label="📍 Localização exata (opcional)" value={form.endereco.mapa||""} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,mapa:v}}))}
+            placeholder="Link do Google Maps ou coordenadas"
+            hint="Use quando o Google não achar a rua. A taxa das próximas entregas desse cliente passa a ser calculada até esse ponto exato. Apague o campo para voltar ao cálculo pelo endereço."/>
           <div style={{display:"flex",gap:8,marginTop:8}}>
             <Btn onClick={salvar} full>Salvar</Btn>
             <Btn cor="cinza" onClick={()=>setEditId(null)}>Cancelar</Btn>
@@ -2679,7 +2842,7 @@ function Historico({ historico, motoboys, empresarios }) {
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
             <thead>
               <tr style={{background:"#0f172a",borderBottom:"1px solid #1f2937"}}>
-                {["Data","Saiu às","Entregue às","Cliente","Bairro","Km","Motoboy","Estabelecimento","Pgto","Cobrado","Motoboy","Lucro","Status"].map(h=>(
+                {["Data","Saiu às","Entregue às","Cliente","Bairro","Km","Motoboy","Estabelecimento","Pgto (cliente)","Taxa loja","Motoboy","Lucro","Status"].map(h=>(
                   <th key={h} style={{padding:"10px 12px",textAlign:"left",color:"#6b7280",fontSize:10,fontWeight:700,textTransform:"uppercase",whiteSpace:"nowrap"}}>{h}</th>
                 ))}
               </tr>
@@ -2700,7 +2863,15 @@ function Historico({ historico, motoboys, empresarios }) {
                     <td style={{padding:"8px 12px",color:"#a78bfa",whiteSpace:"nowrap"}} title={e.metodoCalculoKm||"Sem registro do método de cálculo"}>{e.distanciaKm?`${e.distanciaKm}km`:"—"}</td>
                     <td style={{padding:"8px 12px",color:"#d1d5db",whiteSpace:"nowrap"}}>{mb?.nomeCompleto||"—"}</td>
                     <td style={{padding:"8px 12px",color:"#d1d5db",fontSize:11,whiteSpace:"nowrap"}}>{emp?.nome?.split(" ").slice(0,2).join(" ")||"—"}</td>
-                    <td style={{padding:"8px 12px",whiteSpace:"nowrap"}}><span style={{color:pg.cor,fontWeight:700}}>{pg.icon}</span></td>
+                    <td style={{padding:"8px 12px",whiteSpace:"nowrap"}}>
+                      {/* Prova de cobrança (04/11/2026): valor que a loja digitou + forma de pagamento + edições */}
+                      <span style={{color:pg.cor,fontWeight:700}}>{pg.icon} {e.valorPedido!=null&&Number(e.valorPedido)>0?"R$"+Number(e.valorPedido).toFixed(2).replace(".",","):"s/ valor"} {({pix:"Pix",cartao:"Cartão",dinheiro:"Dinheiro"})[e.pagamento]||""}</span>
+                      {(e.edicoes||[]).map((x,i)=>(
+                        <div key={i} style={{color:"#fbbf24",fontSize:10,fontWeight:700}} title="Valor/forma de pagamento alterados depois de publicar">
+                          ✏️ {new Date(x.em).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}: {x.de?.valor_pedido!=null?"R$"+Number(x.de.valor_pedido).toFixed(2).replace(".",","):"—"} {({pix:"Pix",cartao:"Cartão",dinheiro:"Dinheiro"})[x.de?.forma_pagamento]||""} → {x.para?.valor_pedido!=null?"R$"+Number(x.para.valor_pedido).toFixed(2).replace(".",","):"—"} {({pix:"Pix",cartao:"Cartão",dinheiro:"Dinheiro"})[x.para?.forma_pagamento]||""}
+                        </div>
+                      ))}
+                    </td>
                     <td style={{padding:"8px 12px",color:"#60a5fa",fontWeight:700,whiteSpace:"nowrap"}}>R${e.taxaEmpresario}</td>
                     <td style={{padding:"8px 12px",color:"#fbbf24",fontWeight:700,whiteSpace:"nowrap"}}>R${e.taxaMotoboy}</td>
                     <td style={{padding:"8px 12px",color:"#a78bfa",fontWeight:700,whiteSpace:"nowrap"}}>R${e.lucro}</td>
@@ -2710,6 +2881,17 @@ function Historico({ historico, motoboys, empresarios }) {
                         style={{background:entregue?"#0d3d2e":"#3d1010",color:entregue?"#34d399":"#f87171",padding:"2px 8px",borderRadius:20,fontSize:11,fontWeight:700,cursor:(!entregue && e.horaCancelamento)?"pointer":"default"}}>
                         {entregue?"✅":"❌"} {e.status}
                       </span>
+                      {e.cancelamentoCobrado && (
+                        <div style={{marginTop:3,fontSize:10,fontWeight:700,color:"#f59e0b"}}>
+                          ⚠️ Taxa de cancelamento ({e.cancelamentoTipo==="total"?"total":"50%"}){e.taxaOriginal?` — pedido era R$${e.taxaOriginal}`:""}
+                          <button onClick={async()=>{
+                            if(!window.confirm("Perdoar a taxa de cancelamento? O pedido volta a valer R$0 (empresário não paga e o motoboy não recebe).")) return;
+                            const {error:errP}=await supabase.from("pedidos").update({cancelamento_cobrado:false,taxa_cancelamento:0,ganho_cancelamento_motoboy:0,taxa:0,taxa_empresario:0,taxa_motoboy:0}).eq("id",e.id);
+                            if(errP){alert("Erro: "+errP.message);return;}
+                            window.location.reload();
+                          }} style={{marginLeft:6,padding:"2px 6px",borderRadius:6,border:"1px solid #f59e0b66",background:"transparent",color:"#f59e0b",fontSize:10,fontWeight:700,cursor:"pointer"}}>Perdoar taxa</button>
+                        </div>
+                      )}
                       {!entregue && (
                         <div style={{marginTop:3,fontSize:10,fontWeight:700,color:e.canceladoPorMotoboy?"#f59e0b":"#6b7280"}}>
                           {e.canceladoPorMotoboy ? "🏍️ pelo motoboy" : "🏪 pelo estabelecimento"}
@@ -2987,6 +3169,34 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
     return m>0?`${m}m ${r}s`:`${r}s`;
   }
 
+  // Corrigido em 22/10/2026: ao atribuir um pedido a um motoboy que JÁ estava em corrida,
+  // o Admin podia pegar um pedido dele sem corrida_id e criar uma corrida NOVA, e o
+  // painel mostrava o mesmo motoboy em dois cartões separados. Agora procura a corrida
+  // que já tem (ignorando pedidos sem corrida_id), cria só se não existir nenhuma e
+  // ainda religa à mesma corrida qualquer pedido ativo dele que estivesse solto.
+  async function corridaParaMotoboy(motoboyId) {
+    const { data: ativos } = await supabase
+      .from("pedidos")
+      .select("id, corrida_id")
+      .eq("motoboy_id", motoboyId)
+      .in("status", ["aceito", "saiu_estabelecimento"])
+      .order("aceito_em", { ascending: true });
+    let corridaId = (ativos || []).find(p => p.corrida_id)?.corrida_id;
+    if (!corridaId) {
+      const { data: corridaDB } = await supabase
+        .from("corridas")
+        .insert({ motoboy_id: motoboyId, status: "ativa" })
+        .select()
+        .single();
+      corridaId = corridaDB?.id;
+    }
+    const soltos = (ativos || []).filter(p => !p.corrida_id).map(p => p.id);
+    if (corridaId && soltos.length > 0) {
+      await supabase.from("pedidos").update({ corrida_id: corridaId }).in("id", soltos);
+    }
+    return corridaId;
+  }
+
   // Adicionado em 30/08/2026 — atribuição manual: o Alessandro escolhe
   // direto qualquer motoboy (mesmo que já esteja em outra corrida — nesse
   // caso, entra como um pedido A MAIS na mesma corrida dele) pra assumir um
@@ -2995,23 +3205,7 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
     if (!motoboyId) return;
     // Confere se esse motoboy já tem uma corrida em andamento — se tiver,
     // reaproveita ela (agrupa), em vez de criar uma corrida nova solta.
-    const { data: pedidoAtivoDele } = await supabase
-      .from("pedidos")
-      .select("corrida_id")
-      .eq("motoboy_id", motoboyId)
-      .in("status", ["aceito","saiu_estabelecimento"])
-      .limit(1)
-      .maybeSingle();
-
-    let corridaIdParaUsar = pedidoAtivoDele?.corrida_id;
-    if (!corridaIdParaUsar) {
-      const { data: corridaDB } = await supabase
-        .from("corridas")
-        .insert({ motoboy_id: motoboyId, status: "ativa" })
-        .select()
-        .single();
-      corridaIdParaUsar = corridaDB?.id;
-    }
+    const corridaIdParaUsar = await corridaParaMotoboy(motoboyId);
 
     const { error } = await supabase.from("pedidos").update({
       status: "aceito",
@@ -3035,23 +3229,7 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
   // mesmo — some da corrida de quem tinha antes.
   async function reatribuirParaOutroMotoboy(pedidoId, novoMotoboyId) {
     if (!novoMotoboyId) return;
-    const { data: pedidoAtivoDele } = await supabase
-      .from("pedidos")
-      .select("corrida_id")
-      .eq("motoboy_id", novoMotoboyId)
-      .in("status", ["aceito", "saiu_estabelecimento"])
-      .limit(1)
-      .maybeSingle();
-
-    let corridaIdParaUsar = pedidoAtivoDele?.corrida_id;
-    if (!corridaIdParaUsar) {
-      const { data: corridaDB } = await supabase
-        .from("corridas")
-        .insert({ motoboy_id: novoMotoboyId, status: "ativa" })
-        .select()
-        .single();
-      corridaIdParaUsar = corridaDB?.id;
-    }
+    const corridaIdParaUsar = await corridaParaMotoboy(novoMotoboyId);
 
     const { error } = await supabase.from("pedidos").update({
       motoboy_id: novoMotoboyId,
@@ -3202,7 +3380,7 @@ function CorridasAtivas({ corridasAtivas, onRecarregar, motoboys }) {
                   const temposAceite = pedidosDaCorrida.map(x => x.aceitoEm).filter(Boolean);
                   const aceitoEmEfetivo = p.aceitoEm || (temposAceite.length ? Math.min(...temposAceite) : null);
                   const aindaNoEstabelecimento = p.status==="aceito" && aceitoEmEfetivo;
-                  const minutosDesdeAceite = aindaNoEstabelecimento ? (Date.now() - aceitoEmEfetivo) / 60000 : 0;
+                  const minutosDesdeAceite = aindaNoEstabelecimento ? Math.max(0, (Date.now() - aceitoEmEfetivo) / 60000) : 0;
                   const dentroDoPrazo = minutosDesdeAceite < PRAZO_CHEGADA_MIN;
                   const minutosRestantes = Math.max(0, Math.ceil(PRAZO_CHEGADA_MIN - minutosDesdeAceite));
                   return (
@@ -3429,6 +3607,308 @@ function ExclusoesConta({ motoboys, empresarios, historico }) {
 //   um ganhou, quanto faltou completar, e se já foi pago — nunca é apagada,
 //   dá pra comparar mês a mês, ano a ano, pra sempre.
 const PISO_SEMANAL_PADRAO = 455; // R$65/dia — ajustável aqui se o valor combinado mudar
+
+
+// ============================================================
+// TURNOS LIVRES (04/11/2026) — garantia de R$53 por turno, vagas liberadas por dia.
+// Tabelas: config_turnos (1 linha), turnos_livres_vagas (data+turno), turnos_livres_inscricoes.
+// O fechamento roda sozinho de madrugada (função fechar_turnos_livres, via pg_cron).
+// ============================================================
+function TurnosLivres({ motoboys }) {
+  const [cfg, setCfg] = useState(null);
+  const [vagas, setVagas] = useState({});
+  const [insc, setInsc] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [addSel, setAddSel] = useState({});
+  const [diasSel, setDiasSel] = useState([]);
+  const [qtdAlmoco, setQtdAlmoco] = useState(1);
+  const [qtdNoite, setQtdNoite] = useState(1);
+  const hoje = dataLocalISO();
+  const nomeDe = (id) => (motoboys.find(m => m.id === id)?.nomeCompleto) || "Motoboy";
+  const rotulo = (t) => t === "almoco" ? "☀️ Almoço" : "🌙 Noite";
+  const diaFmt = (iso) => {
+    const d = new Date(iso + "T12:00:00-03:00");
+    return d.toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit" });
+  };
+  const proximos7 = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() + i); return dataLocalISO(d);
+  });
+  // Dias mostrados nos cartões: os próximos 7 + qualquer dia futuro que já tenha vaga aberta ou reserva.
+  const diasComVaga = Object.keys(vagas).filter(k => vagas[k] > 0).map(k => k.split("|")[0]);
+  const diasComReserva = insc.filter(i => !i.cancelado_em && i.data >= hoje).map(i => i.data);
+  const dias = [...new Set([...proximos7, ...diasComVaga.filter(d => d >= hoje), ...diasComReserva])].sort();
+  // Calendário (só do Admin) para escolher dias de qualquer mês.
+  const [mesCal, setMesCal] = useState(() => { const n = new Date(); return { y: n.getFullYear(), m: n.getMonth() }; });
+  const nomeMes = new Date(mesCal.y, mesCal.m, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  const diasDoMes = new Date(mesCal.y, mesCal.m + 1, 0).getDate();
+  const primeiroDow = new Date(mesCal.y, mesCal.m, 1).getDay();
+  const isoDia = (n) => `${mesCal.y}-${String(mesCal.m + 1).padStart(2, "0")}-${String(n).padStart(2, "0")}`;
+  function mudarMes(delta) {
+    setMesCal(c => { const d = new Date(c.y, c.m + delta, 1); return { y: d.getFullYear(), m: d.getMonth() }; });
+  }
+  function alternarDiaSemana(dow) {
+    const doDow = [];
+    for (let n = 1; n <= diasDoMes; n++) {
+      if (new Date(mesCal.y, mesCal.m, n).getDay() === dow && isoDia(n) >= hoje) doDow.push(isoDia(n));
+    }
+    if (doDow.length === 0) return;
+    setDiasSel(p => doDow.every(d => p.includes(d)) ? p.filter(d => !doDow.includes(d)) : [...new Set([...p, ...doDow])]);
+  }
+
+  async function carregar() {
+    const { data: c } = await supabase.from("config_turnos").select("*").eq("id", 1).maybeSingle();
+    setCfg(c || null);
+    const { data: v } = await supabase.from("turnos_livres_vagas").select("*").gte("data", hoje);
+    const mapa = {}; (v || []).forEach(x => { mapa[x.data + "|" + x.turno] = x.vagas; });
+    setVagas(mapa);
+    const ini = new Date(); ini.setDate(ini.getDate() - 35);
+    const { data: i } = await supabase.from("turnos_livres_inscricoes").select("*")
+      .gte("data", dataLocalISO(ini)).order("data", { ascending: false });
+    setInsc(i || []);
+    setCarregando(false);
+  }
+  useEffect(() => { carregar(); const t = setInterval(carregar, 15000); return () => clearInterval(t); }, []);
+
+  async function salvarCfg() {
+    const { error } = await supabase.from("config_turnos").update({
+      piso: Number(cfg.piso) || 0,
+      almoco_inicio: cfg.almoco_inicio, almoco_fim: cfg.almoco_fim,
+      noite_inicio: cfg.noite_inicio, noite_fim: cfg.noite_fim,
+      antecedencia_min: Number(cfg.antecedencia_min) || 0,
+      cancelar_ate_min: Number(cfg.cancelar_ate_min) || 0,
+    }).eq("id", 1);
+    if (error) { alert("Erro ao salvar: " + error.message); return; }
+    alert("✅ Configuração dos turnos salva.");
+  }
+  async function mudarVagas(data, turno, n) {
+    const { error } = await supabase.from("turnos_livres_vagas").upsert({ data, turno, vagas: Number(n) }, { onConflict: "data,turno" });
+    if (error) { alert("Erro: " + error.message); return; }
+    setVagas(p => ({ ...p, [data + "|" + turno]: Number(n) }));
+  }
+  async function abrirDiasMarcados() {
+    if (diasSel.length === 0) { alert("Marque pelo menos um dia."); return; }
+    const lista = [...diasSel].sort();
+    const nomes = lista.map(diaFmt).join(", ");
+    if (!window.confirm(`Abrir ${qtdAlmoco} vaga(s) no almoço e ${qtdNoite} na noite em: ${nomes}?`)) return;
+    const linhas = [];
+    const pulados = [];
+    lista.forEach(data => {
+      [["almoco", Number(qtdAlmoco)], ["noite", Number(qtdNoite)]].forEach(([turno, n]) => {
+        const reservadas = insc.filter(i => i.data === data && i.turno === turno && !i.cancelado_em).length;
+        if (n < reservadas) { pulados.push(`${diaFmt(data)} ${turno === "almoco" ? "almoço" : "noite"}`); return; }
+        linhas.push({ data, turno, vagas: n });
+      });
+    });
+    if (linhas.length > 0) {
+      const { error } = await supabase.from("turnos_livres_vagas").upsert(linhas, { onConflict: "data,turno" });
+      if (error) { alert("Erro: " + error.message); return; }
+    }
+    if (pulados.length > 0) alert("Estes turnos não foram alterados porque já têm mais motoboys reservados do que o número de vagas pedido: " + pulados.join("; "));
+    setDiasSel([]);
+    carregar();
+  }
+  async function adicionar(data, turno, id) {
+    const key = data + "|" + turno;
+    if (!id) return;
+    const { error } = await supabase.from("turnos_livres_inscricoes").insert({ data, turno, motoboy_id: id });
+    if (error) { alert("Erro: " + error.message); return; }
+    setAddSel(p => ({ ...p, [key]: "" }));
+    carregar();
+  }
+  async function removerReserva(id) {
+    if (!window.confirm("Remover esta reserva?")) return;
+    await supabase.from("turnos_livres_inscricoes").update({ cancelado_em: new Date().toISOString() }).eq("id", id);
+    carregar();
+  }
+  async function restaurarGarantia(i) {
+    if (!window.confirm("Restaurar a garantia deste motoboy neste turno?")) return;
+    const falta = i.fechado_em ? Math.max(0, (Number(i.piso) || 0) - (Number(i.ganho_entregas) || 0)) : null;
+    await supabase.from("turnos_livres_inscricoes").update({
+      perdeu_garantia: false, saiu_offline_em: null,
+      ...(falta !== null ? { valor_completar: falta } : {}),
+    }).eq("id", i.id);
+    carregar();
+  }
+  async function marcarPago(i, pago) {
+    await supabase.from("turnos_livres_inscricoes").update({ pago }).eq("id", i.id);
+    carregar();
+  }
+
+  if (carregando) return <div style={{color:"#6b7280",padding:20}}>Carregando...</div>;
+  if (!cfg) return <div style={{color:"#f87171",padding:20}}>Não achei a configuração dos turnos. Rode o SQL dos turnos livres no Supabase.</div>;
+
+  const ativas = insc.filter(i => !i.cancelado_em);
+  const passados = ativas.filter(i => i.data < hoje || i.fechado_em);
+  const totalCompletar = +passados.filter(i => i.fechado_em && !i.pago).reduce((s, i) => s + (Number(i.valor_completar) || 0), 0).toFixed(2);
+  const campo = { background:"#111827", border:"1px solid #374151", borderRadius:8, color:"#f9fafb", padding:"8px 10px", fontSize:13, width:"100%", boxSizing:"border-box" };
+  const fmtH = (ts) => ts ? new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
+
+  return (
+    <div>
+      <div style={{marginBottom:16}}>
+        <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>🗓️ Turnos Livres — Garantia por turno</div>
+        <div style={{color:"#6b7280",fontSize:13}}>Você libera as vagas de cada dia; o motoboy reserva sozinho. Ficou online até o fim = garantia de R${Number(cfg.piso).toFixed(2).replace(".", ",")}.</div>
+      </div>
+
+      <Card style={{marginBottom:16,background:"#0f172a"}}>
+        <SectionTitle>⚙️ Valores e horários</SectionTitle>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10}}>
+          {[
+            ["Garantia (R$)","piso","number"],["Almoço começa","almoco_inicio","text"],["Almoço termina","almoco_fim","text"],
+            ["Noite começa","noite_inicio","text"],["Noite termina","noite_fim","text"],["Reservar até (min antes)","antecedencia_min","number"],["Sair do turno até (min antes)","cancelar_ate_min","number"],
+          ].map(([rot, k, tp]) => (
+            <div key={k}>
+              <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:3}}>{rot}</div>
+              <input type={tp} value={cfg[k] ?? ""} onChange={e => setCfg(c => ({ ...c, [k]: e.target.value }))} style={campo} placeholder={tp==="text"?"hh:mm":""}/>
+            </div>
+          ))}
+        </div>
+        <div style={{marginTop:10}}><Btn onClick={salvarCfg}>💾 Salvar</Btn></div>
+      </Card>
+
+      <Card style={{marginBottom:16,background:"#0f172a"}}>
+        <SectionTitle>⚡ Abrir vários dias de uma vez</SectionTitle>
+        <div style={{color:"#9ca3af",fontSize:12,marginBottom:8}}>Escolha os dias no calendário (de qualquer mês, em qualquer ordem), defina as vagas e clique em Abrir.</div>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <button onClick={() => mudarMes(-1)} style={{background:"#111827",border:"1px solid #374151",borderRadius:8,color:"#d1d5db",padding:"6px 12px",cursor:"pointer",fontWeight:800}}>‹</button>
+          <div style={{color:"#f9fafb",fontWeight:800,fontSize:14,textTransform:"capitalize"}}>{nomeMes}</div>
+          <button onClick={() => mudarMes(1)} style={{background:"#111827",border:"1px solid #374151",borderRadius:8,color:"#d1d5db",padding:"6px 12px",cursor:"pointer",fontWeight:800}}>›</button>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:8}}>
+          {["D","S","T","Q","Q","S","S"].map((l, i) => <div key={i} style={{textAlign:"center",color:"#6b7280",fontSize:11,fontWeight:700}}>{l}</div>)}
+          {Array.from({ length: primeiroDow }, (_, i) => <div key={"v" + i}/>)}
+          {Array.from({ length: diasDoMes }, (_, i) => {
+            const n = i + 1, iso = isoDia(n);
+            const passado = iso < hoje;
+            const on = diasSel.includes(iso);
+            const aberto = (vagas[iso + "|almoco"] || 0) > 0 || (vagas[iso + "|noite"] || 0) > 0;
+            return (
+              <button key={iso} disabled={passado}
+                onClick={() => setDiasSel(p => on ? p.filter(x => x !== iso) : [...p, iso])}
+                style={{padding:"8px 0",borderRadius:8,border:`1px solid ${on?"#34d399":aberto?"#3b82f6":"#1f2937"}`,background:on?"#0d3d2e":"#111827",color:passado?"#374151":on?"#34d399":"#d1d5db",fontSize:13,fontWeight:700,cursor:passado?"not-allowed":"pointer",position:"relative"}}>
+                {n}{aberto && <span style={{position:"absolute",top:2,right:4,width:5,height:5,borderRadius:"50%",background:"#3b82f6"}}/>}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,alignItems:"center"}}>
+          <span style={{color:"#6b7280",fontSize:11,fontWeight:700}}>Atalhos do mês:</span>
+          {[["Domingos",0],["Segundas",1],["Terças",2],["Quartas",3],["Quintas",4],["Sextas",5],["Sábados",6]].map(([rot, dow]) => (
+            <button key={dow} onClick={() => alternarDiaSemana(dow)}
+              style={{padding:"5px 9px",borderRadius:8,border:"1px solid #374151",background:"transparent",color:"#9ca3af",fontSize:11,fontWeight:700,cursor:"pointer"}}>{rot}</button>
+          ))}
+          <button onClick={() => setDiasSel([])} style={{padding:"5px 9px",borderRadius:8,border:"1px solid #ef444466",background:"transparent",color:"#f87171",fontSize:11,fontWeight:700,cursor:"pointer"}}>Limpar</button>
+        </div>
+        <div style={{color:"#6b7280",fontSize:11,marginBottom:8}}>🔵 = dia que já tem vaga aberta · {diasSel.length} dia{diasSel.length!==1?"s":""} marcado{diasSel.length!==1?"s":""} (a marcação continua ao trocar de mês)</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"flex-end"}}>
+          <div>
+            <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:3}}>☀️ Vagas no almoço</div>
+            <select value={qtdAlmoco} onChange={e => setQtdAlmoco(e.target.value)} style={{...campo,width:"auto"}}>
+              {[0,1,2,3,4,5].map(x => <option key={x} value={x}>{x===0?"Fechado":`${x} vaga${x>1?"s":""}`}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:3}}>🌙 Vagas na noite</div>
+            <select value={qtdNoite} onChange={e => setQtdNoite(e.target.value)} style={{...campo,width:"auto"}}>
+              {[0,1,2,3,4,5].map(x => <option key={x} value={x}>{x===0?"Fechado":`${x} vaga${x>1?"s":""}`}</option>)}
+            </select>
+          </div>
+          <Btn onClick={abrirDiasMarcados} disabled={diasSel.length === 0}>Abrir os dias marcados</Btn>
+        </div>
+      </Card>
+
+      <SectionTitle>Dias abertos e próximos 7 dias — ajuste as vagas de cada um (0 = fechado)</SectionTitle>
+      {dias.map(data => (
+        <Card key={data} style={{marginBottom:10}}>
+          <div style={{color:"#f9fafb",fontWeight:800,fontSize:14,marginBottom:8,textTransform:"capitalize"}}>{diaFmt(data)}{data===hoje?" · hoje":""}</div>
+          {["almoco","noite"].map(turno => {
+            const key = data + "|" + turno;
+            const n = vagas[key] || 0;
+            const reservas = ativas.filter(i => i.data === data && i.turno === turno && !i.cancelado_em);
+            const jaIds = new Set(reservas.map(r => r.motoboy_id));
+            return (
+              <div key={turno} style={{borderTop:"1px solid #1f2937",padding:"8px 0"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <div style={{color:"#d1d5db",fontWeight:700,fontSize:13,minWidth:130}}>
+                    {rotulo(turno)} <span style={{color:"#6b7280",fontWeight:600}}>{turno==="almoco"?`${cfg.almoco_inicio}–${cfg.almoco_fim}`:`${cfg.noite_inicio}–${cfg.noite_fim}`}</span>
+                  </div>
+                  <select value={n} onChange={e => mudarVagas(data, turno, e.target.value)} style={{...campo,width:"auto"}}>
+                    {[0,1,2,3,4,5].map(x => <option key={x} value={x}>{x===0?"Fechado":`${x} vaga${x>1?"s":""}`}</option>)}
+                  </select>
+                  <div style={{color:"#6b7280",fontSize:12}}>{reservas.length}/{n} reservada{reservas.length!==1?"s":""}</div>
+                </div>
+                {reservas.map(r => (
+                  <div key={r.id} style={{display:"flex",alignItems:"center",gap:8,marginTop:6,color:"#34d399",fontSize:13,fontWeight:600}}>
+                    🏍️ {nomeDe(r.motoboy_id)}
+                    <button onClick={() => removerReserva(r.id)} style={{background:"transparent",border:"1px solid #ef444466",color:"#f87171",borderRadius:6,fontSize:11,cursor:"pointer",padding:"2px 8px"}}>remover</button>
+                  </div>
+                ))}
+                <div style={{marginTop:6}}>
+                  <input value={addSel[key] || ""} onChange={e => setAddSel(p => ({ ...p, [key]: e.target.value }))}
+                    placeholder="🔎 Buscar motoboy pelo nome para colocar neste turno..." style={campo}/>
+                  {(addSel[key] || "").trim().length >= 1 && (
+                    <div style={{marginTop:4,display:"flex",flexDirection:"column",gap:4}}>
+                      {motoboys
+                        .filter(m => !m.banido && !jaIds.has(m.id) && (m.nomeCompleto || "").toLowerCase().includes((addSel[key] || "").trim().toLowerCase()))
+                        .slice(0, 6)
+                        .map(m => (
+                          <button key={m.id} onClick={() => adicionar(data, turno, m.id)}
+                            style={{textAlign:"left",background:"#111827",border:"1px solid #374151",borderRadius:8,color:"#f9fafb",padding:"8px 10px",fontSize:13,cursor:"pointer"}}>
+                            ➕ {m.nomeCompleto}
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </Card>
+      ))}
+
+      <div style={{marginTop:22}}>
+        <SectionTitle>💰 Quem trabalhou — para pagar na terça</SectionTitle>
+        <Card style={{marginBottom:12,background:"#0f172a"}}>
+          <div style={{color:"#9ca3af",fontSize:12}}>Total a completar (ainda não pago)</div>
+          <div style={{color:"#fbbf24",fontWeight:900,fontSize:26}}>R${totalCompletar.toFixed(2).replace(".", ",")}</div>
+          <div style={{color:"#6b7280",fontSize:11,marginTop:2}}>Só soma turnos já fechados. O fechamento roda sozinho de madrugada, depois que o turno acaba.</div>
+        </Card>
+        {passados.length === 0 && <div style={{color:"#6b7280",fontSize:13}}>Ainda não há turnos encerrados.</div>}
+        {passados.map(i => {
+          const fechado = !!i.fechado_em;
+          const completar = Number(i.valor_completar) || 0;
+          return (
+            <Card key={i.id} style={{marginBottom:8,padding:"12px 14px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+                <div>
+                  <div style={{color:"#f9fafb",fontWeight:800,fontSize:14}}>🏍️ {nomeDe(i.motoboy_id)}</div>
+                  <div style={{color:"#9ca3af",fontSize:12,textTransform:"capitalize"}}>{diaFmt(i.data)} · {rotulo(i.turno)}</div>
+                  {i.perdeu_garantia
+                    ? <div style={{color:"#f87171",fontSize:12,fontWeight:700,marginTop:3}}>⚠️ Saiu do online{i.saiu_offline_em?` às ${fmtH(i.saiu_offline_em)}`:""} — perdeu a garantia (recebe só as entregas)</div>
+                    : <div style={{color:"#34d399",fontSize:12,fontWeight:700,marginTop:3}}>✅ Ficou online até o fim</div>}
+                </div>
+                <div style={{textAlign:"right"}}>
+                  {fechado ? (<>
+                    <div style={{color:"#9ca3af",fontSize:12}}>Fez em entregas: <b style={{color:"#f9fafb"}}>R${(Number(i.ganho_entregas)||0).toFixed(2).replace(".", ",")}</b></div>
+                    {completar > 0
+                      ? <div style={{color:"#fbbf24",fontWeight:900,fontSize:16}}>Completar R${completar.toFixed(2).replace(".", ",")}</div>
+                      : <div style={{color:"#34d399",fontWeight:800,fontSize:13}}>{i.perdeu_garantia ? "Nada a completar" : "Bateu a meta — nada a completar"}</div>}
+                  </>) : <div style={{color:"#6b7280",fontSize:12}}>Fecha de madrugada</div>}
+                </div>
+              </div>
+              <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+                {i.perdeu_garantia && <Btn small cor="cinza" onClick={() => restaurarGarantia(i)}>Restaurar garantia</Btn>}
+                {fechado && completar > 0 && (
+                  <Btn small cor={i.pago?"cinza":"verde"} onClick={() => marcarPago(i, !i.pago)}>{i.pago ? "✅ Pago (desfazer)" : "Marcar como pago"}</Btn>
+                )}
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function TurnoFixo({ motoboys, historico }) {
   const [turnoFixo, setTurnoFixo] = useState([]);
@@ -3844,6 +4324,7 @@ export default function Admin() {
         tel: m.telefone || "",
         pix: m.pix || "",
         bairroBase: m.bairro_base || "",
+        tipoCelular: m.tipo_celular || "",
         cpf: m.cpf || "",
         rg: m.rg || "",
         nascimento: m.nascimento || "",
@@ -3900,7 +4381,9 @@ export default function Admin() {
           num: c.numero || "",
           bairro: c.bairro || "",
           ref: c.referencia || "",
-        }
+        },
+        lat: c.latitude ?? null,
+        lng: c.longitude ?? null,
       }));
 
       const hist = (pedRes.data || [])
@@ -3940,7 +4423,9 @@ export default function Admin() {
             taxaMotoboy: taxaMb,
             taxaChamado: Number(p.taxa_chamado) || 0,
             lucro: lucroEntrega,
-            status: p.status === "entregue" ? "Entregue" : "Cancelada",
+            status: (p.status === "entregue" || p.cancelamento_cobrado) ? "Entregue" : "Cancelada",
+            cancelamentoCobrado: !!p.cancelamento_cobrado, cancelamentoTipo: p.cancelamento_tipo || null, taxaOriginal: Number(p.taxa_original)||0,
+            valorPedido: p.valor_pedido, valorReceber: p.valor_receber, edicoes: Array.isArray(p.edicoes) ? p.edicoes : [],
             canceladoPorMotoboy: p.cancelado_por_motoboy || false,
             motivoCancelamento: p.motivo_cancelamento || null,
             horaCancelamento: p.cancelado_em ? new Date(p.cancelado_em).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}) : null,
@@ -4159,7 +4644,7 @@ export default function Admin() {
     {id:"pendentes",label:"⏳ Pendentes", badge: pendentes.motoboys.length + pendentes.empresarios.length},
     {id:"repasse",label:"💰 Repasse"},
     {id:"motoboys",label:"🏍️ Motoboys"},
-    {id:"turnofixo",label:"🔒 Turno Fixo"},
+    {id:"turnoslivres",label:"🗓️ Turnos"},
     {id:"estabelecimentos",label:"🏪 Estabelecimentos"},
     {id:"clientes",label:"👤 Clientes"},
     {id:"historico",label:"📋 Histórico"},
@@ -4278,6 +4763,7 @@ export default function Admin() {
                           <CampoCadastro rotulo="Endereço residencial completo" valor={mb.endereco} largura="100%"/>
                           <CampoCadastro rotulo="Bairro" valor={mb.bairro_base}/>
                           <CampoCadastro rotulo="Telefone" valor={mb.telefone}/>
+                          <CampoCadastro rotulo="Celular" valor={mb.tipo_celular==="iphone"?"🍎 iPhone":mb.tipo_celular==="android"?"🤖 Android":"NÃO INFORMADO"}/>
                           <CampoCadastro rotulo="PIX" valor={mb.pix}/>
                           <CampoCadastro rotulo="E-mail da conta" valor={emailsPend[mb.user_id]}/>
                           <CampoCadastro rotulo="Cadastrado em" valor={mb.criado_em ? new Date(mb.criado_em).toLocaleString("pt-BR") : ""}/>
@@ -4355,11 +4841,11 @@ export default function Admin() {
           </div>
         )}
 
-        {aba==="dashboard" && <Dashboard historico={historico} motoboys={motoboys} empresarios={empresarios}/> }
+        {aba==="dashboard" && <><ConfigTaxasCard/><Dashboard historico={historico} motoboys={motoboys} empresarios={empresarios}/></>}
         {aba==="corridas"         && <CorridasAtivas corridasAtivas={corridasAtivas} onRecarregar={carregarTudo} motoboys={motoboys}/>}
         {aba==="repasse"          && <Repasse historico={historico} setHistorico={setHistorico} motoboys={motoboys} empresarios={empresarios}/>}
         {aba==="motoboys"         && <Motoboys motoboys={motoboys} setMotoboys={setMotoboys} historico={historico} focoBanidos={focoBanidosMb}/>}
-        {aba==="turnofixo"        && <TurnoFixo motoboys={motoboys} historico={historico}/>}
+        {aba==="turnoslivres"     && <TurnosLivres motoboys={motoboys}/>}
         {aba==="estabelecimentos" && <Estabelecimentos empresarios={empresarios} setEmpresarios={setEmpresarios} historico={historico} motoboys={motoboys} onRecarregar={carregarTudo} focoBloqueados={focoBloqueadosEstab}/>}
         {aba==="clientes"         && <Clientes clientes={clientes} setClientes={setClientes} historico={historico} empresarios={empresarios}/>}
         {aba==="historico"        && <Historico historico={historico} motoboys={motoboys} empresarios={empresarios}/>}

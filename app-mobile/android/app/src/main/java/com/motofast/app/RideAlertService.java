@@ -9,6 +9,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.media.AudioAttributes;
+import android.media.AudioManager;
 import android.media.MediaPlayer;
 import android.os.Build;
 import android.os.Handler;
@@ -19,12 +20,13 @@ import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import org.json.JSONArray;
 import org.json.JSONObject;
 
 // Serviço em primeiro plano responsável por tocar o alarme em LOOP e mostrar
@@ -68,12 +70,18 @@ public class RideAlertService extends Service {
     // cancelamento nunca chegou, mesmo a corrida já tendo sido aceita por
     // outra pessoa há minutos. Essa checagem é uma segunda camada,
     // totalmente independente do OneSignal/push: enquanto o alarme está
-    // tocando, o próprio serviço confere direto no banco, de tempos em
-    // tempos, se o pedido ainda está "aguardando" — se não estiver mais
-    // (aceito, cancelado, etc.), para sozinho, não importa se algum push
-    // chegou ou não.
-    private static final String SUPABASE_URL = "https://eynpjqhjkwwdpemsospy.supabase.co";
-    private static final String SUPABASE_ANON_KEY = "sb_publishable_MMbUB_k9rDmEJU1j9wAKig_ZpoOTwVW";
+    // tocando, o próprio serviço confere, de tempos em tempos, se o pedido
+    // ainda está "aguardando" — se não estiver mais (aceito, cancelado, etc.),
+    // para sozinho, não importa se algum push chegou ou não.
+    // ATUALIZADO em 08/11/2026 (1.0.5): a consulta deixou de ir direto no
+    // Supabase com a chave pública — as regras de segurança (RLS) de 05/11
+    // fecharam a leitura de pedidos sem login, e a resposta vazia fazia o
+    // alarme parar sozinho depois de ~3s. Agora usa a rota do servidor
+    // /api/rastreio-pedido (devolve só {ok, status, latitude, longitude}).
+    // REGRA: só para quando o servidor responde 200 com ok=true e um status
+    // DIFERENTE de "aguardando". Erro de rede, timeout, 404, 500 ou resposta
+    // vazia NUNCA param o alarme.
+    private static final String RASTREIO_URL = "https://motofast-platform.vercel.app/api/rastreio-pedido";
     // 3s a pedido do Alessandro (18/09/2026) — a causa real do atraso longo
     // era o pedidoId nunca chegar a esse serviço (ver correção no push, com
     // "data.pedidoId"), não a velocidade do intervalo. Mesmo assim, com o
@@ -83,7 +91,10 @@ public class RideAlertService extends Service {
 
     private MediaPlayer mediaPlayer;
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private final Runnable pararPorTimeout = this::pararAlerta;
+    private final Runnable pararPorTimeout = () -> {
+        android.util.Log.d("RideAlertService", "Parando alarme: teto de segurança de 9 minutos.");
+        pararAlerta();
+    };
     private ScheduledExecutorService checagemExecutor;
 
     @Override
@@ -99,6 +110,7 @@ public class RideAlertService extends Service {
 
         String action = intent.getAction();
         if (ACTION_STOP.equals(action)) {
+            android.util.Log.d("RideAlertService", "Parando alarme: ACTION_STOP (aceitar/recusar/cancelar_oferta/app).");
             pararAlerta();
             return START_NOT_STICKY;
         }
@@ -115,6 +127,7 @@ public class RideAlertService extends Service {
         // diferente (cenário de conta de monitoramento com duas ofertas ao
         // mesmo tempo) e deve continuar tocando.
         salvarPedidoAtual(intent.getStringExtra(EXTRA_PEDIDO_ID));
+        android.util.Log.d("RideAlertService", "Ligando alarme. pedidoId=" + intent.getStringExtra(EXTRA_PEDIDO_ID) + " titulo=" + titulo);
 
         criarCanalNotificacao();
         startForeground(NOTIFICATION_ID, construirNotificacao(titulo, corpo));
@@ -144,36 +157,50 @@ public class RideAlertService extends Service {
 
     // Roda numa thread de fundo (nunca na main thread — é rede de verdade).
     // Confere o pedido que está tocando AGORA (lido de novo a cada ciclo,
-    // nunca guardado localmente) direto no Supabase, sem passar pelo
-    // OneSignal/push de forma nenhuma.
+    // nunca guardado localmente) pela rota do servidor /api/rastreio-pedido,
+    // sem passar pelo OneSignal/push de forma nenhuma.
     private void checarSeAindaAguardando() {
-        String pedidoId = lerPedidoAtual(this);
+        final String pedidoId = lerPedidoAtual(this);
         if (pedidoId == null) return;
         HttpURLConnection conn = null;
         try {
-            URL url = new URL(SUPABASE_URL + "/rest/v1/pedidos?id=eq." + pedidoId + "&select=status");
-            conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestProperty("apikey", SUPABASE_ANON_KEY);
-            conn.setRequestProperty("Authorization", "Bearer " + SUPABASE_ANON_KEY);
+            conn = (HttpURLConnection) new URL(RASTREIO_URL).openConnection();
+            conn.setRequestMethod("POST");
+            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setDoOutput(true);
             conn.setConnectTimeout(8000);
             conn.setReadTimeout(8000);
-            if (conn.getResponseCode() != 200) return;
+            byte[] corpoEnvio = new JSONObject().put("pedidoId", pedidoId).toString().getBytes(StandardCharsets.UTF_8);
+            try (OutputStream saida = conn.getOutputStream()) {
+                saida.write(corpoEnvio);
+            }
+            int codigo = conn.getResponseCode();
+            // 404 (pedido não encontrado), 500 e qualquer outro código que não
+            // seja 200 NÃO param o alarme — só tenta de novo no próximo ciclo.
+            if (codigo != 200) {
+                android.util.Log.w("RideAlertService", "Checagem do pedido: servidor respondeu " + codigo + " — alarme continua.");
+                return;
+            }
             StringBuilder resposta = new StringBuilder();
-            try (BufferedReader leitor = new BufferedReader(new InputStreamReader(conn.getInputStream()))) {
+            try (BufferedReader leitor = new BufferedReader(new InputStreamReader(conn.getInputStream(), StandardCharsets.UTF_8))) {
                 String linha;
                 while ((linha = leitor.readLine()) != null) resposta.append(linha);
             }
-            JSONArray lista = new JSONArray(resposta.toString());
-            String statusAtual = lista.length() > 0 ? lista.getJSONObject(0).optString("status", null) : null;
-            // Pedido sumiu (id trocou, corrida antiga) ou não está mais
-            // "aguardando" (foi aceito por outra pessoa, cancelado, etc.) —
-            // nos dois casos, não faz mais sentido esse alarme continuar.
-            if (!"aguardando".equals(statusAtual)) {
+            JSONObject json = new JSONObject(resposta.toString());
+            String statusAtual = json.optString("status", "");
+            // Só para quando o servidor CONFIRMA (ok=true) um status de verdade
+            // e ele é diferente de "aguardando" (aceito por outra pessoa,
+            // cancelado, etc.). Resposta vazia/sem status nunca para.
+            if (json.optBoolean("ok", false) && !statusAtual.isEmpty() && !"aguardando".equals(statusAtual)) {
+                // Se, enquanto a consulta rodava, o alarme passou a tocar OUTRO
+                // pedido, esse resultado já não vale mais para ele.
+                if (!pedidoId.equals(lerPedidoAtual(this))) return;
+                android.util.Log.d("RideAlertService", "Parando alarme: pedido " + pedidoId + " agora está '" + statusAtual + "'.");
                 handler.post(this::pararAlerta);
             }
         } catch (Exception e) {
             // Falha de rede/timeout não deve derrubar o alarme por engano —
-            // só tenta de novo sozinho no próximo ciclo, silenciosamente.
+            // só tenta de novo sozinho no próximo ciclo.
             android.util.Log.w("RideAlertService", "Erro ao checar status do pedido (tenta de novo no próximo ciclo): " + e.getMessage());
         } finally {
             if (conn != null) conn.disconnect();
@@ -230,15 +257,25 @@ public class RideAlertService extends Service {
     private void tocarAlarmeEmLoop() {
         pararSomSeEstiverTocando();
         try {
-            mediaPlayer = MediaPlayer.create(this, R.raw.alarme_buzina);
-            if (mediaPlayer == null) return;
+            // ATUALIZADO em 08/11/2026 (1.0.5): USAGE_ALARM (volume de alarme,
+            // toca mesmo no silencioso). Os atributos precisam ser passados
+            // AQUI, na criação: MediaPlayer.create() já chama prepare(), e o
+            // Android só aplica setAudioAttributes() se for chamado ANTES do
+            // prepare() — o jeito antigo (setAudioAttributes depois do create)
+            // provavelmente nunca teve efeito.
+            AudioAttributes atributos = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ALARM)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build();
+            mediaPlayer = MediaPlayer.create(this, R.raw.alarme_buzina, atributos, AudioManager.AUDIO_SESSION_ID_GENERATE);
+            if (mediaPlayer == null) {
+                android.util.Log.e("RideAlertService", "Não foi possível criar o MediaPlayer do alarme");
+                return;
+            }
             mediaPlayer.setLooping(true);
             mediaPlayer.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
-            mediaPlayer.setAudioAttributes(new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_NOTIFICATION_RINGTONE)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                .build());
             mediaPlayer.start();
+            android.util.Log.d("RideAlertService", "Alarme tocando (loop, USAGE_ALARM).");
         } catch (Exception e) {
             android.util.Log.e("RideAlertService", "Erro ao tocar alarme", e);
         }

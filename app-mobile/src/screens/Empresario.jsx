@@ -18,7 +18,7 @@ function estamosNoVerao() {
   return false;
 }
 function prazoChegadaMotoboyMin() {
-  return estamosNoVerao() ? 15 : 12;
+  return 15; // sempre 15 min (verão e baixa temporada) — decisão 04/11
 }
 
 // Formata minutos de atraso de um jeito fácil de ler: "5 min", "45 min",
@@ -98,11 +98,129 @@ const EMPRESA = {
 
 const BAIRROS = Object.keys(EMPRESA.taxas);
 
+// Adicionado em 26/10/2026: PISOS. O motoboy nunca recebe menos que R$7,00 e o
+// estabelecimento nunca paga menos que o motoboy recebe. Antes, quando o cálculo por
+// km falhava (ou o pedido era publicado antes do cálculo terminar), caía na tabela
+// antiga por bairro, que tem valores como R$5 para o motoboy.
+const PISO_MOTOBOY_PUBLICAR = 7;
+// Adicionado em 26/10/2026: LOCALIZAÇÃO EXATA do cliente. Quando o Google não conhece a
+// rua (ex.: Rua do Retiro, 158, Cocaia), o empresário cola o link do Google Maps que o
+// cliente mandou; guardamos latitude/longitude e a distância passa a ser calculada até
+// esse ponto exato, sem depender do Google achar o nome da rua.
+function extrairCoordenadasMaps(texto) {
+  const t = String(texto || "").trim();
+  if (!t) return null;
+  const padroes = [
+    /[?&](?:q|query|ll|destination)=(-?\d{1,3}\.\d+)[,%2C\s]+(-?\d{1,3}\.\d+)/i,
+    /@(-?\d{1,3}\.\d+),(-?\d{1,3}\.\d+)/,
+    /!3d(-?\d{1,3}\.\d+)!4d(-?\d{1,3}\.\d+)/,
+    /^(-?\d{1,3}\.\d+)\s*[,;]\s*(-?\d{1,3}\.\d+)$/,
+  ];
+  for (const p of padroes) {
+    const m = t.match(p);
+    if (m) {
+      const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+      // Só aceita pontos dentro de Ilhabela (evita colar link de outra cidade por engano).
+      if (lat >= -23.98 && lat <= -23.70 && lng >= -45.52 && lng <= -45.25) return { lat, lng };
+      return { fora: true };
+    }
+  }
+  return null;
+}
+
+function pisosTaxa(e, m) {
+  const mm = Math.max(PISO_MOTOBOY_PUBLICAR, Number(m) || 0);
+  const ee = Math.max(Number(e) || 0, mm);
+  return { taxa: +ee.toFixed(2), taxaMotoboy: +mm.toFixed(2) };
+}
+
 const PG = {
   pix:      { label:"Pix",      icon:"💠", cor:"#34d399" },
   dinheiro: { label:"Dinheiro", icon:"💵", cor:"#fbbf24" },
   cartao:   { label:"Cartão",   icon:"💳", cor:"#60a5fa" },
 };
+
+// ─── TAXA DE RETORNO E TAXA DE DESLOCAMENTO (04/11/2026) ──────────────────────
+// Valores vêm da tabela config_taxas (o Alessandro edita no Admin; em dia de chuva
+// liga "modo chuva" e o deslocamento sobe). Regras:
+// • Retorno (R$5): só quando o pagamento é cartão ou dinheiro (o motoboy precisa
+//   voltar pra devolver a maquininha/o dinheiro). Cobrado UMA vez por chamado.
+// • Deslocamento (R$3, R$5 na chuva): o motoboy ganha por sair. UMA vez por chamado.
+//   O Açaí da Hora não paga (empresarios.isento_deslocamento).
+// Os dois entram 100% pro motoboy (sem desconto de 20%) e somam na taxa do
+// estabelecimento, igual à taxa de chamado.
+async function buscarCfgTaxas() {
+  try {
+    const { data } = await supabase.from("config_taxas").select("*").eq("id", 1).maybeSingle();
+    if (!data) return null;
+    return {
+      retorno: Number(data.taxa_retorno) || 0,
+      deslocamento: Number(data.taxa_deslocamento) || 0,
+      deslocamentoChuva: Number(data.taxa_deslocamento_chuva) || 0,
+      modoChuva: !!data.modo_chuva,
+    };
+  } catch (e) { return null; }
+}
+function valorDeslocamento(cfg, empresa) {
+  if (!cfg || empresa?.isentoDeslocamento) return 0;
+  return cfg.modoChuva ? cfg.deslocamentoChuva : cfg.deslocamento;
+}
+function valorRetorno(cfg, pagamento) {
+  if (!cfg) return 0;
+  return (pagamento === "cartao" || pagamento === "dinheiro") ? cfg.retorno : 0;
+}
+function abrirTaxa(p) {
+  const r = Number(p?.taxaRetorno) || 0, d = Number(p?.taxaDeslocamento) || 0, c = Number(p?.taxaChamado) || 0;
+  if (!(r > 0 || d > 0)) return null;
+  const base = (Number(p.taxa) || 0) - r - d;
+  return `${fmtR(base)} entrega${d>0?" + "+fmtR(d)+" deslocamento":""}${r>0?" + "+fmtR(r)+" retorno":""}`;
+}
+// ─── TAXA DE CANCELAMENTO (04/11/2026) ─────────────────────────────────────────
+// Só vale quando o ESTABELECIMENTO cancela depois que um motoboy aceitou:
+// • Motoboy já pegou o pedido, ou chegou na loja DENTRO do prazo → paga a taxa
+//   INTEIRA (como se tivesse entregue): motoboy recebe o que receberia, MotoFast o resto.
+// • Motoboy ainda não chegou e o prazo de chegada não acabou → paga 50% da taxa
+//   (25% motoboy, 25% MotoFast).
+// • Prazo acabou sem o motoboy chegar (ou ele chegou atrasado) → não paga nada.
+// A taxa nunca é cobrada se o motoboy cancelar, nem se ninguém tinha aceitado ainda.
+function calcularCancelamento(p, aceitoEmMs, prazoMin) {
+  const T = Number(p?.taxa) || 0;
+  const M = Number(p?.taxaMotoboy) || 0;
+  const r2 = (v) => Math.round(v * 100) / 100;
+  if (!aceitoEmMs || !(T > 0)) return { tipo: "nenhuma", taxaCancelamento: 0, ganhoMotoboy: 0 };
+  if (p.saiuEstabelecimentoEm) return { tipo: "total", taxaCancelamento: r2(T), ganhoMotoboy: r2(M) };
+  if (p.chegouLojaEm) {
+    const min = (new Date(p.chegouLojaEm).getTime() - aceitoEmMs) / 60000;
+    return min <= prazoMin
+      ? { tipo: "total", taxaCancelamento: r2(T), ganhoMotoboy: r2(M) }
+      : { tipo: "nenhuma", taxaCancelamento: 0, ganhoMotoboy: 0 };
+  }
+  const minDesdeAceite = Math.max(0, (Date.now() - aceitoEmMs) / 60000);
+  return minDesdeAceite < prazoMin
+    ? { tipo: "parcial", taxaCancelamento: r2(T * 0.5), ganhoMotoboy: r2(T * 0.25) }
+    : { tipo: "nenhuma", taxaCancelamento: 0, ganhoMotoboy: 0 };
+}
+function camposCancelamento(c, p) {
+  // Quando há cobrança, o pedido passa a "valer" só a taxa de cancelamento: taxa,
+  // taxa_motoboy e taxa_empresario recebem os valores cobrados (assim todas as
+  // somas existentes já funcionam) e o valor original fica em taxa_original.
+  if (c.tipo === "nenhuma") return {};
+  return {
+    cancelamento_cobrado: true,
+    cancelamento_tipo: c.tipo,
+    taxa_cancelamento: c.taxaCancelamento,
+    ganho_cancelamento_motoboy: c.ganhoMotoboy,
+    taxa_original: Number(p?.taxa) || 0,
+    taxa: c.taxaCancelamento,
+    taxa_empresario: c.taxaCancelamento,
+    taxa_motoboy: c.ganhoMotoboy,
+    taxa_chamado: 0, taxa_retorno: 0, taxa_deslocamento: 0,
+  };
+}
+// Cliente de iFood/app: sem WhatsApp, o cadastro guarda a palavra "iFood" no telefone.
+const ehIfoodTel = (t) => String(t||"").trim().toLowerCase() === "ifood";
+const temWhats = (t) => !ehIfoodTel(t) && String(t||"").replace(/\D/g,"").length >= 8;
+const fmtR = (v) => "R$" + Number(v || 0).toFixed(2).replace(".", ",");
 
 // Bairros com preço FIXO especial, independente da distância calculada por km —
 // usado quando um bairro específico precisa de valor diferente do que a fórmula
@@ -231,29 +349,23 @@ async function calcularPrioridade() {
     }
   }
 
-  // Sem janela por horário ativa agora — cai pro Turno Fixo normal, igual sempre foi
-  const turno = turnoAtual();
-  let idsOnlineTurnoFixo = [];
-  if (turno) {
-    const { data: turnoFixoDB } = await supabase.from("motoboys_turno_fixo").select("motoboy_id").eq("turno", turno).eq("ativo", true);
-    const idsTurnoFixo = (turnoFixoDB || []).map(t => t.motoboy_id);
-    if (idsTurnoFixo.length > 0) {
-      const { data: onlineDB } = await supabase.from("motoboys").select("id").in("id", idsTurnoFixo).eq("online", true).eq("ativo", true).eq("banido", false).eq("bloqueado", false);
-      const idsOnlineBrutos = (onlineDB || []).map(m => m.id);
-      let idsOcupados = [];
-      if (idsOnlineBrutos.length > 0) {
-        const { data: ocupadosDB } = await supabase.from("pedidos").select("motoboy_id").in("motoboy_id", idsOnlineBrutos).in("status", ["aceito", "saiu_estabelecimento"]);
-        idsOcupados = (ocupadosDB || []).map(p => p.motoboy_id);
-      }
-      idsOnlineTurnoFixo = idsOnlineBrutos.filter(id => !idsOcupados.includes(id));
-    }
-  }
-  const temPrioridade = idsOnlineTurnoFixo.length > 0;
+  // Sem janela por horário ativa agora — cai pra prioridade dos Turnos livres
+  // (substituiu o Turno Fixo em 04/11/2026): quem tem reserva ativa no turno que
+  // está rodando agora, está online e livre (sem corrida) tem 20s de prioridade.
+  // Se ninguém do turno estiver livre, o pedido vai direto pra rede.
+  let idsTurno = [];
+  let chaveTurno = null;
+  try {
+    const { data: prioDB } = await supabase.rpc("turnos_livres_prioridade");
+    idsTurno = (prioDB || []).map(r => r.motoboy_id);
+    chaveTurno = (prioDB && prioDB[0]) ? prioDB[0].chave : null;
+  } catch (e) { console.error("Erro ao consultar prioridade dos turnos:", e); }
+  const temPrioridade = idsTurno.length > 0 && !!chaveTurno;
   return {
     prioridadeAte: temPrioridade ? new Date(Date.now() + 20000).toISOString() : null,
-    turnoPrioridade: temPrioridade ? turno : null,
+    turnoPrioridade: temPrioridade ? chaveTurno : null,
     motoboyIdPrioridade: null,
-    idsParaNotificar: idsOnlineTurnoFixo,
+    idsParaNotificar: temPrioridade ? idsTurno : [],
   };
 }
 
@@ -361,6 +473,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   const [clienteTel, setClienteTel] = useState("");
   const [pagamento, setPagamento] = useState("pix");
   const [obs, setObs] = useState("");
+  const [semCodigo, setSemCodigo] = useState(false);
   const [erro, setErro] = useState("");
   const [valorPedido, setValorPedido] = useState("");
   const [valorReceber, setValorReceber] = useState("");
@@ -374,6 +487,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   const taxasEmpresa = (empresa && empresa.taxas && Object.keys(empresa.taxas).length>0) ? empresa.taxas : EMPRESA.taxas;
   const bairrosDisponiveis = Object.keys(taxasEmpresa);
   const endEfetivo = (clienteSel && modoEndereco==="salvo") ? {rua:clienteSel.rua,num:clienteSel.num,bairro:clienteSel.bairro,ref:clienteSel.ref} : novoEndereco;
+  const coordSalva = (clienteSel && modoEndereco==="salvo" && clienteSel.lat != null && clienteSel.lng != null) ? { lat: Number(clienteSel.lat), lng: Number(clienteSel.lng) } : null;
   const bairroFinal = endEfetivo.bairro || bairrosDisponiveis[0] || "";
   const taxaKey = Object.keys(taxasEmpresa).find(k => normalizarTexto(k) === normalizarTexto(bairroFinal)) || bairroFinal;
   const taxa = taxasEmpresa[taxaKey] || {e:0,m:0};
@@ -494,6 +608,21 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         // chave). O Google já lida muito bem com endereço incompleto ou digitado
         // torto — não precisa mais daquela cadeia de tentativas manuais que o mapa
         // gratuito exigia antes.
+        if (coordSalva) {
+          const rc = await fetch(`${WEB_APP_URL}/api/calcular-distancia`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ origem: enderecoOrigem, destinoLatLng: coordSalva }),
+          });
+          const dc = await rc.json();
+          if (!cancelado && dc.ok) {
+            setDistanciaKm(dc.km.toFixed(1));
+            setTaxaKm(calcularTaxaPorKm(dc.km));
+            setMetodoCalculoKm("Google Maps — localização exata do cliente (mapa)");
+            setAvisoEnderecoImpreciso(null);
+            return;
+          }
+        }
         const resp = await fetch(`${WEB_APP_URL}/api/calcular-distancia`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -544,13 +673,13 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       }
     })();
     return () => { cancelado = true; };
-  }, [endEfetivo.rua, endEfetivo.num, endEfetivo.bairro, empresa.endereco, empresa.bairro, empresa.modeloPrecificacao]);
+  }, [endEfetivo.rua, endEfetivo.num, endEfetivo.bairro, coordSalva?.lat, coordSalva?.lng, empresa.endereco, empresa.bairro, empresa.modeloPrecificacao]);
 
   const nomeEfetivo = clienteSel ? clienteSel.nome : clienteNome;
   const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
   // Telefone é ESSENCIAL pro motoboy conseguir falar com o cliente na entrega —
   // nunca deixa publicar sem um telefone válido preenchido, seja de cliente salvo ou novo.
-  const telValido = !!(telEfetivo && telEfetivo.trim() && telEfetivo.trim().toLowerCase()!=="não informado" && telEfetivo.replace(/\D/g,"").length>=8);
+  const telValido = ehIfoodTel(telEfetivo) || !!(telEfetivo && telEfetivo.trim() && telEfetivo.trim().toLowerCase()!=="não informado" && telEfetivo.replace(/\D/g,"").length>=8);
   // Só bloqueia publicar quando NÃO há preço nenhum disponível — nem pela distância
   // (km falhou) nem pela reserva por bairro (também não cadastrada). Nesse caso
   // publicar deixaria o pedido com taxa R$0, o que nunca pode acontecer.
@@ -574,6 +703,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       setErro("Ainda carregando seus dados — aguarde alguns segundos e tente novamente.");
       return;
     }
+    if (calcKm) { setErro("Aguarde o cálculo da distância terminar antes de publicar."); return; }
     if (!clienteSel) {
       setErro("Selecione um cliente da lista de busca. Se ele ainda não está cadastrado, cadastre primeiro na aba \"Clientes\".");
       return;
@@ -606,7 +736,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       clienteNome:nomeEfetivo, clienteTel:telEfetivo,
       rua:endEfetivo.rua, num:endEfetivo.num,
       bairro:bairroFinal, ref:endEfetivo.ref,
-      pagamento, taxa:taxaKm?.e||taxa?.e||0, taxaMotoboy:taxaKm?.m||taxa?.m||0, obs,
+      pagamento, ...pisosTaxa(taxaKm?.e||taxa?.e||0, taxaKm?.m||taxa?.m||0), obs, semCodigo: semCodigo || ehIfoodTel(telEfetivo),
       distanciaKm: distanciaKm ? parseFloat(distanciaKm) : null,
       metodoCalculoKm: metodoCalculoKm,
       valorPedido: valorPedido ? parseFloat(valorPedido) : null,
@@ -619,7 +749,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
     // Reset
     setBuscaCliente(""); setClienteSel(null); setModoEndereco("salvo");
     setNovoEndereco({rua:"",num:"",bairro:"",ref:""});
-    setClienteNome(""); setClienteTel(""); setPagamento("pix"); setObs("");
+    setClienteNome(""); setClienteTel(""); setPagamento("pix"); setObs(""); setSemCodigo(false);
     setValorPedido(""); setValorReceber(""); setErro("");
   }
 
@@ -657,7 +787,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
                 onMouseOver={e=>e.currentTarget.style.background="#1f2937"}
                 onMouseOut={e=>e.currentTarget.style.background="transparent"}>
                 <div style={{color:"#f9fafb",fontWeight:600,fontSize:13}}>{c.nome}</div>
-                <div style={{color:"#6b7280",fontSize:11}}>📞 {c.tel} · 📍 {c.rua}, {c.num} — {c.bairro}</div>
+                <div style={{color:"#6b7280",fontSize:11}}>{ehIfoodTel(c.tel)?"📦 iFood":"📞 "+c.tel} · 📍 {c.rua}, {c.num} — {c.bairro}</div>
               </div>
             ))}
           </div>
@@ -742,6 +872,34 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
           <div style={{color:"#d1d5db",fontSize:12,marginTop:3,lineHeight:1.5}}>Soma 1 vez por chamada de motoboy (somada na taxa deste pedido). Se você adicionar mais pedidos nessa mesma corrida, não soma de novo.</div>
         </div>
       )}
+      {/* Retorno e deslocamento (valores do Admin) */}
+      {(()=>{
+        // Só aparece depois que o cliente foi escolhido e a distância calculada:
+        // antes disso não existe pedido, e mostrar valor confundia o empresário.
+        if (!clienteSel || calcKm || !((taxaKm?.e || taxa?.e || 0) > 0)) return null;
+        const r = valorRetorno(empresa?.cfgTaxas, pagamento);
+        const d = valorDeslocamento(empresa?.cfgTaxas, empresa);
+        if (!(r > 0 || d > 0)) return null;
+        return (
+          <div style={{background:"#1a2f4a",border:"1px solid #60a5fa",borderRadius:10,padding:"10px 14px",marginBottom:14}}>
+            {d > 0 && <div style={{color:"#93c5fd",fontSize:12,fontWeight:800}}>🏍️ + {fmtR(d)} de taxa de deslocamento{empresa?.cfgTaxas?.modoChuva ? " (dia de chuva)" : ""}</div>}
+            {r > 0 && <div style={{color:"#93c5fd",fontSize:12,fontWeight:800,marginTop:d>0?4:0}}>↩️ + {fmtR(r)} de taxa de retorno ({PG[pagamento]?.label})</div>}
+            <div style={{color:"#d1d5db",fontSize:12,marginTop:3,lineHeight:1.5}}>Soma 1 vez por chamada de motoboy (somada na taxa deste pedido). Se você adicionar mais pedidos nessa mesma corrida, não soma de novo.</div>
+            {(()=>{
+              if (calcKm) return null;
+              const base = pisosTaxa(taxaKm?.e||taxa?.e||0, taxaKm?.m||taxa?.m||0).taxa;
+              if (!(base > 0)) return null;
+              const ch = Number(empresa?.taxaChamado) || 0;
+              const total = base + d + r + ch;
+              return (
+                <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #2b4a73",color:"#f9fafb",fontSize:13,fontWeight:800}}>
+                  Total deste pedido: {fmtR(base)} da entrega{d>0?" + "+fmtR(d)+" deslocamento":""}{r>0?" + "+fmtR(r)+" retorno":""}{ch>0?" + "+fmtR(ch)+" chamado":""} = {fmtR(total)}
+                </div>
+              );
+            })()}
+          </div>
+        );
+      })()}
       {/* Taxa automática */}
       {taxa && (clienteSel) && (
         <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"14px 18px",marginBottom:14}}>
@@ -875,9 +1033,17 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
       )}
 
       {/* Obs */}
-      {clienteSel && (
+      {clienteSel && (<>
         <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
-      )}
+        {/* Código de confirmação (04/11/2026): o motoboy pede ao cliente os 4 últimos dígitos do WhatsApp dele. Pedido de iFood/app não tem o número real do cliente, então marca aqui e sai sem código. */}
+        <label style={{display:"flex",alignItems:"flex-start",gap:8,background:"#0f172a",border:"1px solid #1f2937",borderRadius:8,padding:"9px 12px",marginTop:8,cursor:"pointer"}}>
+          <input type="checkbox" checked={semCodigo || ehIfoodTel(telEfetivo)} disabled={ehIfoodTel(telEfetivo)} onChange={e=>setSemCodigo(e.target.checked)} style={{marginTop:2}}/>
+          <span style={{color:"#d1d5db",fontSize:12,lineHeight:1.4}}>
+            <b>Pedido de iFood / app (cliente sem WhatsApp)</b><br/>
+            <span style={{color:"#9ca3af"}}>Marque só se o número acima NÃO é o do cliente. Se for o WhatsApp real, deixe desmarcado: o motoboy vai pedir ao cliente os 4 últimos dígitos dele como código de entrega.</span>
+          </span>
+        </label>
+      </>)}
 
       {/* Botão publicar */}
       {clienteSel && (
@@ -888,7 +1054,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
         </div>
       )}
 
-      <Btn onClick={publicar} full disabled={!clienteSel || !empresa?.id || !telValido || semPrecoDisponivel}>
+      <Btn onClick={publicar} full disabled={!clienteSel || !empresa?.id || !telValido || semPrecoDisponivel || calcKm}>
         🚀 Publicar Pedido
       </Btn>
     </div>
@@ -897,6 +1063,12 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
 
 // ─── ADICIONAR PEDIDO À CORRIDA (mesmo motoboy, sem escolher) ────────────────
 function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, motoboyTel, vagaNum, onSalvar, onFechar, empresa }) {
+  // Adicionado em 31/10/2026: trava contra toque duplo. No celular (iPhone e Android)
+  // o botão podia ser tocado duas vezes antes da tela fechar, e cada toque criava um
+  // pedido — o endereço ia duplicado na corrida. O ref bloqueia na hora (antes mesmo
+  // da tela redesenhar) e só libera se der erro, pra poder tentar de novo.
+  const enviandoRef = useRef(false);
+  const [enviando, setEnviando] = useState(false);
   const [buscaCliente, setBuscaCliente] = useState("");
   const [clienteSel, setClienteSel] = useState(null);
   const [modoEndereco, setModoEndereco] = useState("salvo");
@@ -907,6 +1079,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   const [clienteTel, setClienteTel] = useState("");
   const [pagamento, setPagamento] = useState("pix");
   const [obs, setObs] = useState("");
+  const [semCodigo, setSemCodigo] = useState(false);
   const [erro, setErro] = useState("");
   const [valorPedido, setValorPedido] = useState("");
   const [valorReceber, setValorReceber] = useState("");
@@ -916,6 +1089,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
     : [];
 
   const endEfetivo = (clienteSel && modoEndereco==="salvo") ? {rua:clienteSel.rua,num:clienteSel.num,bairro:clienteSel.bairro,ref:clienteSel.ref} : novoEndereco;
+  const coordSalva = (clienteSel && modoEndereco==="salvo" && clienteSel.lat != null && clienteSel.lng != null) ? { lat: Number(clienteSel.lat), lng: Number(clienteSel.lng) } : null;
   const bairroFinal = endEfetivo.bairro || bairrosDisponiveis2[0] || "";
   const taxaKey2 = Object.keys(taxasEmpresa2).find(k => normalizarTexto(k) === normalizarTexto(bairroFinal)) || bairroFinal;
   const taxa = taxasEmpresa2[taxaKey2] || {e:0,m:0};
@@ -923,7 +1097,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   const telEfetivo  = clienteSel ? clienteSel.tel  : clienteTel;
   // Telefone é ESSENCIAL pro motoboy conseguir falar com o cliente na entrega —
   // nunca deixa adicionar pedido à corrida sem um telefone válido preenchido.
-  const telValido = !!(telEfetivo && telEfetivo.trim() && telEfetivo.trim().toLowerCase()!=="não informado" && telEfetivo.replace(/\D/g,"").length>=8);
+  const telValido = ehIfoodTel(telEfetivo) || !!(telEfetivo && telEfetivo.trim() && telEfetivo.trim().toLowerCase()!=="não informado" && telEfetivo.replace(/\D/g,"").length>=8);
 
   // ─── TAXA POR KM ──────────────────────────────────────────────────────────────
   // MESMA lógica do "Nova Entrega" — a taxa NUNCA é digitada manualmente, sempre
@@ -1001,6 +1175,21 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
           ? `${enderecoBaseTaxas}, Ilhabela, SP, Brasil`
           : `${empresa.bairro||""}, Ilhabela, SP, Brasil`;
 
+        if (coordSalva) {
+          const rc = await fetch(`${WEB_APP_URL}/api/calcular-distancia`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ origem: enderecoOrigem, destinoLatLng: coordSalva }),
+          });
+          const dc = await rc.json();
+          if (!cancelado && dc.ok) {
+            setDistanciaKm(dc.km.toFixed(1));
+            setTaxaKm(calcularTaxaPorKm(dc.km));
+            setMetodoCalculoKm("Google Maps — localização exata do cliente (mapa)");
+            setAvisoEnderecoImpreciso(null);
+            return;
+          }
+        }
         const resp = await fetch(`${WEB_APP_URL}/api/calcular-distancia`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1049,7 +1238,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       }
     })();
     return () => { cancelado = true; };
-  }, [endEfetivo.rua, endEfetivo.num, endEfetivo.bairro, empresa.endereco, empresa.bairro, empresa.modeloPrecificacao]);
+  }, [endEfetivo.rua, endEfetivo.num, endEfetivo.bairro, coordSalva?.lat, coordSalva?.lng, empresa.endereco, empresa.bairro, empresa.modeloPrecificacao]);
 
   // Só bloqueia adicionar quando NÃO há preço nenhum disponível (nem por km, nem
   // pela reserva por bairro) — nunca adiciona um pedido com taxa R$0.
@@ -1068,10 +1257,19 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   }
 
   async function salvar() {
+    if (enviandoRef.current) return;
+    enviandoRef.current = true;
+    setEnviando(true);
+    try { await salvarInterno(); }
+    finally { enviandoRef.current = false; setEnviando(false); }
+  }
+
+  async function salvarInterno() {
     if (!empresa?.id) {
       setErro("Ainda carregando seus dados — aguarde alguns segundos e tente novamente.");
       return;
     }
+    if (calcKm) { setErro("Aguarde o cálculo da distância terminar antes de publicar."); return; }
     if (!clienteSel) {
       setErro("Selecione um cliente da lista de busca. Se ele ainda não está cadastrado, cadastre primeiro na aba \"Clientes\".");
       return;
@@ -1097,7 +1295,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       }).eq("id", clienteSel.id);
       setClientes(p=>p.map(c=>c.id===clienteSel.id?{...c,rua:novoEndereco.rua,num:novoEndereco.num,bairro:novoEndereco.bairro,ref:novoEndereco.ref}:c));
     }
-    onSalvar({
+    await onSalvar({
       id:Date.now(),
       clienteNome:nomeEfetivo, clienteTel:telEfetivo,
       rua:endEfetivo.rua, num:endEfetivo.num,
@@ -1105,7 +1303,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
       // A taxa é SEMPRE calculada pela distância real — nunca digitada na mão.
       // Se o cálculo por km falhar (endereço não localizado), cai pra reserva
       // por bairro como plano B, igual acontece na tela de Nova Entrega.
-      pagamento, taxa:taxaKm?.e||taxa?.e||0, taxaMotoboy:taxaKm?.m||taxa?.m||0, obs,
+      pagamento, ...pisosTaxa(taxaKm?.e||taxa?.e||0, taxaKm?.m||taxa?.m||0), obs, semCodigo: semCodigo || ehIfoodTel(telEfetivo),
       distanciaKm: distanciaKm ? parseFloat(distanciaKm) : null,
       metodoCalculoKm: metodoCalculoKm,
       valorPedido: valorPedido ? parseFloat(valorPedido) : null,
@@ -1143,7 +1341,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
                 onMouseOver={e=>e.currentTarget.style.background="#1f2937"}
                 onMouseOut={e=>e.currentTarget.style.background="transparent"}>
                 <div style={{color:"#f9fafb",fontWeight:600,fontSize:13}}>{c.nome}</div>
-                <div style={{color:"#6b7280",fontSize:11}}>📞 {c.tel} · 📍 {c.rua}, {c.num} — {c.bairro}</div>
+                <div style={{color:"#6b7280",fontSize:11}}>{ehIfoodTel(c.tel)?"📦 iFood":"📞 "+c.tel} · 📍 {c.rua}, {c.num} — {c.bairro}</div>
               </div>
             ))}
           </div>
@@ -1328,21 +1526,30 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
         </Card>
       )}
 
-      {clienteSel && (
+      {clienteSel && (<>
         <Inp label="Observações (opcional)" value={obs} onChange={setObs} placeholder="Ex: deixar na portaria, ligar ao chegar..."/>
-      )}
+        {/* Código de confirmação (04/11/2026): o motoboy pede ao cliente os 4 últimos dígitos do WhatsApp dele. Pedido de iFood/app não tem o número real do cliente, então marca aqui e sai sem código. */}
+        <label style={{display:"flex",alignItems:"flex-start",gap:8,background:"#0f172a",border:"1px solid #1f2937",borderRadius:8,padding:"9px 12px",marginTop:8,cursor:"pointer"}}>
+          <input type="checkbox" checked={semCodigo || ehIfoodTel(telEfetivo)} disabled={ehIfoodTel(telEfetivo)} onChange={e=>setSemCodigo(e.target.checked)} style={{marginTop:2}}/>
+          <span style={{color:"#d1d5db",fontSize:12,lineHeight:1.4}}>
+            <b>Pedido de iFood / app (cliente sem WhatsApp)</b><br/>
+            <span style={{color:"#9ca3af"}}>Marque só se o número acima NÃO é o do cliente. Se for o WhatsApp real, deixe desmarcado: o motoboy vai pedir ao cliente os 4 últimos dígitos dele como código de entrega.</span>
+          </span>
+        </label>
+      </>)}
 
-      <Btn onClick={salvar} full disabled={!clienteSel || !empresa?.id || !telValido || semPrecoDisponivel}>
-        ➕ Adicionar à Corrida
+      <Btn onClick={salvar} full disabled={enviando || !clienteSel || !empresa?.id || !telValido || semPrecoDisponivel || calcKm}>
+        {enviando ? "Adicionando..." : "➕ Adicionar à Corrida"}
       </Btn>
     </Overlay>
   );
 }
 
 // ─── PEDIDOS EM ANDAMENTO ─────────────────────────────────────────────────────
-function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, onRecarregar, limiteAtingido }) {
+function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, onRecarregar, limiteAtingido, onRepublicar }) {
   const [tick, setTick] = useState(0);
   const [modalMapa, setModalMapa] = useState(null);
+  const adicionandoRef = useRef(false);
   const [modalAddCorrida, setModalAddCorrida] = useState(null); // {corridaId, motoboyNome, motoboyTel, vagaNum}
   const [modalEditar, setModalEditar] = useState(null); // pedido sendo editado
   const coresMotoboyRef = useRef({}); // motoboyId -> índice da cor na paleta (ver PALETA_MOTOBOYS)
@@ -1386,9 +1593,68 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
   // Salva edições feitas num pedido já publicado (mesmo depois do motoboy aceitar).
   // Permite corrigir dados errados sem precisar cancelar e recriar o pedido do zero.
   async function salvarEdicaoPedido(pedidoId, dados) {
-    // A taxa (cliente e motoboy) NUNCA é tocada aqui de propósito — o empresário não
+    // A taxa da entrega em si (cliente e motoboy) NUNCA é tocada aqui de propósito — o empresário não
     // pode editar nem ver o valor do motoboy depois que o pedido já foi publicado.
+    // Única exceção (04/11/2026): a taxa de RETORNO (R$5) acompanha a forma de pagamento.
+    // Trocou de cartão/dinheiro pra Pix: tira o retorno. Trocou de Pix pra cartão/dinheiro:
+    // põe o retorno (uma vez só por corrida). Vai 100% pro motoboy, igual na criação.
+    let ajusteRetorno = {};
+    try {
+      const { data: row } = await supabase.from("pedidos")
+        .select("forma_pagamento, taxa, taxa_motoboy, taxa_empresario, taxa_retorno, corrida_id, cancelamento_cobrado")
+        .eq("id", pedidoId).maybeSingle();
+      if (row && !row.cancelamento_cobrado && row.forma_pagamento !== dados.pagamento) {
+        const rAtual = Number(row.taxa_retorno) || 0;
+        const novoTem = dados.pagamento === "cartao" || dados.pagamento === "dinheiro";
+        const baseEmp = Number(row.taxa_empresario) || Number(row.taxa) || 0;
+        if (rAtual > 0 && !novoTem) {
+          ajusteRetorno = {
+            taxa: Math.max(0, (Number(row.taxa)||0) - rAtual),
+            taxa_empresario: Math.max(0, baseEmp - rAtual),
+            taxa_motoboy: Math.max(0, (Number(row.taxa_motoboy)||0) - rAtual),
+            taxa_retorno: 0,
+          };
+        } else if (rAtual === 0 && novoTem) {
+          let jaCobrado = false;
+          if (row.corrida_id) {
+            const { data: irmaos } = await supabase.from("pedidos")
+              .select("id, taxa_retorno, status").eq("corrida_id", row.corrida_id).neq("id", pedidoId);
+            jaCobrado = (irmaos || []).some(x => x.status !== "cancelado" && Number(x.taxa_retorno) > 0);
+          }
+          if (!jaCobrado) {
+            const cfgAgora = await buscarCfgTaxas();
+            const v = valorRetorno(cfgAgora, dados.pagamento);
+            if (v > 0) {
+              ajusteRetorno = {
+                taxa: (Number(row.taxa)||0) + v,
+                taxa_empresario: baseEmp + v,
+                taxa_motoboy: (Number(row.taxa_motoboy)||0) + v,
+                taxa_retorno: v,
+              };
+            }
+          }
+        }
+      }
+    } catch (e) { console.error("Erro ao ajustar taxa de retorno na edição (segue sem ajustar):", e); }
+    // Prova de cobrança (04/11/2026): guarda cada alteração de valor/forma de pagamento
+    let edicoesNovas = null;
+    try {
+      const { data: antes } = await supabase.from("pedidos")
+        .select("valor_pedido, valor_receber, forma_pagamento, edicoes")
+        .eq("id", pedidoId).maybeSingle();
+      if (antes && (Number(antes.valor_pedido)||0) !== (Number(dados.valorPedido)||0
+        ) || (antes && antes.forma_pagamento !== dados.pagamento)
+        || (antes && (Number(antes.valor_receber)||0) !== (Number(dados.valorReceber)||0))) {
+        edicoesNovas = [...(Array.isArray(antes.edicoes) ? antes.edicoes : []), {
+          em: new Date().toISOString(),
+          de: { valor_pedido: antes.valor_pedido, valor_receber: antes.valor_receber, forma_pagamento: antes.forma_pagamento },
+          para: { valor_pedido: dados.valorPedido, valor_receber: dados.valorReceber, forma_pagamento: dados.pagamento },
+        }];
+      }
+    } catch (e) { console.error("Erro ao registrar edição (segue sem registrar):", e); }
     const { error } = await supabase.from("pedidos").update({
+      ...ajusteRetorno,
+      ...(edicoesNovas ? { edicoes: edicoesNovas } : {}),
       cliente_telefone: dados.clienteTel,
       rua: dados.rua,
       numero: dados.num,
@@ -1410,6 +1676,17 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
   }
 
   async function adicionarPedidoCorrida(novoPedido) {
+    // Segunda trava (31/10/2026): mesmo que a janela chame duas vezes, só uma passa.
+    if (adicionandoRef.current) return;
+    adicionandoRef.current = true;
+    try {
+      await adicionarPedidoCorridaInterno(novoPedido);
+    } finally {
+      adicionandoRef.current = false;
+    }
+  }
+
+  async function adicionarPedidoCorridaInterno(novoPedido) {
     // Trava de segurança extra — igual a do publicarPedido — pra nunca deixar
     // passar um pedido a mais depois que o limite mensal já bateu, mesmo que o
     // modal tenha ficado aberto de antes do bloqueio aparecer.
@@ -1481,20 +1758,38 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
       .limit(1)
       .maybeSingle();
 
+    // Retorno (04/11/2026): se este pedido é cartão/dinheiro e a corrida ainda não
+    // pagou o retorno (porque o pedido que abriu a chamada era Pix, por exemplo),
+    // cobra agora, uma vez só. Deslocamento nunca soma aqui: já foi cobrado na abertura.
+    let retornoAdicional = 0;
+    {
+      const cfgAgora = await buscarCfgTaxas();
+      const tRetorno = valorRetorno(cfgAgora, novoPedido.pagamento);
+      if (tRetorno > 0) {
+        const { data: jaCobrou } = await supabase
+          .from("pedidos").select("id")
+          .eq("corrida_id", corridaIdReal).gt("taxa_retorno", 0).limit(1);
+        if (!jaCobrou || jaCobrou.length === 0) retornoAdicional = tRetorno;
+      }
+    }
+
     const { data: pedidoDB } = await supabase.from("pedidos").insert({
       empresario_id: empresa.id,
       motoboy_id: novoPedido.motoboyId,
       corrida_id: corridaIdReal,
       cliente_nome: novoPedido.clienteNome,
       cliente_telefone: novoPedido.clienteTel,
+      sem_codigo_entrega: !!novoPedido.semCodigo,
       rua: novoPedido.rua,
       numero: novoPedido.num,
       bairro: novoPedido.bairro,
       referencia: novoPedido.ref,
       observacao: novoPedido.obs,
       forma_pagamento: novoPedido.pagamento,
-      taxa: novoPedido.taxa,
-      taxa_motoboy: novoPedido.taxaMotoboy || 0,
+      taxa: (Number(novoPedido.taxa) || 0) + retornoAdicional,
+      taxa_motoboy: (Number(novoPedido.taxaMotoboy) || 0) + retornoAdicional,
+      taxa_empresario: (Number(novoPedido.taxa) || 0) + retornoAdicional,
+      ...(retornoAdicional > 0 ? { taxa_retorno: retornoAdicional } : {}),
       valor_pedido: novoPedido.valorPedido,
       valor_receber: novoPedido.valorReceber,
       valor_troco: novoPedido.troco,
@@ -1622,6 +1917,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
               <div style={{textAlign:"right"}}>
                 <div style={{color:"#6b7280",fontSize:11}}>Taxa de entrega</div>
                 <div style={{color:"#34d399",fontWeight:900,fontSize:24}}>R${p.taxa}</div>
+                {abrirTaxa(p) && <div style={{color:"#93c5fd",fontSize:11,marginTop:2}}>{abrirTaxa(p)}</div>}
                 <div style={{marginTop:4}}><Tag label={`${pg.icon} ${pg.label}`} cor={pg.cor}/></div>
               </div>
             </div>
@@ -1722,7 +2018,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
               const pg = PG[p.pagamento]||{icon:"•",cor:"#9ca3af",label:p.pagamento};
               const finalizado = p.status==="entregue";
               // Adicionado em 24/09/2026 a pedido do Alessandro: cronômetro
-              // do prazo de chegada no estabelecimento (12 minutos a partir
+              // do prazo de chegada no estabelecimento (15 minutos a partir
               // do ACEITE, não da criação do pedido — isso corrige o
               // cronômetro antigo, que contava tempo errado). Só faz sentido
               // enquanto o motoboy ainda não retirou o pedido — depois que
@@ -1737,7 +2033,7 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                 ? new Date(p.aceitoEm).getTime()
                 : (temposAceite.length ? Math.min(...temposAceite) : null);
               const aindaNoEstabelecimento = !finalizado && !p.saiuEstabelecimentoEm && aceitoEmEfetivo;
-              const minutosDesdeAceite = aindaNoEstabelecimento ? (Date.now() - aceitoEmEfetivo) / 60000 : 0;
+              const minutosDesdeAceite = aindaNoEstabelecimento ? Math.max(0, (Date.now() - aceitoEmEfetivo) / 60000) : 0;
               const dentroDoPrazo = minutosDesdeAceite < PRAZO_CHEGADA_MIN;
               const minutosRestantes = Math.max(0, Math.ceil(PRAZO_CHEGADA_MIN - minutosDesdeAceite));
               return (
@@ -1800,13 +2096,14 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                     </div>
                     <div style={{textAlign:"right",flexShrink:0}}>
                       <div style={{color:"#34d399",fontWeight:800,fontSize:18}}>R${p.taxa}</div>
+                      {abrirTaxa(p) && <div style={{color:"#93c5fd",fontSize:10,marginTop:2,maxWidth:150,lineHeight:1.3}}>{abrirTaxa(p)}</div>}
                       {finalizado
                         ? <Tag label="✅ Finalizado" cor="#34d399"/>
                         : <Tag label={`${pg.icon} ${pg.label}`} cor={pg.cor}/>}
                     </div>
                   </div>
                   {!finalizado && (<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10}}>
-                  {p.clienteTel && (
+                  {temWhats(p.clienteTel) && (
                     <button onClick={()=>abrirWhatsCliente(p)} style={{flex:"1 1 auto",padding:"7px 10px",borderRadius:8,background:"#0d3d2e",border:"1px solid #34d399",color:"#34d399",fontWeight:700,fontSize:12,cursor:"pointer"}}>
                       📲 Avisar cliente
                     </button>
@@ -1827,17 +2124,34 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                     } else {
                       pergunta = `Por que você está cancelando a entrega de ${p.clienteNome}?`;
                     }
+                    // Taxa de cancelamento (04/11/2026): calcula quanto custa cancelar AGORA
+                    // e avisa antes de confirmar.
+                    const cobranca = calcularCancelamento({ ...p, taxaMotoboy: p.taxaMotoboy }, aceitoEmEfetivo, PRAZO_CHEGADA_MIN);
+                    if (cobranca.tipo === "parcial") {
+                      pergunta += `\n\n⚠️ O motoboy ainda está dentro do prazo (${PRAZO_CHEGADA_MIN} min). Cancelar agora custa ${fmtR(cobranca.taxaCancelamento)} (50% da taxa).`;
+                    } else if (cobranca.tipo === "total") {
+                      pergunta += `\n\n⚠️ O motoboy ${p.saiuEstabelecimentoEm ? "já retirou o pedido" : "já chegou na loja dentro do prazo"}. Cancelar agora custa a taxa inteira: ${fmtR(cobranca.taxaCancelamento)}.`;
+                    } else if (aceitoEmEfetivo) {
+                      pergunta += "\n\nO prazo de chegada do motoboy acabou: cancelar não custa nada.";
+                    }
                     let motivo = window.prompt(pergunta, "");
                     if (motivo === null || !motivo.trim()) { if (motivo !== null) alert("Precisa informar o motivo pra cancelar."); return; }
                     motivo = (aindaNoEstabelecimento && dentroDoPrazo)
                       ? `[Cancelado antes do prazo de chegada — faltavam ${minutosRestantes} min] ${motivo.trim()}`
                       : motivo.trim();
-                    await supabase.from("pedidos").update({
+                    if (cobranca.tipo !== "nenhuma" && !window.confirm(`Confirmar o cancelamento? Será cobrado ${fmtR(cobranca.taxaCancelamento)} deste pedido.`)) return;
+                    const { error: erroCancel } = await supabase.from("pedidos").update({
                       status: "cancelado",
                       motivo_cancelamento: motivo,
                       cancelado_em: new Date().toISOString(),
+                      cancelado_por: "estabelecimento",
+                      ...camposCancelamento(cobranca, p),
                     }).eq("id", p.id);
+                    if (erroCancel) { alert("❌ Não foi possível cancelar: " + erroCancel.message); return; }
                     await onRecarregar();
+                    if (onRepublicar && window.confirm("Pedido cancelado. Quer chamar outro motoboy com os mesmos dados do cliente?")) {
+                      await onRepublicar(p);
+                    }
                   }} style={{flex:"1 1 auto",padding:"7px 10px",borderRadius:8,background:"#3d1010",border:"1px solid #ef444466",color:"#f87171",fontWeight:700,fontSize:12,cursor:"pointer"}}>
                     ❌ Cancelar
                   </button>
@@ -1850,17 +2164,42 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
                 cancelar individual acima, que cancela só um cliente por vez. */}
             <div style={{marginTop:6,marginBottom:10,textAlign:"right"}}>
               <button onClick={async()=>{
-                const motivo = window.prompt("Por que está cancelando TODOS os pedidos ainda não entregues desta corrida? (o motoboy vai ver esse motivo)", "");
+                // Taxa de cancelamento (04/11/2026): soma o que custa cancelar cada pedido agora.
+                const PRAZO_TODOS = prazoChegadaMotoboyMin();
+                const temposAceiteTodos = corrida.pedidos.map(x => x.aceitoEm).filter(Boolean).map(x => new Date(x).getTime());
+                const cobrancas = corrida.pedidos.filter(x => x.status!=="entregue").map(x => {
+                  const aceitoMs = x.aceitoEm ? new Date(x.aceitoEm).getTime() : (temposAceiteTodos.length ? Math.min(...temposAceiteTodos) : null);
+                  return { p: x, c: calcularCancelamento(x, aceitoMs, PRAZO_TODOS) };
+                });
+                const totalCobrado = cobrancas.reduce((t, x) => t + x.c.taxaCancelamento, 0);
+                let aviso = "Por que está cancelando TODOS os pedidos ainda não entregues desta corrida? (o motoboy vai ver esse motivo)";
+                if (totalCobrado > 0) {
+                  const tipos = cobrancas.map(x => x.c.tipo).filter(t => t !== "nenhuma");
+                  const temTotal = tipos.includes("total"), temParcial = tipos.includes("parcial");
+                  let motivoTaxa;
+                  if (temTotal && temParcial) motivoTaxa = "Alguns motoboys ainda estão dentro dos 15 minutos (cobra 50% da taxa) e outros já chegaram na loja ou já retiraram o pedido (cobra a taxa inteira).";
+                  else if (temTotal) motivoTaxa = "O motoboy já chegou na loja ou já retirou o pedido, então cobra a taxa inteira.";
+                  else motivoTaxa = `O motoboy ainda está dentro dos ${PRAZO_TODOS} minutos para chegar, então cobra 50% da taxa.`;
+                  aviso += `\n\n⚠️ Cancelar agora custa ${fmtR(totalCobrado)} no total. ${motivoTaxa}`;
+                }
+                const motivo = window.prompt(aviso, "");
                 if (motivo === null) return;
-                for (const p of corrida.pedidos) {
-                  if (p.status==="entregue") continue; // já finalizado, não mexe
+                if (totalCobrado > 0 && !window.confirm(`Confirmar o cancelamento de todos? Será cobrado ${fmtR(totalCobrado)}.`)) return;
+                for (const { p, c } of cobrancas) {
                   await supabase.from("pedidos").update({
                     status: "cancelado",
                     motivo_cancelamento: motivo.trim() || "Cancelado pelo estabelecimento",
                     cancelado_em: new Date().toISOString(),
+                    cancelado_por: "estabelecimento",
+                    ...camposCancelamento(c, p),
                   }).eq("id", p.id);
                 }
                 await onRecarregar();
+                if (onRepublicar && window.confirm(cobrancas.length > 1
+                  ? "Pedidos cancelados. Quer chamar outro motoboy com os mesmos dados dos clientes?"
+                  : "Pedido cancelado. Quer chamar outro motoboy com os mesmos dados do cliente?")) {
+                  for (const { p } of cobrancas) await onRepublicar(p);
+                }
               }} style={{padding:"7px 12px",borderRadius:8,background:"transparent",border:"1px solid #ef444466",color:"#f87171",fontWeight:700,fontSize:12,cursor:"pointer"}}>
                 ❌ Cancelar todos desta corrida
               </button>
@@ -2109,7 +2448,7 @@ function ChamadasMotoboyCard({ empresaId, valor }) {
           .from("pedidos")
           .select("id, taxa, taxa_chamado, criado_em")
           .eq("empresario_id", empresaId)
-          .eq("status", "entregue")
+          .or("status.eq.entregue,cancelamento_cobrado.eq.true")
           .gte("criado_em", inicio.toISOString())
           .order("criado_em", { ascending: true })
           .order("id", { ascending: true }));
@@ -2304,7 +2643,7 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
         .from("pedidos")
         .select("taxa, criado_em")
         .eq("empresario_id", empresa.id)
-        .eq("status", "entregue")
+        .or("status.eq.entregue,cancelamento_cobrado.eq.true")
         .gte("criado_em", inicio)
         .order("criado_em", { ascending: true })
         .order("id", { ascending: true }));
@@ -2522,6 +2861,7 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
                   {e.horaSaida && <> · saiu {e.horaSaida}</>}
                   {e.horaEntrega && <> · entregou {e.horaEntrega}</>}
                 </div>
+                <div style={{marginTop:4}}><ProvaCobranca e={e}/></div>
                 {(e.minutosAteChegar!=null || e.minutosNaLoja!=null || e.minutosAteCliente!=null) && (
                   <div style={{color:"#6b7280",fontSize:11,lineHeight:1.5}}>
                     {e.minutosAteChegar!=null && <>🏪 até chegar <b style={{color:"#d1d5db"}}>{formatarDuracaoHist(e.minutosAteChegar)}</b></>}
@@ -2600,7 +2940,8 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
                   {entregue?"✅ Entregue":"❌ Cancelada"}
                 </span>
                 <div style={{textAlign:"right"}}>
-                  <div style={{color:"#fbbf24",fontWeight:900,fontSize:18}}>R${e.taxa}</div>
+                  <div style={entregue?{color:"#fbbf24",fontWeight:900,fontSize:18}:{color:"#6b7280",fontWeight:700,fontSize:16,textDecoration:"line-through"}}>R${e.taxa}</div>
+                  {!entregue && <div style={{color:"#9ca3af",fontSize:10,fontWeight:700}}>sem cobrança</div>}
                   <div style={{color:pg.cor,fontSize:11,fontWeight:700}}>{pg.icon} {pg.label}</div>
                 </div>
               </div>
@@ -2611,11 +2952,17 @@ function HistoricoEmp({ historico, carregando, mesSelecionado, setMesSelecionado
               </div>
               {/* Linha 3: Motoboy */}
               {e.motoboyNome && <div style={{color:"#9ca3af",fontSize:12,marginBottom:6}}>🏍️ {e.motoboyNome}</div>}
+              <ProvaCobranca e={e}/>
               {/* Adicionado em 24/09/2026 no site a pedido do Alessandro
                   (replicado aqui em 06/10/2026): mostra o motivo do
                   cancelamento pro estabelecimento consultar depois — antes só
                   aparecia num aviso rápido na hora, sem ficar registrado pra
                   consulta posterior. */}
+              {e.cancelamentoCobrado && (
+                <div style={{background:"#3d2a08",borderRadius:8,padding:"6px 10px",marginBottom:6,color:"#fbbf24",fontSize:12,fontWeight:700}}>
+                  ⚠️ Cancelada com taxa de cancelamento{e.taxaOriginal ? ` (pedido era R$${e.taxaOriginal})` : ""}
+                </div>
+              )}
               {!entregue && e.motivo && (
                 <div style={{background:"#3d1010",borderRadius:8,padding:"6px 10px",marginBottom:6}}>
                   <div style={{color:"#f87171",fontSize:11,fontWeight:700}}>Motivo do cancelamento:</div>
@@ -2642,18 +2989,31 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
   const [busca, setBusca] = useState("");
   const [editId, setEditId] = useState(null);
   const [modalCad, setModalCad] = useState(false);
-  const [form, setForm] = useState({nome:"",tel:"",endereco:{rua:"",num:"",bairro:"",ref:""}});
+  const [form, setForm] = useState({nome:"",tel:"",endereco:{rua:"",num:"",bairro:"",ref:"",mapa:""}});
   const [erro, setErro] = useState("");
 
   const filtrados = clientes.filter(c=>!busca||normalizarTexto(c.nome).includes(normalizarTexto(busca))||c.tel.includes(busca));
   const editCli = editId ? clientes.find(c=>c.id===editId) : null;
   // Telefone obrigatório aqui no cadastro — é o lugar certo pra essa exigência,
   // diferente da tela de Nova Entrega (onde só atrapalhava a busca do cliente).
-  const telFormValido = !!(form.tel && form.tel.trim() && form.tel.replace(/\D/g,"").length>=8);
+  const telFormValido = ehIfoodTel(form.tel) || !!(form.tel && form.tel.trim() && form.tel.replace(/\D/g,"").length>=8);
 
-  function abrirEdicao(c) { setEditId(c.id); setForm({nome:c.nome,tel:c.tel,endereco:{rua:c.rua||"",num:c.num||"",bairro:c.bairro||"",ref:c.ref||""}}); }
+  function abrirEdicao(c) { setEditId(c.id); setForm({nome:c.nome,tel:c.tel,endereco:{rua:c.rua||"",num:c.num||"",bairro:c.bairro||"",ref:c.ref||"",mapa:(c.lat!=null&&c.lng!=null)?`${c.lat}, ${c.lng}`:""}}); }
+
+  // Lê o campo "Localização exata" do formulário: vazio = sem localização; link válido
+  // = coordenadas; link que não dá pra entender (ou de fora de Ilhabela) = erro.
+  function lerLocalizacaoForm() {
+    const txt = (form.endereco.mapa || "").trim();
+    if (!txt) return { ok: true, lat: null, lng: null };
+    const c = extrairCoordenadasMaps(txt);
+    if (c && !c.fora) return { ok: true, lat: c.lat, lng: c.lng };
+    if (c && c.fora) return { ok: false, erro: "Essa localização está fora de Ilhabela. Confira o link." };
+    return { ok: false, erro: "Não consegui ler a localização. Cole o link completo do Google Maps (que tem as coordenadas, ex.: maps.google.com/?q=-23.81,-45.35) ou as coordenadas \"-23.81235, -45.352342\". Links curtos (maps.app.goo.gl) não funcionam: abra o link e copie o endereço da barra." };
+  }
 
   async function salvar() {
+    const loc = lerLocalizacaoForm();
+    if (!loc.ok) { setErro(loc.erro); return; }
     const { error } = await supabase.from("clientes").update({
       nome: form.nome,
       telefone: form.tel,
@@ -2661,9 +3021,11 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
       numero: form.endereco.num,
       bairro: form.endereco.bairro,
       referencia: form.endereco.ref,
+      latitude: loc.lat,
+      longitude: loc.lng,
     }).eq("id", editId);
     if (error) { setErro("Erro ao salvar: " + error.message); return; }
-    setClientes(p=>p.map(c=>c.id===editId?{...c,nome:form.nome,tel:form.tel,rua:form.endereco.rua,num:form.endereco.num,bairro:form.endereco.bairro,ref:form.endereco.ref}:c));
+    setClientes(p=>p.map(c=>c.id===editId?{...c,nome:form.nome,tel:form.tel,rua:form.endereco.rua,num:form.endereco.num,bairro:form.endereco.bairro,ref:form.endereco.ref,lat:loc.lat,lng:loc.lng}:c));
     setEditId(null);
     setErro("");
   }
@@ -2673,7 +3035,7 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
     setClientes(p=>p.filter(c=>c.id!==id));
   }
 
-  const FORM_VAZIO = {nome:"",tel:"",endereco:{rua:"",num:"",bairro:"",ref:""}};
+  const FORM_VAZIO = {nome:"",tel:"",endereco:{rua:"",num:"",bairro:"",ref:"",mapa:""}};
 
   function abrirCadastro() { setForm(FORM_VAZIO); setErro(""); setModalCad(true); }
 
@@ -2687,6 +3049,8 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
       setErro("Preencha o telefone/WhatsApp do cliente — é obrigatório, o motoboy precisa desse número pra fazer a entrega.");
       return;
     }
+    const loc = lerLocalizacaoForm();
+    if (!loc.ok) { setErro(loc.erro); return; }
     const { data, error } = await supabase.from("clientes").insert({
       empresario_id: empresaId,
       nome: form.nome,
@@ -2695,13 +3059,14 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
       numero: form.endereco.num,
       bairro: form.endereco.bairro,
       referencia: form.endereco.ref,
+      ...(loc.lat != null ? { latitude: loc.lat, longitude: loc.lng } : {}),
     }).select().single();
     if (error) {
       setErro("Erro ao salvar cliente: " + error.message);
       return;
     }
     if (data) {
-      setClientes(p=>[...p, {id:data.id, nome:data.nome, tel:data.telefone, rua:data.rua, num:data.numero, bairro:data.bairro, ref:data.referencia}]);
+      setClientes(p=>[...p, {id:data.id, nome:data.nome, tel:data.telefone, rua:data.rua, num:data.numero, bairro:data.bairro, ref:data.referencia, lat:data.latitude ?? null, lng:data.longitude ?? null}]);
     }
     setModalCad(false); setForm(FORM_VAZIO); setErro("");
   }
@@ -2731,8 +3096,10 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
           <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
             <div style={{flex:1,minWidth:150}}>
               <div style={{color:"#f9fafb",fontWeight:700,fontSize:14}}>{c.nome}</div>
-              <a href={`https://wa.me/55${c.tel?.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
-                style={{color:"#34d399",textDecoration:"none",fontSize:12}}>💬 {c.tel}</a>
+              {ehIfoodTel(c.tel)
+                ? <span style={{color:"#fbbf24",fontSize:12,fontWeight:700}}>📦 iFood / app (sem WhatsApp)</span>
+                : <a href={`https://wa.me/55${c.tel?.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
+                style={{color:"#34d399",textDecoration:"none",fontSize:12}}>💬 {c.tel}</a>}
             </div>
             <div style={{flex:2,minWidth:180}}>
               <div style={{color:"#d1d5db",fontSize:13}}>{c.rua}, {c.num} — <span style={{color:"#34d399"}}>{c.bairro}</span></div>
@@ -2754,7 +3121,13 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
           <OvHeader titulo="+ Cadastrar Novo Cliente" onClose={()=>setModalCad(false)}/>
           {erro && <div style={{background:"#3d1010",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12,color:"#f87171",fontSize:13}}>{erro}</div>}
           <Inp label="Nome completo *" value={form.nome} onChange={v=>setForm(f=>({...f,nome:v}))} placeholder="Ex: João da Silva"/>
-          <Inp label="Telefone / WhatsApp *" value={form.tel} onChange={v=>setForm(f=>({...f,tel:v}))} placeholder="(12) 99999-0000"/>
+          <label style={{display:"flex",alignItems:"center",gap:8,background:"#0f172a",border:"1px solid #1f2937",borderRadius:8,padding:"9px 12px",marginBottom:8,cursor:"pointer"}}>
+            <input type="checkbox" checked={ehIfoodTel(form.tel)} onChange={e=>setForm(f=>({...f,tel:e.target.checked?"iFood":""}))}/>
+            <span style={{color:"#d1d5db",fontSize:12,fontWeight:700}}>Cliente de iFood / app (não tenho o WhatsApp dele)</span>
+          </label>
+          {ehIfoodTel(form.tel)
+            ? <div style={{color:"#9ca3af",fontSize:12,marginBottom:8}}>📦 Sem telefone: o pedido sai sem código de entrega e o motoboy não verá botão de WhatsApp.</div>
+            : <Inp label="Telefone / WhatsApp *" value={form.tel} onChange={v=>setForm(f=>({...f,tel:v}))} placeholder="(12) 99999-0000"/>}
           {!telFormValido && form.tel && <div style={{color:"#f87171",fontSize:11,marginTop:-4,marginBottom:6}}>⚠️ Número incompleto</div>}
           <Divider/>
           <STitle>Endereço</STitle>
@@ -2766,6 +3139,9 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
           <Inp label="Ponto de referência" value={form.endereco.ref} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,ref:v}}))}
             placeholder="Ex: Casa azul, portão de ferro, próximo ao mercado..."
             hint="Ajuda o motoboy a encontrar mais rápido"/>
+          <Inp label="📍 Localização exata (opcional)" value={form.endereco.mapa||""} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,mapa:v}}))}
+            placeholder="Cole aqui o link do Google Maps que o cliente mandar"
+            hint="Use quando o Google não achar a rua. Peça pro cliente enviar a localização pelo WhatsApp e cole o link. A taxa passa a ser calculada até esse ponto exato."/>
           {/* Preview */}
           {form.nome && form.endereco.rua && form.endereco.num && (
             <div style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
@@ -2798,6 +3174,9 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
           </div>
           <Inp label="Bairro" value={form.endereco.bairro} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,bairro:v}}))} placeholder="Ex: Perequê, Vila, Feiticeira..."/>
           <Inp label="Referência" value={form.endereco.ref} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,ref:v}}))} placeholder="Casa de cor, portão..."/>
+          <Inp label="📍 Localização exata (opcional)" value={form.endereco.mapa||""} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,mapa:v}}))}
+            placeholder="Link do Google Maps ou coordenadas"
+            hint="Use quando o Google não achar a rua. Apague o campo para voltar ao cálculo pelo endereço."/>
           <div style={{display:"flex",gap:8,marginTop:8}}>
             <Btn onClick={salvar} full>Salvar</Btn>
             <Btn cor="cinza" onClick={()=>setEditId(null)}>Cancelar</Btn>
@@ -2877,6 +3256,34 @@ function BloqueioLimiteEntregas({ empresa }) {
 }
 
 // ─── APP EMPRESÁRIO ───────────────────────────────────────────────────────────
+
+// Prova de cobrança (04/11/2026): mostra o valor que a loja digitou + forma de pagamento + edições.
+function ProvaCobranca({ e }) {
+  const nomes = { pix: "Pix", cartao: "Cartão", dinheiro: "Dinheiro" };
+  const f = (v) => "R$" + Number(v).toFixed(2).replace(".", ",");
+  const forma = nomes[e.pagamento] || e.pagamento || "—";
+  const temValor = e.valorPedido != null && Number(e.valorPedido) > 0;
+  const eds = Array.isArray(e.edicoes) ? e.edicoes : [];
+  if (!temValor && eds.length === 0) return (
+    <div style={{color:"#6b7280",fontSize:11,marginBottom:6}}>💳 Valor do pedido não informado · {forma}</div>
+  );
+  return (
+    <div style={{background:"#0f172a",border:"1px solid #1e3a5f",borderRadius:8,padding:"6px 10px",marginBottom:6}}>
+      <div style={{color:"#93c5fd",fontSize:12,fontWeight:800}}>
+        💳 Cobrar do cliente: {temValor ? f(e.valorPedido) : "—"} · {forma}
+      </div>
+      {e.pagamento==="dinheiro" && e.valorReceber>0 && Number(e.valorReceber)>Number(e.valorPedido||0) && (
+        <div style={{color:"#9ca3af",fontSize:11}}>Cliente paga {f(e.valorReceber)} · troco {f(Number(e.valorReceber)-Number(e.valorPedido||0))}</div>
+      )}
+      {eds.map((x,i)=>(
+        <div key={i} style={{color:"#fbbf24",fontSize:11,marginTop:2}}>
+          ✏️ Editado às {new Date(x.em).toLocaleString("pt-BR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}: de {x.de?.valor_pedido!=null?f(x.de.valor_pedido):"—"} {nomes[x.de?.forma_pagamento]||""} para {x.para?.valor_pedido!=null?f(x.para.valor_pedido):"—"} {nomes[x.para?.forma_pagamento]||""}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Empresario() {
   const navigate = useNavigate();
   const [aba, setAba] = useState("nova");
@@ -2910,6 +3317,21 @@ export default function Empresario() {
   }, [avisoCancelamentoMotoboy]);
 
   const [empresa, setEmpresa] = useState({...EMPRESA, id:null}); // começa SEM id até carregar o real do Supabase
+  // Valores de retorno/deslocamento (editáveis no Admin). Recarrega a cada 20s e ao voltar pra aba.
+  const [cfgTaxas, setCfgTaxas] = useState(null);
+  useEffect(()=>{
+    let vivo = true;
+    const carregar = async () => { const c = await buscarCfgTaxas(); if (vivo) setCfgTaxas(c); };
+    carregar();
+    // A cada 20s e sempre que a pessoa volta pra aba/app: assim o aviso mostra o
+    // valor atual (modo chuva ligado/desligado) quase na hora.
+    const t = setInterval(carregar, 20000);
+    const aoVoltar = () => { if (document.visibilityState === "visible") carregar(); };
+    document.addEventListener("visibilitychange", aoVoltar);
+    window.addEventListener("focus", carregar);
+    return ()=>{ vivo = false; clearInterval(t); document.removeEventListener("visibilitychange", aoVoltar); window.removeEventListener("focus", carregar); };
+  }, []);
+  const empresaView = { ...empresa, cfgTaxas };
   const [carregando, setCarregando] = useState(true);
   // Valor exato pendente quando a conta está bloqueada — pra mostrar na tela de
   // bloqueio, junto com o PIX, e o empresário já pagar sem precisar chamar o
@@ -2930,21 +3352,28 @@ export default function Empresario() {
         .from("pedidos")
         .select("taxa, criado_em")
         .eq("empresario_id", empresa.id)
-        .eq("status", "entregue")
+        .or("status.eq.entregue,cancelamento_cobrado.eq.true")
         .gte("criado_em", inicioObj.toISOString())
         .order("criado_em", { ascending: true })
         .order("id", { ascending: true }));
       if (cancelado || error || !data) return;
       let total = 0;
+      // Corrigido em 20/10/2026: o valor pendente é só o das semanas (ou dias) JÁ
+      // FECHADOS. A semana/dia em andamento NÃO entra, senão o valor cresce depois do
+      // bloqueio e deixa de bater com o que o empresário realmente deve.
+      const hojeISO = dataLocalISO();
+      const semanaAtualISO = segundaFeiraDaSemana(new Date());
       if (empresa.planoPagamentoMotoboy === "diario") {
         data.forEach(p=>{
           const diaISO = dataLocalISO(new Date(p.criado_em));
+          if (diaISO >= hojeISO) return;
           if (!empresa.pagamentosDiarios?.[diaISO]) total += p.taxa;
         });
       } else {
         const porSemana = {};
         data.forEach(p=>{
           const semana = segundaFeiraDaSemana(new Date(p.criado_em));
+          if (semana >= semanaAtualISO) return;
           porSemana[semana] = (porSemana[semana]||0) + p.taxa;
         });
         Object.entries(porSemana).forEach(([semana,tot])=>{
@@ -2986,6 +3415,7 @@ export default function Empresario() {
             enderecoTaxas: emp.endereco_taxas || "",
             // Valor fixo por chamada de motoboy (só alguns estabelecimentos têm)
             taxaChamado: Number(emp.taxa_chamado) || 0,
+            isentoDeslocamento: !!emp.isento_deslocamento,
             planoPagamento: emp.plano_pagamento,
             planoPagamentoMotoboy: emp.plano_pagamento_motoboy,
             planoGratis: emp.plano_gratis,
@@ -3019,6 +3449,8 @@ export default function Empresario() {
               num: c.numero,
               bairro: c.bairro,
               ref: c.referencia,
+              lat: c.latitude ?? null,
+              lng: c.longitude ?? null,
             })));
           }
 
@@ -3045,7 +3477,7 @@ export default function Empresario() {
                   // Adicionado em 07/09/2026 no site — guarda os dados
                   // completos do pedido pra dar pra republicar com 1
                   // clique, sem precisar digitar tudo de novo.
-                  clienteTel: p.cliente_telefone,
+                  clienteTel: p.cliente_telefone, semCodigo: !!p.sem_codigo_entrega,
                   rua: p.rua, num: p.numero, ref: p.referencia, obs: p.observacao,
                   pagamento: p.forma_pagamento, taxa: p.taxa, taxaMotoboy: p.taxa_motoboy || 0,
                   valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
@@ -3108,6 +3540,7 @@ export default function Empresario() {
       endereco: emp.endereco_estabelecimento || "",
       enderecoTaxas: emp.endereco_taxas || "",
       taxaChamado: Number(emp.taxa_chamado) || 0,
+      isentoDeslocamento: !!emp.isento_deslocamento,
       planoPagamento: emp.plano_pagamento,
       planoPagamentoMotoboy: emp.plano_pagamento_motoboy,
       planoGratis: emp.plano_gratis,
@@ -3185,13 +3618,15 @@ export default function Empresario() {
       setPedidos([...pedidosDB, ...entreguesDaCorridaAtiva].map(p=>({
         id: p.id,
         clienteNome: p.cliente_nome,
-        clienteTel: p.cliente_telefone,
+        clienteTel: p.cliente_telefone, semCodigo: !!p.sem_codigo_entrega,
         rua: p.rua, num: p.numero,
         bairro: p.bairro, ref: p.referencia, obs: p.observacao,
         pagamento: p.forma_pagamento, taxa: p.taxa,
         taxaMotoboy: p.taxa_motoboy || 0,
         taxaChamado: Number(p.taxa_chamado) || 0,
-        valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
+        taxaRetorno: Number(p.taxa_retorno) || 0,
+        taxaDeslocamento: Number(p.taxa_deslocamento) || 0,
+        valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco, edicoes: p.edicoes||[],
         status: p.status==="aceito"||p.status==="saiu_estabelecimento" ? "em_rota" : p.status,
         criadoEm: new Date(p.criado_em).getTime(),
         motoboyId: p.motoboy_id,
@@ -3276,7 +3711,9 @@ export default function Empresario() {
     setHistoricoData((data||[]).map(p=>({
       id: p.id, clienteNome: p.cliente_nome, bairro: p.bairro,
       pagamento: p.forma_pagamento, taxa: p.taxa,
-      status: p.status==="entregue" ? "Entregue" : "Cancelada",
+      valorPedido: p.valor_pedido, valorReceber: p.valor_receber, edicoes: Array.isArray(p.edicoes) ? p.edicoes : [],
+      status: (p.status==="entregue"||p.cancelamento_cobrado) ? "Entregue" : "Cancelada",
+      cancelamentoCobrado: !!p.cancelamento_cobrado, taxaOriginal: Number(p.taxa_original)||0,
       motoboyNome: mapaMotoboys[p.motoboy_id]?.nome_completo || "—",
       // Adicionado em 06/10/2026 (item 9): o card de pedido cancelado do
       // HistoricoEmp mostra e.motivo desde 24/09 no site, mas o campo nunca
@@ -3369,6 +3806,27 @@ export default function Empresario() {
     }
   }
 
+  // "Chamar outro motoboy" (04/11/2026): depois de cancelar, o empresário não precisa
+  // preencher tudo de novo. Monta o mesmo pedido SEM as taxas extras (chamado,
+  // deslocamento, retorno), e passa pelo mesmo caminho de um pedido novo
+  // (publicarPedido), que soma os extras com os valores de AGORA (ex.: modo chuva).
+  async function republicarPedidoCancelado(p) {
+    const extras = (Number(p.taxaChamado)||0) + (Number(p.taxaRetorno)||0) + (Number(p.taxaDeslocamento)||0);
+    const baseTaxa = Math.max(0, (Number(p.taxa)||0) - extras);
+    const baseMotoboy = Math.max(0, (Number(p.taxaMotoboy)||0) - extras);
+    await publicarPedido({
+      id: Date.now(),
+      clienteNome: p.clienteNome, clienteTel: p.clienteTel, semCodigo: !!p.semCodigo,
+      rua: p.rua, num: p.num, bairro: p.bairro, ref: p.ref, obs: p.obs,
+      pagamento: p.pagamento,
+      taxa: baseTaxa, taxaMotoboy: baseMotoboy,
+      distanciaKm: p.distanciaKm, metodoCalculoKm: p.metodoCalculoKm,
+      valorPedido: p.valorPedido, valorReceber: p.valorReceber, troco: p.troco,
+      status: "aguardando", criadoEm: Date.now(),
+    });
+    await carregarPedidos(empresa.id);
+  }
+
   async function publicarPedido(pedido) {
     if (!empresa?.id) return;
 
@@ -3385,6 +3843,24 @@ export default function Empresario() {
         taxaMotoboy: (Number(pedido.taxaMotoboy) || 0) + taxaChamadoValor,
         taxaChamado: taxaChamadoValor,
       };
+    }
+
+    // Retorno (cartão/dinheiro) e deslocamento: uma vez por chamado, no pedido que
+    // abre a chamada. Busca o valor ATUAL do banco (o Admin pode ter ligado o modo chuva).
+    {
+      const cfgAgora = await buscarCfgTaxas();
+      const tRetorno = valorRetorno(cfgAgora, pedido.pagamento);
+      const tDesloc = valorDeslocamento(cfgAgora, empresa);
+      const extras = tRetorno + tDesloc;
+      if (extras > 0) {
+        pedido = {
+          ...pedido,
+          taxa: (Number(pedido.taxa) || 0) + extras,
+          taxaMotoboy: (Number(pedido.taxaMotoboy) || 0) + extras,
+          taxaRetorno: tRetorno,
+          taxaDeslocamento: tDesloc,
+        };
+      }
     }
 
     // Verifica se está bloqueado no banco antes de publicar
@@ -3422,6 +3898,7 @@ export default function Empresario() {
       empresario_id: empresa.id,
       cliente_nome: pedido.clienteNome,
       cliente_telefone: pedido.clienteTel,
+      sem_codigo_entrega: !!pedido.semCodigo,
       rua: pedido.rua,
       numero: pedido.num,
       bairro: pedido.bairro,
@@ -3433,6 +3910,8 @@ export default function Empresario() {
       taxa_empresario: pedido.taxa || 0,
       // Só manda esse campo quando existe (estabelecimentos sem taxa de chamado não são afetados)
       ...(pedido.taxaChamado > 0 ? { taxa_chamado: pedido.taxaChamado } : {}),
+      ...(pedido.taxaRetorno > 0 ? { taxa_retorno: pedido.taxaRetorno } : {}),
+      ...(pedido.taxaDeslocamento > 0 ? { taxa_deslocamento: pedido.taxaDeslocamento } : {}),
       valor_pedido: pedido.valorPedido,
       valor_receber: pedido.valorReceber,
       valor_troco: pedido.troco,
@@ -3517,7 +3996,18 @@ export default function Empresario() {
           <div style={{background:"#1a0a0a",border:"1px solid #ef4444",borderRadius:12,padding:"20px 24px",marginBottom:20}}>
             <div style={{color:"#f87171",fontSize:15,lineHeight:1.7,marginBottom:12,textAlign:"left"}}>
               {empresa.motivoBloqueio
-                ? empresa.motivoBloqueio
+                ? (() => {
+                    // Corrigido em 20/10/2026: o motivo gravado no banco na hora do
+                    // bloqueio traz um "(faltam R$X)" que podia divergir do valor real
+                    // e confundia o empresário (pagavam o menor). Agora o número do
+                    // texto é SEMPRE o mesmo "Valor pendente" calculado abaixo; se o
+                    // valor ainda não foi calculado, o trecho com número é omitido.
+                    const m = String(empresa.motivoBloqueio);
+                    const faltam = valorPendenteBloqueio !== null
+                      ? `(faltam R$${valorPendenteBloqueio.toFixed(2).replace(".", ",")})`
+                      : "";
+                    return m.replace(/\(\s*faltam\s*R\$\s*[\d.,]+\s*\)/gi, faltam).replace(/\s+([.,])/g, "$1").replace(/ {2,}/g, " ");
+                  })()
                 : <>Sua conta foi bloqueada por <strong>mensalidade pendente</strong>.</>}
             </div>
             <div style={{color:"#9ca3af",fontSize:13,lineHeight:1.6}}>
@@ -3599,8 +4089,8 @@ export default function Empresario() {
       <div style={{maxWidth:900,margin:"0 auto",padding:"24px 20px"}}>
         {aba==="nova"      && (limiteAtingido
           ? <BloqueioLimiteEntregas empresa={empresa}/>
-          : <SolicitarEntrega clientes={clientes} setClientes={setClientes} onPublicar={publicarPedido} empresa={empresa}/>)}
-        {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes} empresa={empresa} onRecarregar={()=>carregarPedidos(empresa.id)} limiteAtingido={limiteAtingido}/>}
+          : <SolicitarEntrega clientes={clientes} setClientes={setClientes} onPublicar={publicarPedido} empresa={empresaView}/>)}
+        {aba==="ativos"    && <PedidosAtivos pedidos={pedidos} setPedidos={setPedidos} clientes={clientes} setClientes={setClientes} empresa={empresaView} onRecarregar={()=>carregarPedidos(empresa.id)} limiteAtingido={limiteAtingido} onRepublicar={republicarPedidoCancelado}/>}
         {aba==="historico" && <HistoricoEmp historico={historicoData} carregando={carregandoHistorico} mesSelecionado={mesHistorico} setMesSelecionado={setMesHistorico} mesesDisponiveis={gerarMesesDisponiveis()} empresa={empresa}/>}
         {aba==="clientes"  && <ClientesSalvos clientes={clientes} setClientes={setClientes} empresaId={empresa.id}/>}
 
@@ -3659,6 +4149,8 @@ export default function Empresario() {
                   taxa_motoboy: avisoSemMotoboy.taxaMotoboy || 0,
                   taxa_empresario: avisoSemMotoboy.taxa || 0,
                   ...(avisoSemMotoboy.taxaChamado > 0 ? { taxa_chamado: avisoSemMotoboy.taxaChamado } : {}),
+                  ...(avisoSemMotoboy.taxaRetorno > 0 ? { taxa_retorno: avisoSemMotoboy.taxaRetorno } : {}),
+                  ...(avisoSemMotoboy.taxaDeslocamento > 0 ? { taxa_deslocamento: avisoSemMotoboy.taxaDeslocamento } : {}),
                   valor_pedido: avisoSemMotoboy.valorPedido,
                   valor_receber: avisoSemMotoboy.valorReceber,
                   valor_troco: avisoSemMotoboy.troco,

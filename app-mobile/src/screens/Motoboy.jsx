@@ -50,7 +50,7 @@ function estamosNoVerao() {
   return false;
 }
 function prazoChegadaMotoboyMin() {
-  return estamosNoVerao() ? 15 : 12;
+  return 15; // sempre 15 min (verão e baixa temporada) — decisão 04/11
 }
 
 // Formata minutos de atraso de um jeito fácil de ler: "5 min", "45 min",
@@ -372,6 +372,13 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
         <div style={{textAlign:"center",marginBottom:14,paddingBottom:14,borderBottom:"1px solid #1f2937"}}>
           <div style={{color:"#6b7280",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Você vai receber</div>
           <div style={{color:"#34d399",fontWeight:900,fontSize:48,lineHeight:1}}>R${pedido.taxa}</div>
+          {(pedido.taxaRetorno>0 || pedido.taxaDeslocamento>0) && (
+            <div style={{color:"#9ca3af",fontSize:12,marginTop:6,lineHeight:1.5}}>
+              R${(Number(pedido.taxa)-Number(pedido.taxaRetorno||0)-Number(pedido.taxaDeslocamento||0)).toFixed(2).replace(".",",")} da entrega
+              {pedido.taxaDeslocamento>0 && <> + <span style={{color:"#93c5fd",fontWeight:700}}>R${Number(pedido.taxaDeslocamento).toFixed(2).replace(".",",")} de deslocamento</span></>}
+              {pedido.taxaRetorno>0 && <> + <span style={{color:"#93c5fd",fontWeight:700}}>R${Number(pedido.taxaRetorno).toFixed(2).replace(".",",")} de retorno</span></>}
+            </div>
+          )}
         </div>
 
         <div style={{marginBottom:10}}>
@@ -424,6 +431,11 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
             )}
           </div>
         )}
+        {pedido.taxaRetorno>0 && (
+          <div style={{background:"#1a2f4a",border:"1px dashed #60a5fa",borderRadius:8,padding:"8px 14px",marginTop:10,color:"#93c5fd",fontSize:12,fontWeight:700,lineHeight:1.5}}>
+            ↩️ Depois da entrega, volte ao estabelecimento para devolver {pedido.pagamento==="cartao"?"a maquininha":"o dinheiro"}. Você ganha +R${Number(pedido.taxaRetorno).toFixed(2).replace(".",",")} de retorno.
+          </div>
+        )}
         {pedido.pagamento==="pix" && <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"8px 12px",marginTop:10}}><div style={{color:"#34d399",fontSize:12,fontWeight:700}}>💠 Pix já pago — só entregar</div></div>}
       </div>
 
@@ -445,6 +457,164 @@ function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
         )}
       </div>
     </Overlay>
+  );
+}
+
+
+// ============================================================
+// TURNOS (04/11/2026) — o motoboy reserva sozinho um turno com garantia.
+// Regra: ficar ONLINE até o fim do turno; se sair antes, perde a garantia.
+// ============================================================
+function TurnosMotoboy({ motoboyId }) {
+  const [cfg, setCfg] = useState(null);
+  const [resumo, setResumo] = useState([]);
+  const [minhas, setMinhas] = useState([]);
+  const [carregando, setCarregando] = useState(true);
+  const [ocupado, setOcupado] = useState(false);
+  const hoje = dataLocalISO();
+  const fim7 = (() => { const d = new Date(); d.setDate(d.getDate() + 62); return dataLocalISO(d); })();
+  const ini14 = (() => { const d = new Date(); d.setDate(d.getDate() - 14); return dataLocalISO(d); })();
+  const rotulo = (t) => t === "almoco" ? "☀️ Almoço" : "🌙 Noite";
+  const diaFmt = (iso) => new Date(iso + "T12:00:00-03:00").toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "2-digit" });
+  const fmtR = (v) => "R$" + Number(v || 0).toFixed(2).replace(".", ",");
+
+  async function carregar() {
+    const { data: c } = await supabase.from("config_turnos").select("*").eq("id", 1).maybeSingle();
+    setCfg(c || null);
+    const { data: r } = await supabase.rpc("turnos_livres_resumo", { p_ini: hoje, p_fim: fim7 });
+    setResumo(r || []);
+    if (motoboyId) {
+      const { data: m } = await supabase.from("turnos_livres_inscricoes").select("*")
+        .eq("motoboy_id", motoboyId).gte("data", ini14).order("data", { ascending: false });
+      setMinhas(m || []);
+    }
+    setCarregando(false);
+  }
+  useEffect(() => { carregar(); const t = setInterval(carregar, 5000); return () => clearInterval(t); }, [motoboyId]);
+
+  function horarios(turno) {
+    return turno === "almoco" ? [cfg.almoco_inicio, cfg.almoco_fim] : [cfg.noite_inicio, cfg.noite_fim];
+  }
+  function prazoAte(data, turno) {
+    const [ini] = horarios(turno);
+    return new Date(new Date(`${data}T${ini}:00-03:00`).getTime() - (Number(cfg.antecedencia_min) || 0) * 60000);
+  }
+  // Prazo para SAIR do turno por conta própria (depois disso, só pelo suporte).
+  function prazoSair(data, turno) {
+    const [ini] = horarios(turno);
+    return new Date(new Date(`${data}T${ini}:00-03:00`).getTime() - (Number(cfg.cancelar_ate_min ?? 150) || 0) * 60000);
+  }
+
+  async function reservar(data, turno) {
+    if (ocupado) return;
+    if (!window.confirm(`Reservar o turno ${turno === "almoco" ? "do almoço" : "da noite"} de ${diaFmt(data)}?\n\nVocê precisa ficar ONLINE e disponível até o fim do turno. Se sair do online antes, perde a garantia de ${fmtR(cfg.piso)}.`)) return;
+    setOcupado(true);
+    const { error } = await supabase.from("turnos_livres_inscricoes").insert({ data, turno, motoboy_id: motoboyId });
+    setOcupado(false);
+    if (error) { alert("Não foi possível reservar: " + error.message); carregar(); return; }
+    alert("✅ Turno reservado!");
+    carregar();
+  }
+  async function cancelar(data, turno) {
+    const minha = minhas.find(m => m.data === data && m.turno === turno && !m.cancelado_em);
+    if (!minha) return;
+    if (!window.confirm("Cancelar sua reserva deste turno?")) return;
+    const { error } = await supabase.from("turnos_livres_inscricoes").update({ cancelado_em: new Date().toISOString() }).eq("id", minha.id);
+    if (error) { alert("Não foi possível cancelar: " + error.message); return; }
+    carregar();
+  }
+
+  if (carregando) return <div style={{color:"#6b7280",padding:20}}>Carregando...</div>;
+  if (!cfg) return <div style={{color:"#6b7280",padding:20}}>Turnos ainda não disponíveis.</div>;
+
+  const agora = new Date();
+  const historicoTurnos = minhas.filter(m => !m.cancelado_em && (m.fechado_em || m.data < hoje));
+
+  return (
+    <div>
+      <div style={{marginBottom:12}}>
+        <div style={{color:"#34d399",fontWeight:800,fontSize:20}}>🗓️ Turnos com garantia</div>
+        <div style={{color:"#6b7280",fontSize:13}}>Reserve um turno e ganhe no mínimo {fmtR(cfg.piso)} por turno.</div>
+      </div>
+
+      <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:10,padding:"10px 14px",marginBottom:14,color:"#d1d5db",fontSize:12,lineHeight:1.5}}>
+        <b style={{color:"#fbbf24"}}>Como funciona:</b> depois de reservar, você pode sair do turno por conta própria só até {(() => { const t = Number(cfg.cancelar_ate_min ?? 150) || 0; const h = Math.floor(t/60), mi = t%60; return h > 0 ? (mi > 0 ? `${h}h${String(mi).padStart(2,"0")}` : `${h}h`) : `${mi} min`; })()} antes do início; depois disso, só pelo suporte. Você fica <b>online e disponível até o fim do turno</b>. Se as suas entregas somarem menos de {fmtR(cfg.piso)}, a MotoFast completa a diferença no pagamento. Se você <b>sair do online antes do fim</b>, perde a garantia e recebe só as entregas que fez.
+      </div>
+
+      {resumo.length === 0 && (
+        <div style={{color:"#6b7280",fontSize:14,padding:"16px 4px"}}>Nenhuma vaga aberta nos próximos dias. Volte mais tarde.</div>
+      )}
+
+      {resumo.map((r, idx) => {
+        const mesTitulo = new Date(r.data + "T12:00:00-03:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+        const mostrarMes = idx === 0 || mesTitulo !== new Date(resumo[idx-1].data + "T12:00:00-03:00").toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+        const [ini, fim] = horarios(r.turno);
+        const livres = Math.max(0, r.vagas - r.ocupadas);
+        const prazo = prazoAte(r.data, r.turno);
+        const encerrado = agora > prazo;
+        const minhaRes = minhas.find(x => x.data === r.data && x.turno === r.turno && !x.cancelado_em);
+        return (
+          <div key={r.data + r.turno}>
+          {mostrarMes && <div style={{color:"#9ca3af",fontSize:12,fontWeight:800,textTransform:"uppercase",letterSpacing:1,margin:"14px 0 8px"}}>{mesTitulo}</div>}
+          <div style={{background:"#111827",border:`1px solid ${r.reservado_por_mim?"#34d399":"#1f2937"}`,borderRadius:12,padding:"14px 16px",marginBottom:10}}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+              <div>
+                <div style={{color:"#f9fafb",fontWeight:800,fontSize:15,textTransform:"capitalize"}}>{diaFmt(r.data)}</div>
+                <div style={{color:"#9ca3af",fontSize:13,marginTop:2}}>{rotulo(r.turno)} · {ini} às {fim}</div>
+                <div style={{color:"#fbbf24",fontSize:12,fontWeight:700,marginTop:2}}>💰 Garantia de {fmtR(minhaRes?.piso ?? cfg.piso)}</div>
+                <div style={{color:"#6b7280",fontSize:12,marginTop:2}}>
+                  {livres > 0 ? `${livres} vaga${livres>1?"s":""} livre${livres>1?"s":""}` : "Sem vagas"} · reservas até {prazo.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}
+                </div>
+              </div>
+              <div>
+                {r.reservado_por_mim ? (
+                  <div style={{textAlign:"right"}}>
+                    <div style={{color:"#34d399",fontWeight:800,fontSize:13,marginBottom:4}}>✅ Reservado</div>
+                    {agora <= prazoSair(r.data, r.turno)
+                      ? <>
+                          <Btn small cor="cinza" onClick={() => cancelar(r.data, r.turno)}>Sair do turno</Btn>
+                          <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>Você pode sair até {prazoSair(r.data, r.turno).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}</div>
+                        </>
+                      : <div style={{maxWidth:220}}>
+                          <div style={{color:"#fbbf24",fontSize:11,lineHeight:1.4,marginBottom:4}}>O prazo para sair deste turno já passou. Para sair, fale com o suporte da MotoFast.</div>
+                          <a href={`https://wa.me/${SUPORTE_TEL}`} target="_blank" rel="noreferrer" style={{background:"#0a2a1e",color:"#34d399",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>💬 Falar com o suporte</a>
+                        </div>}
+                  </div>
+                ) : encerrado ? (
+                  <span style={{color:"#6b7280",fontSize:12,fontWeight:700}}>Reservas encerradas</span>
+                ) : livres > 0 ? (
+                  <Btn onClick={() => reservar(r.data, r.turno)} disabled={ocupado}>Reservar</Btn>
+                ) : (
+                  <span style={{color:"#f87171",fontSize:12,fontWeight:700}}>Cheio</span>
+                )}
+              </div>
+            </div>
+          </div>
+          </div>
+        );
+      })}
+
+      {historicoTurnos.length > 0 && (
+        <div style={{marginTop:20}}>
+          <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:8}}>Meus turnos anteriores</div>
+          {historicoTurnos.map(m => {
+            const completar = Number(m.valor_completar) || 0;
+            return (
+              <div key={m.id} style={{background:"#111827",border:"1px solid #1f2937",borderRadius:10,padding:"10px 14px",marginBottom:8}}>
+                <div style={{color:"#f9fafb",fontWeight:700,fontSize:13,textTransform:"capitalize"}}>{diaFmt(m.data)} · {rotulo(m.turno)}</div>
+                {m.perdeu_garantia
+                  ? <div style={{color:"#f87171",fontSize:12,marginTop:3}}>Você saiu do online antes do fim — sem garantia neste turno.</div>
+                  : m.fechado_em
+                    ? <div style={{color:"#34d399",fontSize:12,marginTop:3}}>
+                        ✅ Turno cumprido · entregas {fmtR(m.ganho_entregas)}{completar > 0 ? ` · a MotoFast completa ${fmtR(completar)}` : " · você bateu a meta"}
+                      </div>
+                    : <div style={{color:"#6b7280",fontSize:12,marginTop:3}}>Calculando o resultado…</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -511,7 +681,7 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
     }).eq("id", pedidoId);
   }
 
-  function marcarEntregue(pedidoId) {
+  async function marcarEntregue(pedidoId) {
     const novos = [...pedidosEntregues, pedidoId];
     setPedidosEntregues(novos);
     // Adicionado em 07/09/2026 no site: antes, o banco só era atualizado
@@ -520,11 +690,21 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
     // Admin, sem jeito de saber qual já foi de fato entregue quando o
     // motoboy está com várias corridas ao mesmo tempo. Agora cada uma grava
     // sozinha, na hora, assim que confirmada.
-    onEntregarItem(pedidoId);
-    const todos = corrida.pedidos.map(p=>p.id);
-    if (todos.every(id=>novos.includes(id))) {
-      setTimeout(()=>onEntregar(), 800);
-    }
+    try { await onEntregarItem(pedidoId); } catch (e) { console.error("Erro ao gravar entrega:", e); }
+    // CORRIGIDO em 04/11/2026: a decisão de "acabou a corrida?" olhava só a lista
+    // que estava na tela naquele instante. Se um pedido tinha acabado de ser
+    // adicionado à corrida pelo estabelecimento e a tela ainda não tinha
+    // recebido, a corrida inteira sumia ao entregar o primeiro. Agora confere
+    // no banco se ainda existe pedido ativo nessa corrida antes de encerrar.
+    let acabou = corrida.pedidos.map(p=>p.id).every(id=>novos.includes(id));
+    try {
+      if (corrida.id) {
+        const { data: restantes, error } = await supabase.from("pedidos")
+          .select("id").eq("corrida_id", corrida.id).in("status", ["aceito","saiu_estabelecimento"]);
+        if (!error && restantes && restantes.filter(r => r.id !== pedidoId).length > 0) acabou = false;
+      }
+    } catch (e) { /* mantém a conta local */ }
+    if (acabou) setTimeout(()=>onEntregar(), 800);
   }
 
   function abrirGPSEstab(p) {
@@ -598,7 +778,7 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                     // clica "Cheguei na loja" (o tempo de espera do pedido é outro relógio).
                     if (p.chegouLojaEm || chegouLoja[p.id]) return null;
                     const PRAZO_CHEGADA_MIN = prazoChegadaMotoboyMin();
-                    const minutosDesdeAceite = (Date.now() - aceitoEmEfetivo) / 60000;
+                    const minutosDesdeAceite = Math.max(0, (Date.now() - aceitoEmEfetivo) / 60000);
                     const dentroDoPrazo = minutosDesdeAceite < PRAZO_CHEGADA_MIN;
                     const minutosRestantes = Math.max(0, Math.ceil(PRAZO_CHEGADA_MIN - minutosDesdeAceite));
                     return (
@@ -684,6 +864,11 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                     ) : <div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>💳 Pegar a maquininha no estabelecimento</div>}
                   </div>
                 )}
+                {p.taxaRetorno>0 && (
+                  <div style={{background:"#1a2f4a",border:"1px dashed #60a5fa",borderRadius:8,padding:"8px 14px",marginBottom:10,color:"#93c5fd",fontSize:12,fontWeight:700,lineHeight:1.5}}>
+                    ↩️ Depois da entrega, volte ao estabelecimento para devolver {p.pagamento==="cartao"?"a maquininha":"o dinheiro"}. Você ganha +R${Number(p.taxaRetorno).toFixed(2).replace(".",",")} de retorno.
+                  </div>
+                )}
 
                 {!(p.chegouLojaEm || chegouLoja[p.id]) ? (
                   <>
@@ -718,7 +903,8 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                   <div style={{color:"#34d399",fontSize:13,marginTop:2}}>{p.bairro} — Ilhabela/SP</div>
                   {p.ref && <div style={{color:"#fbbf24",fontSize:12,marginTop:3}}>📌 Ref: {p.ref}</div>}
                   {p.obs && <div style={{color:"#9ca3af",fontSize:12,marginTop:3}}>💬 {p.obs}</div>}
-                  {p.clienteTel && (
+                  {String(p.clienteTel||"").toLowerCase().trim()==="ifood" && <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,marginTop:6}}>📦 Cliente de iFood/app — sem WhatsApp. Se precisar, fale com o estabelecimento.</div>}
+                  {p.clienteTel && String(p.clienteTel).replace(/\D/g,"").length >= 8 && (
                     <div style={{display:"flex",gap:8,marginTop:8,flexWrap:"wrap"}}>
                       <a href={`https://wa.me/55${p.clienteTel.replace(/\D/g,"")}`} target="_blank" rel="noreferrer"
                         style={{background:"#0a2a1e",color:"#34d399",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:700,textDecoration:"none"}}>💬 WhatsApp</a>
@@ -750,6 +936,11 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                     ) : <div style={{color:"#60a5fa",fontSize:12,fontWeight:700}}>💳 Cobrar na maquininha</div>}
                   </div>
                 )}
+                {p.taxaRetorno>0 && (
+                  <div style={{background:"#1a2f4a",border:"1px dashed #60a5fa",borderRadius:8,padding:"8px 14px",marginBottom:10,color:"#93c5fd",fontSize:12,fontWeight:700,lineHeight:1.5}}>
+                    ↩️ Depois da entrega, volte ao estabelecimento para devolver {p.pagamento==="cartao"?"a maquininha":"o dinheiro"}. Você ganha +R${Number(p.taxaRetorno).toFixed(2).replace(".",",")} de retorno.
+                  </div>
+                )}
                 {p.pagamento==="pix" && (
                   <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
                     <div style={{color:"#34d399",fontSize:13,fontWeight:900}}>💠 Pix já pago — sem cobrança</div>
@@ -771,8 +962,29 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                   </div>
                 )}
 
-                <button onClick={()=>{
-                  if (!window.confirm(`Confirma que entregou pra ${p.clienteNome}?`)) return;
+                {/* Código de confirmação (04/11/2026): 4 últimos dígitos do WhatsApp do cliente. */}
+                {(() => {
+                  const cod4 = (p.clienteTel || "").replace(/\D/g, "").slice(-4);
+                  if (p.semCodigo || String(p.clienteTel||"").toLowerCase().trim()==="ifood") return <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,marginBottom:8}}>📦 Pedido de app (iFood) — entregue sem código.</div>;
+                  if (cod4.length === 4) return <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:8,padding:"8px 12px",marginBottom:10,color:"#fbbf24",fontSize:12,fontWeight:700}}>🔐 Ao entregar, peça ao cliente o CÓDIGO: os 4 últimos dígitos do WhatsApp dele.</div>;
+                  return null;
+                })()}
+                <button onClick={async()=>{
+                  const cod4 = (p.clienteTel || "").replace(/\D/g, "").slice(-4);
+                  let statusCodigo = null;
+                  if (!p.semCodigo && String(p.clienteTel||"").toLowerCase().trim()!=="ifood" && cod4.length === 4) {
+                    let ok = false;
+                    while (!ok) {
+                      const digitado = window.prompt(`Peça ao cliente ${p.clienteNome} o CÓDIGO de entrega (os 4 últimos dígitos do WhatsApp dele) e digite aqui:`, "");
+                      if (digitado === null) {
+                        if (window.confirm("Cliente não sabe o código? Você pode entregar sem ele, mas isso fica registrado. Entregar sem código?")) { statusCodigo = "pulado"; break; }
+                        continue;
+                      }
+                      if (digitado.replace(/\D/g, "") === cod4) { ok = true; statusCodigo = "confirmado"; }
+                      else alert("Código errado. Confira com o cliente e tente de novo.");
+                    }
+                  } else if (!window.confirm(`Confirma que entregou pra ${p.clienteNome}?`)) return;
+                  if (statusCodigo) { try { await supabase.from("pedidos").update({ codigo_entrega_status: statusCodigo }).eq("id", p.id); } catch (e) {} }
                   marcarEntregue(p.id);
                 }} style={{width:"100%",padding:"14px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
                   ✅ Confirmar entrega
@@ -1030,9 +1242,29 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
                   <span style={{color:"#6b7280",fontSize:12,margin:"0 6px"}}>·</span>
                   <span style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{e.clienteNome}</span>
                 </div>
-                {e.taxaChamado > 0 && (
-                  <div style={{color:"#fbbf24",fontSize:11,marginTop:3,fontWeight:700}}>🏍️ inclui R${Number(e.taxaChamado).toFixed(2).replace(".", ",")} de taxa de chamado</div>
+                {e.valorPedido!=null && Number(e.valorPedido)>0 && (
+                  <div style={{color:"#93c5fd",fontSize:11,marginTop:3,fontWeight:700}}>
+                    💳 Cobrado do cliente: R${Number(e.valorPedido).toFixed(2).replace(".",",")} · {({pix:"Pix",cartao:"Cartão",dinheiro:"Dinheiro"})[e.pagamento]||e.pagamento}
+                  </div>
                 )}
+                {e.cancelamentoCobrado ? (
+                  <div style={{background:"#3d2a08",border:"1px solid #f59e0b55",borderRadius:8,padding:"6px 8px",marginTop:5,color:"#fbbf24",fontSize:11,fontWeight:700,lineHeight:1.4}}>
+                    ❌ Entrega cancelada pelo estabelecimento — você recebe a taxa de cancelamento{e.cancelamentoTipo==="total" ? " (valor inteiro da sua entrega, porque você já tinha chegado na loja ou retirado o pedido)" : " (25% da entrega: o estabelecimento cancelou antes dos 15 minutos que você tinha pra chegar)"}.
+                  </div>
+                ) : (e.taxaChamado > 0 || e.taxaDeslocamento > 0 || e.taxaRetorno > 0) && (() => {
+                  const fm = (v) => "R$" + Number(v).toFixed(2).replace(".", ",");
+                  const extras = (Number(e.taxaChamado)||0) + (Number(e.taxaDeslocamento)||0) + (Number(e.taxaRetorno)||0);
+                  const base = Math.max(0, (Number(e.taxa)||0) - extras);
+                  return (
+                    <div style={{color:"#93c5fd",fontSize:11,marginTop:3,fontWeight:700,lineHeight:1.4}}>
+                      🧾 Entrega {fm(base)}
+                      {e.taxaChamado > 0 && <> + chamado {fm(e.taxaChamado)}</>}
+                      {e.taxaDeslocamento > 0 && <> + deslocamento {fm(e.taxaDeslocamento)}</>}
+                      {e.taxaRetorno > 0 && <> + retorno (devolver maquininha/dinheiro) {fm(e.taxaRetorno)}</>}
+                      {" "}= <span style={{color:"#fbbf24"}}>{fm(e.taxa)}</span>
+                    </div>
+                  );
+                })()}
                 {(e.horaAceite || e.horaEntrega) && (
                   <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>
                     ⏱️ {e.horaAceite && (e.adicionadoCorrida ? <>entrou na corrida que você já estava fazendo</> : <>aceitou {e.horaAceite}</>)}{e.horaChegou && <> · chegou na loja {e.horaChegou}</>}{e.horaSaiu && <> · saiu {e.horaSaiu}</>}{e.horaEntrega && <> · entregou {e.horaEntrega}</>}{e.minutosEntrega!=null && <> · <b style={{color:"#d1d5db"}}>{formatarDuracao(e.minutosEntrega)}</b></>}
@@ -1268,6 +1500,9 @@ export default function Motoboy() {
   const [historico, setHistorico] = useState([]);
   const [pedidoDisponivel, setPedidoDisponivel] = useState(null);
   const [corridaAtiva, setCorridaAtiva] = useState(null);
+  // Localização bloqueada/negada pelo motoboy (04/11/2026): o app para de pedir sozinho.
+  const [gpsNegado, setGpsNegado] = useState(false);
+  const [gpsTentar, setGpsTentar] = useState(0);
   const [tipoSom, setTipoSom] = useState("alerta_forte");
   const [pedidoCancelado, setPedidoCancelado] = useState(false);
   const [pedidoPegoOutro, setPedidoPegoOutro] = useState(false);
@@ -1283,6 +1518,32 @@ export default function Motoboy() {
   const alarmeCancelamentoRef = useRef(null);
   const avisadosCancelamentoRef = useRef(new Set());
   const [motoboyId, setMotoboyId] = useState(null);
+
+  // Turnos abertos (04/11/2026): alimenta a bolinha da aba Turnos e o cartão do Início.
+  const [turnosAbertos, setTurnosAbertos] = useState(0);
+  useEffect(()=>{
+    if (!motoboyId) return;
+    let vivo = true;
+    async function ver() {
+      try {
+        const { data: c } = await supabase.from("config_turnos").select("*").eq("id", 1).maybeSingle();
+        if (!c) return;
+        const hoje = dataLocalISO();
+        const fim = (() => { const d = new Date(); d.setDate(d.getDate() + 62); return dataLocalISO(d); })();
+        const { data: r } = await supabase.rpc("turnos_livres_resumo", { p_ini: hoje, p_fim: fim });
+        const agora = Date.now();
+        const n = (r || []).filter(x => {
+          const ini = x.turno === "almoco" ? c.almoco_inicio : c.noite_inicio;
+          const prazo = new Date(`${x.data}T${ini}:00-03:00`).getTime() - (Number(c.antecedencia_min) || 0) * 60000;
+          return !x.reservado_por_mim && x.vagas - x.ocupadas > 0 && agora <= prazo;
+        }).length;
+        if (vivo) setTurnosAbertos(n);
+      } catch (e) { /* sem turnos disponíveis agora */ }
+    }
+    ver();
+    const t = setInterval(ver, 30000);
+    return () => { vivo = false; clearInterval(t); };
+  },[motoboyId]);
   const [motoboy, setMotoboy] = useState(MOTOBOY_VAZIO);
   const [rankingGeral, setRankingGeral] = useState([]);
   const [carregando, setCarregando] = useState(true);
@@ -1409,10 +1670,11 @@ export default function Motoboy() {
                 empresaTel: p.empresarios?.telefone || "",
                 empresaEndereco: p.empresarios?.endereco_estabelecimento || "",
                 clienteNome: p.cliente_nome,
-                clienteTel: p.cliente_telefone,
+                clienteTel: p.cliente_telefone, semCodigo: !!p.sem_codigo_entrega,
                 rua: p.rua, num: p.numero,
                 bairro: p.bairro, ref: p.referencia, obs: p.observacao,
                 pagamento: p.forma_pagamento, taxa: p.taxa_motoboy || p.taxa,
+                taxaRetorno: Number(p.taxa_retorno) || 0, taxaDeslocamento: Number(p.taxa_deslocamento) || 0,
                 valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
                 criadoEm: new Date(p.criado_em).getTime(),
                 aceitoEm: p.aceito_em || null,
@@ -1432,13 +1694,17 @@ export default function Motoboy() {
                 bairro: p.bairro,
                 pagamento: p.forma_pagamento,
                 taxa: p.taxa_motoboy || p.taxa,
-                status: p.status==="entregue" ? "Entregue" : "Cancelada",
+                status: (p.status==="entregue"||p.cancelamento_cobrado) ? "Entregue" : "Cancelada",
+                cancelamentoCobrado: !!p.cancelamento_cobrado, cancelamentoTipo: p.cancelamento_tipo || null,
+                valorPedido: p.valor_pedido,
                 data: d.toLocaleDateString("pt-BR"),
                 dataISO: dataLocalISO(d),
                 hora: d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
                 semana: segundaFeiraDaSemana(d), mes: d.getMonth()+1,
                 repasePago: p.repasse_pago || false,
                 taxaChamado: Number(p.taxa_chamado) || 0,
+                taxaRetorno: Number(p.taxa_retorno) || 0,
+                taxaDeslocamento: Number(p.taxa_deslocamento) || 0,
                 horaAceite: horaCurta(p.aceito_em),
                 // Só texto: aceite anterior ao pedido = adicionado a uma corrida já aceita.
                 adicionadoCorrida: !!(p.aceito_em && new Date(p.aceito_em) < new Date(p.criado_em)),
@@ -1691,12 +1957,18 @@ export default function Motoboy() {
         // específico consegue ver ele agora — todo mundo mais espera a
         // janela passar sozinha (o próprio pedido libera geral depois,
         // sem precisar de nada especial, só o tempo passar).
-        const { data: meuTurnoFixo } = await supabase
-          .from("motoboys_turno_fixo")
-          .select("turno")
+        // Atualizado em 04/11/2026: o Turno Fixo antigo foi substituído pelos Turnos
+        // livres. A prioridade agora vale pra quem tem reserva ativa no turno (e não
+        // saiu do online). O pedido carrega a chave 'livre|AAAA-MM-DD|turno'.
+        const ontemISO = (() => { const d = new Date(); d.setDate(d.getDate() - 1); return dataLocalISO(d); })();
+        const { data: minhasReservas } = await supabase
+          .from("turnos_livres_inscricoes")
+          .select("data, turno")
           .eq("motoboy_id", motoboyId)
-          .eq("ativo", true);
-        const meusTurnos = new Set((meuTurnoFixo || []).map(t => t.turno));
+          .is("cancelado_em", null)
+          .eq("perdeu_garantia", false)
+          .gte("data", ontemISO);
+        const meusTurnos = new Set((minhasReservas || []).map(t => `livre|${t.data}|${t.turno}`));
 
         // ─── PRIORIDADE GARANTIDA (B2B) — adicionada em 30/08/2026 ───
         // Entre os pedidos que EU já poderia ver (passou pela checagem do
@@ -1752,10 +2024,11 @@ export default function Motoboy() {
           empresaTel: candidato.empresarios?.telefone || "",
           empresaEndereco: candidato.empresarios?.endereco_estabelecimento || "",
           clienteNome: candidato.cliente_nome,
-          clienteTel: candidato.cliente_telefone,
+          clienteTel: candidato.cliente_telefone, semCodigo: !!candidato.sem_codigo_entrega,
           rua: candidato.rua, num: candidato.numero,
           bairro: candidato.bairro, ref: candidato.referencia,
           pagamento: candidato.forma_pagamento, taxa: candidato.taxa_motoboy || candidato.taxa, obs: candidato.observacao,
+          taxaRetorno: Number(candidato.taxa_retorno) || 0, taxaDeslocamento: Number(candidato.taxa_deslocamento) || 0,
           valorPedido: candidato.valor_pedido, valorReceber: candidato.valor_receber, troco: candidato.valor_troco,
           criadoEm: new Date(candidato.criado_em).getTime(),
           bloqueadoAtePrioridade: candidato._bloqueadoAtePrioridade || null,
@@ -1906,11 +2179,12 @@ export default function Motoboy() {
                 empresaTel: pedidoCompleto.empresarios?.telefone || "",
                 empresaEndereco: pedidoCompleto.empresarios?.endereco_estabelecimento || "",
                 clienteNome: pedidoCompleto.cliente_nome,
-                clienteTel: pedidoCompleto.cliente_telefone,
+                clienteTel: pedidoCompleto.cliente_telefone, semCodigo: !!pedidoCompleto.sem_codigo_entrega,
                 rua: pedidoCompleto.rua, num: pedidoCompleto.numero,
                 bairro: pedidoCompleto.bairro, ref: pedidoCompleto.referencia,
                 pagamento: pedidoCompleto.forma_pagamento,
                 taxa: pedidoCompleto.taxa_motoboy || pedidoCompleto.taxa,
+                taxaRetorno: Number(pedidoCompleto.taxa_retorno) || 0, taxaDeslocamento: Number(pedidoCompleto.taxa_deslocamento) || 0,
                 obs: pedidoCompleto.observacao,
                 valorPedido: pedidoCompleto.valor_pedido, valorReceber: pedidoCompleto.valor_receber, troco: pedidoCompleto.valor_troco,
                 criadoEm: new Date(pedidoCompleto.criado_em).getTime(),
@@ -2037,10 +2311,11 @@ export default function Motoboy() {
           empresaTel: p.empresarios?.telefone || "",
           empresaEndereco: p.empresarios?.endereco_estabelecimento || "",
           clienteNome: p.cliente_nome,
-          clienteTel: p.cliente_telefone,
+          clienteTel: p.cliente_telefone, semCodigo: !!p.sem_codigo_entrega,
           rua: p.rua, num: p.numero,
           bairro: p.bairro, ref: p.referencia, obs: p.observacao,
           pagamento: p.forma_pagamento, taxa: p.taxa_motoboy || p.taxa,
+          taxaRetorno: Number(p.taxa_retorno) || 0, taxaDeslocamento: Number(p.taxa_deslocamento) || 0,
           valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
           criadoEm: new Date(p.criado_em).getTime(),
           // CORRIGIDO em 27/09/2026 no site (replicado aqui em 03/10/2026):
@@ -2067,28 +2342,70 @@ export default function Motoboy() {
     return () => clearInterval(intervalo);
   },[motoboyId]);
 
+  // CORRIGIDO em 04/11/2026: antes o app pedia o GPS de novo (getCurrentPosition)
+  // a cada 5 segundos. Em vários navegadores (principalmente o do Instagram e o
+  // Safari do iPhone) isso fazia o aviso "permitir localização" reaparecer o
+  // tempo todo, mesmo depois de tocar em Permitir. Agora é UMA vigia só
+  // (watchPosition): pergunta uma vez. Se o motoboy bloquear, o app PARA de
+  // perguntar e mostra um aviso com botão pra tentar de novo (só quando ele toca).
   useEffect(()=>{
     if (!motoboyId || !corridaAtiva) return;
+    if (!navigator.geolocation) return;
 
-    function enviarLocalizacao() {
-      if (!navigator.geolocation) return;
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          await supabase.from("motoboys").update({
-            latitude: pos.coords.latitude,
-            longitude: pos.coords.longitude,
-            ultima_localizacao: new Date().toISOString(),
-          }).eq("id", motoboyId);
+    let cancelado = false;
+    let watchId = null;
+    let ultimaPos = null;
+    let ultimoEnvio = 0;
+
+    function gravar(pos) {
+      ultimoEnvio = Date.now();
+      supabase.from("motoboys").update({
+        latitude: pos.latitude,
+        longitude: pos.longitude,
+        ultima_localizacao: new Date().toISOString(),
+      }).eq("id", motoboyId).then(()=>{});
+    }
+    function iniciar() {
+      if (cancelado || watchId !== null) return;
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => {
+          setGpsNegado(false);
+          ultimaPos = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+          if (Date.now() - ultimoEnvio >= 5000) gravar(ultimaPos);
         },
-        (err) => console.log("GPS erro:", err.message),
-        { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        (err) => {
+          console.log("GPS erro:", err.message);
+          if (err.code === 1) { // permissão negada: para de vez
+            setGpsNegado(true);
+            if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+          }
+        },
+        { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 }
       );
     }
 
-    enviarLocalizacao();
-    const intervalo = setInterval(enviarLocalizacao, 5000);
-    return () => clearInterval(intervalo);
-  },[motoboyId, corridaAtiva?.id]);
+    // Se o navegador já sabe que está bloqueado, nem tenta (não abre aviso nenhum).
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions.query({ name: "geolocation" }).then((st)=>{
+        if (cancelado) return;
+        if (st.state === "denied") setGpsNegado(true); else iniciar();
+      }).catch(()=>iniciar());
+    } else {
+      iniciar();
+    }
+
+    // Parado no mesmo lugar o GPS não manda posição nova: reenvia a última a cada 15s
+    // pra o painel continuar vendo o motoboy como ativo.
+    const batida = setInterval(()=>{
+      if (ultimaPos && Date.now() - ultimoEnvio >= 15000) gravar(ultimaPos);
+    }, 5000);
+
+    return () => {
+      cancelado = true;
+      clearInterval(batida);
+      if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+    };
+  },[motoboyId, corridaAtiva?.id, gpsTentar]);
 
   async function aceitar() {
     if (!pedidoDisponivel || !motoboyId) return;
@@ -2415,6 +2732,7 @@ export default function Motoboy() {
 
   const ABAS = [
     {id:"home",   label:"🏠 Início"},
+    {id:"turnos", label:"🗓️ Turnos", badge:turnosAbertos},
     {id:"corrida",label:"🏍️ Corrida", badge:corridaAtiva?1:0},
     {id:"cancelados", label:"❌ Cancelados", badge:naoVistosCancelados},
     {id:"ganhos", label:"💰 Ganhos"},
@@ -2495,6 +2813,12 @@ export default function Motoboy() {
 
         {aba==="home" && (
           <div>
+            {turnosAbertos > 0 && (
+              <div onClick={()=>setAba("turnos")} style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:12,padding:"12px 16px",marginBottom:14,cursor:"pointer"}}>
+                <div style={{color:"#34d399",fontWeight:800,fontSize:14}}>🗓️ Turno com garantia aberto!</div>
+                <div style={{color:"#d1d5db",fontSize:12,marginTop:2}}>Há {turnosAbertos} turno{turnosAbertos>1?"s":""} com vaga. Reserve e ganhe no mínimo o valor da garantia. Toque para ver.</div>
+              </div>
+            )}
             {/* Caso 1: ainda não pediu permissão — o botão funciona normal,
                 mostra o pedido nativo do navegador */}
             {permissaoNotificacao==="default" && (
@@ -2654,6 +2978,21 @@ export default function Motoboy() {
           </div>
         )}
 
+        {/* No app nativo o aviso NÃO aparece (decisão de 08/11/2026): o app não tem
+            permissão de localização, então o GPS sempre fica "negado" — mostrar o
+            aviso em toda corrida seria só ruído. */}
+        {aba==="corrida" && corridaAtiva && gpsNegado && !Capacitor.isNativePlatform() && (
+          <div style={{background:"#3d2a00",border:"1px solid #f59e0b",borderRadius:10,padding:"10px 14px",marginBottom:12}}>
+            <div style={{color:"#fbbf24",fontSize:13,fontWeight:800}}>📍 Localização bloqueada</div>
+            <div style={{color:"#d1d5db",fontSize:12,marginTop:3,lineHeight:1.5}}>
+              O estabelecimento e a MotoFast não conseguem acompanhar sua entrega. Libere a localização nas configurações do navegador (ou do app) para este site e toque no botão abaixo.
+            </div>
+            <button onClick={()=>{ setGpsNegado(false); setGpsTentar(n=>n+1); }}
+              style={{marginTop:8,background:"#f59e0b",color:"#000",border:"none",borderRadius:8,padding:"8px 14px",fontSize:13,fontWeight:800,cursor:"pointer"}}>
+              Tentar de novo
+            </button>
+          </div>
+        )}
         {aba==="corrida" && (
           corridaAtiva
             ? <CorridaAtiva corrida={corridaAtiva} onEntregar={finalizarCorrida} onEntregarItem={entregarItemIndividual} onCancelar={cancelarCorrida} onCancelarItem={cancelarPedidoIndividual}/>
@@ -2720,6 +3059,7 @@ export default function Motoboy() {
           );
         })()}
 
+        {aba==="turnos" && <TurnosMotoboy motoboyId={motoboyId}/>}
         {aba==="ganhos" && <Ganhos historico={historico} motoboyId={motoboyId} todosHistorico={historico} rankingGeral={rankingGeral} motoboy={motoboy}/>}
 
         {/* Adicionado em 06/10/2026: exclusão de conta, exigência da Play

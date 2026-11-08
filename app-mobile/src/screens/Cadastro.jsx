@@ -453,7 +453,7 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
     nomeCompleto:"", cpf:"", rg:"", nascimento:"",
     nomePai:"", nomeMae:"", endereco:"", bairro:"",
     // Contato
-    tel:"", pix:"",
+    tel:"", pix:"", tipoCelular:"android", // app nativo: sempre Android (a pergunta do site não aparece aqui)
     // Acesso
     email:"", emailConfirm:"", senha:"", senhaConfirm:"",
   });
@@ -479,6 +479,7 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
     const e = {};
     if (!form.tel.trim()) e.tel = "Campo obrigatório";
     if (!form.pix.trim()) e.pix = "Campo obrigatório";
+    if (form.tipoCelular!=="android" && form.tipoCelular!=="iphone") e.tipoCelular = "Escolha Android ou iPhone";
     setErros(e);
     return Object.keys(e).length===0;
   }
@@ -548,6 +549,7 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
             bairro_base: form.bairro,
             telefone: form.tel,
             pix: form.pix,
+            tipo_celular: form.tipoCelular,
           },
         }),
       });
@@ -568,12 +570,12 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
       const campoPorServidor = {
         nome_completo:"nomeCompleto", cpf:"cpf", rg:"rg", nascimento:"nascimento",
         nome_pai:"nomePai", nome_mae:"nomeMae", endereco:"endereco", bairro_base:"bairro",
-        telefone:"tel", pix:"pix",
+        telefone:"tel", pix:"pix", tipo_celular:"tipoCelular",
       };
       const campo = campoPorServidor[erroServidor?.campo];
       if (campo) {
         setErros({ [campo]: msg });
-        setStep(["tel","pix"].includes(campo) ? 2 : 1);
+        setStep(["tel","pix","tipoCelular"].includes(campo) ? 2 : 1);
       } else {
         setErros({ tel: msg });
         setStep(2);
@@ -631,6 +633,10 @@ function CadastroMotoboy({ onVoltar, onSucesso }) {
           <STitle>📞 Contato e PIX</STitle>
           <Inp label="Telefone / WhatsApp" obrigatorio value={form.tel} onChange={v=>set("tel",v)} placeholder="(12) 99999-0000" erro={erros.tel}/>
           <Inp label="Chave PIX" obrigatorio value={form.pix} onChange={v=>set("pix",v)} placeholder="CPF, telefone ou e-mail" hint="É por aqui que você vai receber seus ganhos toda terça-feira" erro={erros.pix}/>
+
+          {/* Pergunta "Seu celular é" (site, 31/10/2026): NÃO aparece no app nativo — o app só
+              existe pra Android, então tipo_celular vai sempre como "android" (decisão de
+              08/11/2026). O valor padrão está no estado inicial do formulário. */}
 
           <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"14px 16px",marginBottom:14}}>
             <div style={{color:"#34d399",fontWeight:700,fontSize:13,marginBottom:6}}>💰 Como funciona o pagamento?</div>
