@@ -124,18 +124,20 @@ function TelaSucesso({ tipo, onVoltar }) {
       <div style={{color:"#9ca3af",fontSize:15,lineHeight:1.7,marginBottom:24,maxWidth:360,margin:"0 auto 24px"}}>
         Recebemos suas informações com sucesso!
         <br/><br/>
-        Nossa equipe vai analisar seu cadastro e você receberá uma confirmação por e-mail em até <strong style={{color:"#fbbf24"}}>24 horas</strong>.
+        <strong style={{color:"#fbbf24"}}>Agora é com a gente.</strong> Nossa equipe vai analisar o seu cadastro, e você <strong style={{color:"#fbbf24"}}>não precisa confirmar e-mail nem clicar em nenhum link</strong>. Se algum e-mail chegar, pode ignorar.
+        <br/><br/>
+        Assim que terminarmos a análise, entramos em contato com você pelo telefone/WhatsApp que você informou, em até <strong style={{color:"#fbbf24"}}>24 horas</strong>, para avisar o resultado.
         <br/><br/>
         {tipo==="empresario"
-          ? "Assim que aprovado, você já poderá solicitar entregas pela MotoFast."
-          : "Assim que aprovado, você já poderá receber pedidos pela MotoFast."}
+          ? "Se o cadastro for aprovado, você já poderá solicitar entregas pela MotoFast."
+          : "Se o cadastro for aprovado, você já poderá receber pedidos pela MotoFast."}
       </div>
       <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:12,padding:"16px 20px",maxWidth:360,margin:"0 auto 24px",textAlign:"left"}}>
         <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>O que acontece agora?</div>
         {[
-          "Você receberá um e-mail de confirmação",
-          "Nossa equipe analisa seu cadastro",
-          "Aprovado! Você entra com seu e-mail e senha",
+          "Nossa equipe analisa seu cadastro (sem precisar confirmar e-mail)",
+          "Entramos em contato pelo seu telefone/WhatsApp avisando o resultado da análise",
+          "Se for aprovado, você entra com seu e-mail e senha",
         ].map((p,i)=>(
           <div key={i} style={{display:"flex",gap:10,marginBottom:8,alignItems:"flex-start"}}>
             <span style={{background:"#34d399",color:"#000",borderRadius:"50%",width:20,height:20,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0}}>{i+1}</span>
@@ -709,7 +711,7 @@ function TelaLogin({ tipo, onCadastrar, onEntrar }) {
       if (msg.includes("Invalid login")) {
         setErro("E-mail ou senha incorretos.");
       } else if (msg.includes("Email not confirmed")) {
-        setErro("Confirme seu e-mail antes de entrar.");
+        setErro("Seu acesso ainda não foi liberado. Nossa equipe está analisando o seu cadastro e vai entrar em contato pelo telefone/WhatsApp com o resultado. Você não precisa confirmar e-mail.");
       } else {
         setErro("Erro ao entrar. Tente novamente.");
       }
@@ -741,7 +743,7 @@ function TelaLogin({ tipo, onCadastrar, onEntrar }) {
 
     if (!perfil.aprovado) {
       await supabase.auth.signOut();
-      setErro("Seu cadastro ainda está sendo analisado. Aguarde o e-mail de aprovação.");
+      setErro("Seu cadastro ainda está sendo analisado pela nossa equipe. Quando a análise terminar, entramos em contato pelo seu telefone/WhatsApp para avisar o resultado. Você não precisa confirmar e-mail.");
       return;
     }
 
