@@ -300,6 +300,26 @@ async function avisarCancelamentoOferta(pedidoId) {
   } catch(e) { console.log("Erro ao avisar cancelamento de oferta:", e); }
 }
 
+// Adicionado em 09/11/2026 (1.0.5): desde as regras de segurança (RLS) de 05/11,
+// o motoboy só consegue LER pedido "aguardando" (e os que são dele). Quando outro
+// motoboy aceita (ou o estabelecimento cancela) a oferta que estava na tela, a
+// leitura normal volta null e os avisos "Já pegaram essa corrida" / "Pedido
+// cancelado" nunca apareciam. Esta função pergunta ao servidor, pela mesma rota
+// que o alarme nativo usa (/api/rastreio-pedido, que não depende de RLS e devolve
+// só o status). Qualquer erro devolve null — nunca derruba nada.
+async function consultarStatusPedidoServidor(pedidoId) {
+  try {
+    const resp = await fetch(`${WEB_APP_URL}/api/rastreio-pedido`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pedidoId: String(pedidoId) }),
+    });
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    return json && json.ok ? (json.status || null) : null;
+  } catch (e) { return null; }
+}
+
 function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
   const [tick, setTick] = useState(0);
   const [pulsando, setPulsando] = useState(true);
@@ -1506,6 +1526,12 @@ export default function Motoboy() {
   const [tipoSom, setTipoSom] = useState("alerta_forte");
   const [pedidoCancelado, setPedidoCancelado] = useState(false);
   const [pedidoPegoOutro, setPedidoPegoOutro] = useState(false);
+  // Trincos dos avisos "Já pegaram"/"Pedido cancelado" baseados no servidor (09/11/2026):
+  // ids de oferta já avisados (não repete), "estou aceitando agora" e a corrida ativa
+  // atual (pra nunca avisar de um pedido que é MEU).
+  const ofertasAvisadasRef = useRef(new Set());
+  const aceitandoRef = useRef(false);
+  const corridaAtivaRef = useRef(null);
   const [avisoCorridaCancelada, setAvisoCorridaCancelada] = useState(null);
   const [avisoCorridaAtribuida, setAvisoCorridaAtribuida] = useState(null);
   // Adicionado em 20/09/2026 no site a pedido do Alessandro: além do aviso
@@ -1887,10 +1913,11 @@ export default function Motoboy() {
 
     async function buscarPedidoReal() {
       if (pedidoRef.current) {
+        const idOferta = pedidoRef.current.id;
         const { data: verificacao } = await supabase
           .from("pedidos")
           .select("status, motoboy_id")
-          .eq("id", pedidoRef.current.id)
+          .eq("id", idOferta)
           .maybeSingle();
         if (!verificacao || verificacao.status !== "aguardando") {
           if (verificacao && verificacao.status === "cancelado") {
@@ -1921,6 +1948,11 @@ export default function Motoboy() {
           pedidoRef.current = null;
           ofertaAtivaRef.current = null;
           tentativas.current = 0;
+          // 1.0.5 (09/11/2026): a leitura voltou null (RLS não deixa mais ler o
+          // pedido de outro motoboy) — pergunta ao servidor o que aconteceu e
+          // avisa. Roda DEPOIS da limpeza acima, em segundo plano: não muda
+          // nada de como/quando o alarme e a oferta somem.
+          if (!verificacao) avisarFimDaOfertaPeloServidor(idOferta);
         }
         return;
       }
@@ -2333,6 +2365,32 @@ export default function Motoboy() {
 
   const corridaIdRef = useRef(null);
   useEffect(()=>{ corridaIdRef.current = corridaAtiva?.id || null; },[corridaAtiva?.id]);
+  useEffect(()=>{ corridaAtivaRef.current = corridaAtiva; },[corridaAtiva]);
+
+  // Aviso "Já pegaram essa corrida" / "Pedido cancelado" quando a leitura normal do
+  // pedido da oferta voltou null (ver consultarStatusPedidoServidor). Só avisa:
+  //  - uma vez por oferta (ofertasAvisadasRef);
+  //  - nunca se o pedido foi aceito por MIM (aceitandoRef) ou já está na minha
+  //    corrida ativa (aceito por mim ou atribuído a mim pelo Admin);
+  //  - nunca mexe no alarme nem na corrida ativa — só mostra o aviso na tela.
+  async function avisarFimDaOfertaPeloServidor(idOferta) {
+    if (!idOferta || ofertasAvisadasRef.current.has(idOferta)) return;
+    const ehMeu = () =>
+      aceitandoRef.current ||
+      !!(corridaAtivaRef.current?.pedidos || []).some(p => String(p.id) === String(idOferta));
+    if (ehMeu()) return;
+    const status = await consultarStatusPedidoServidor(idOferta);
+    if (!status || ofertasAvisadasRef.current.has(idOferta) || ehMeu()) return;
+    if (status === "cancelado") {
+      ofertasAvisadasRef.current.add(idOferta);
+      setPedidoCancelado(true);
+      setTimeout(() => setPedidoCancelado(false), 4000);
+    } else if (status === "aceito" || status === "saiu_estabelecimento" || status === "entregue") {
+      ofertasAvisadasRef.current.add(idOferta);
+      setPedidoPegoOutro(true);
+      setTimeout(() => setPedidoPegoOutro(false), 4000);
+    }
+  }
 
   useEffect(()=>{
     if (!motoboyId) return;
@@ -2407,7 +2465,20 @@ export default function Motoboy() {
     };
   },[motoboyId, corridaAtiva?.id, gpsTentar]);
 
+  // 1.0.5: "estou aceitando agora" — o aviso "Já pegaram" nunca dispara por um
+  // pedido que EU estou aceitando (ver avisarFimDaOfertaPeloServidor). De bônus,
+  // um segundo toque em Aceitar durante a gravação é ignorado.
   async function aceitar() {
+    if (aceitandoRef.current) return;
+    aceitandoRef.current = true;
+    try {
+      await aceitarInterno();
+    } finally {
+      aceitandoRef.current = false;
+    }
+  }
+
+  async function aceitarInterno() {
     if (!pedidoDisponivel || !motoboyId) return;
     if (Capacitor.isNativePlatform()) RideAlert.stopAlert();
 
@@ -2477,6 +2548,13 @@ export default function Motoboy() {
       .maybeSingle();
 
     if (!data) {
+      // 1.0.5: se NÃO foi erro (a gravação rodou e nenhuma linha mudou), outro
+      // motoboy aceitou antes — avisa, em vez de a oferta só sumir.
+      if (!error && !ofertasAvisadasRef.current.has(pedidoDisponivel.id)) {
+        ofertasAvisadasRef.current.add(pedidoDisponivel.id);
+        setPedidoPegoOutro(true);
+        setTimeout(() => setPedidoPegoOutro(false), 4000);
+      }
       setPedidoDisponivel(null);
       pedidoRef.current = null;
       ofertaAtivaRef.current = null;
