@@ -257,15 +257,20 @@ public class RideAlertService extends Service {
     private void tocarAlarmeEmLoop() {
         pararSomSeEstiverTocando();
         try {
-            // ATUALIZADO em 08/11/2026 (1.0.5): USAGE_ALARM (volume de alarme,
-            // toca mesmo no silencioso). Os atributos precisam ser passados
-            // AQUI, na criação: MediaPlayer.create() já chama prepare(), e o
-            // Android só aplica setAudioAttributes() se for chamado ANTES do
-            // prepare() — o jeito antigo (setAudioAttributes depois do create)
-            // provavelmente nunca teve efeito.
+            // ATUALIZADO em 09/11/2026 (1.0.5): USAGE_MEDIA — o alerta toca no
+            // volume de MÍDIA do celular, o mesmo que o motoboy muda com o
+            // botão lateral de volume. Decisão do Alessandro: NÃO pode depender
+            // do volume do despertador (USAGE_ALARM), que as pessoas deixam
+            // baixo. CONTENT_TYPE_MUSIC é o par natural do USAGE_MEDIA.
+            // Os atributos precisam ser passados AQUI, na criação:
+            // MediaPlayer.create() já chama prepare(), e o Android só aplica
+            // setAudioAttributes() se for chamado ANTES do prepare() — o jeito
+            // antigo (setAudioAttributes depois do create) nunca teve efeito.
+            // Nada aqui força outro stream (sem setAudioStreamType) e o volume
+            // do aparelho NÃO é alterado pelo app.
             AudioAttributes atributos = new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ALARM)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                 .build();
             mediaPlayer = MediaPlayer.create(this, R.raw.alarme_buzina, atributos, AudioManager.AUDIO_SESSION_ID_GENERATE);
             if (mediaPlayer == null) {
@@ -275,7 +280,7 @@ public class RideAlertService extends Service {
             mediaPlayer.setLooping(true);
             mediaPlayer.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
             mediaPlayer.start();
-            android.util.Log.d("RideAlertService", "Alarme tocando (loop, USAGE_ALARM).");
+            android.util.Log.d("RideAlertService", "Alarme tocando (loop, USAGE_MEDIA — volume de mídia).");
         } catch (Exception e) {
             android.util.Log.e("RideAlertService", "Erro ao tocar alarme", e);
         }

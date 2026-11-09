@@ -220,7 +220,7 @@ function RotaEmpresario() {
   }, [])
 
   if (estado === "verificando") return <Verificando />
-  if (estado === "pendente") return <CadastroPendente mensagem="Seu cadastro está sendo analisado pela equipe MotoFast. Você receberá um email quando for aprovado." />
+  if (estado === "pendente") return <CadastroPendente mensagem="Seu cadastro está sendo analisado pela equipe MotoFast. A equipe entra em contato pelo telefone ou WhatsApp que você informou, em até 24 horas, avisando da aprovação. Não precisa confirmar e-mail." />
   if (estado === "negado") return <Navigate to="/" replace />
   return <Empresario />
 }
@@ -243,7 +243,7 @@ function RotaMotoboy() {
   }, [])
 
   if (estado === "verificando") return <Verificando />
-  if (estado === "pendente") return <CadastroPendente mensagem="Seu cadastro está sendo analisado pela equipe MotoFast. Aguarde a aprovação para começar a receber pedidos." />
+  if (estado === "pendente") return <CadastroPendente mensagem="Seu cadastro está sendo analisado pela equipe MotoFast. A equipe entra em contato pelo telefone ou WhatsApp que você informou, em até 24 horas, avisando da aprovação para você começar a receber pedidos. Não precisa confirmar e-mail." />
   if (estado === "negado") return <Navigate to="/" replace />
   return <Motoboy />
 }

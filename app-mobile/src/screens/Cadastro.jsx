@@ -140,9 +140,9 @@ function TelaSucesso({ tipo, onVoltar }) {
         Cadastro enviado!
       </div>
       <div style={{color:"#9ca3af",fontSize:15,lineHeight:1.7,marginBottom:24,maxWidth:360,margin:"0 auto 24px"}}>
-        Recebemos suas informações com sucesso!
+        Recebemos suas informações com sucesso! <strong style={{color:"#34d399"}}>Agora é com a gente.</strong>
         <br/><br/>
-        Nossa equipe vai analisar seu cadastro e você receberá uma confirmação por e-mail em até <strong style={{color:"#fbbf24"}}>24 horas</strong>.
+        Você não precisa confirmar e-mail nem clicar em nenhum link. Nossa equipe vai analisar seu cadastro e entrar em contato pelo telefone ou WhatsApp que você informou, em até <strong style={{color:"#fbbf24"}}>24 horas</strong>, avisando da aprovação.
         <br/><br/>
         {tipo==="empresario"
           ? "Assim que aprovado, você já poderá solicitar entregas pela MotoFast."
@@ -151,8 +151,8 @@ function TelaSucesso({ tipo, onVoltar }) {
       <div style={{background:"#0f172a",border:"1px solid #1f2937",borderRadius:12,padding:"16px 20px",maxWidth:360,margin:"0 auto 24px",textAlign:"left"}}>
         <div style={{color:"#9ca3af",fontSize:12,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:10}}>O que acontece agora?</div>
         {[
-          "Você receberá um e-mail de confirmação",
-          "Nossa equipe analisa seu cadastro",
+          "Nossa equipe analisa seu cadastro (sem e-mail de confirmação)",
+          "Entramos em contato pelo telefone ou WhatsApp informado",
           "Aprovado! Você entra com seu e-mail e senha",
         ].map((p,i)=>(
           <div key={i} style={{display:"flex",gap:10,marginBottom:8,alignItems:"flex-start"}}>
@@ -753,7 +753,7 @@ function TelaLogin({ tipo, onCadastrar }) {
 
     if (!perfil.aprovado) {
       await supabase.auth.signOut();
-      setErro("Seu cadastro ainda está sendo analisado. Aguarde o e-mail de aprovação.");
+      setErro("Seu cadastro ainda está sendo analisado. A equipe MotoFast vai avisar da aprovação pelo telefone ou WhatsApp que você informou, em até 24 horas. Não precisa confirmar e-mail.");
       return;
     }
 
