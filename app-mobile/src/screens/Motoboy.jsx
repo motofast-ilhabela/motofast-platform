@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Capacitor, registerPlugin } from "@capacitor/core";
+import { montarDetalheTaxas, formatarReais } from "../taxasHistorico.js";
 
 // Plugin nativo próprio (não é um pacote — vive em
 // android/app/src/main/java/com/motofast/app/RideAlertPlugin.java), ponte
@@ -318,6 +319,23 @@ async function consultarStatusPedidoServidor(pedidoId) {
     const json = await resp.json();
     return json && json.ok ? (json.status || null) : null;
   } catch (e) { return null; }
+}
+
+// Linha "🧾 Entrega R$7,20 + deslocamento R$3,00 = R$10,20" do histórico do motoboy (regra igual à do
+// site; a conta está em ../taxasHistorico.js). Usada nas DUAS listas do Ganhos. Não aparece em
+// cancelamento cobrado nem quando não há chamado/deslocamento/retorno.
+function DetalheTaxas({ e }) {
+  const d = montarDetalheTaxas(e);
+  if (!d) return null;
+  return (
+    <div style={{color:"#93c5fd",fontSize:11,marginTop:3,fontWeight:700,lineHeight:1.4}}>
+      🧾 Entrega {formatarReais(d.base)}
+      {d.chamado > 0 && <> + chamado {formatarReais(d.chamado)}</>}
+      {d.deslocamento > 0 && <> + deslocamento {formatarReais(d.deslocamento)}</>}
+      {d.retorno > 0 && <> + retorno (devolver maquininha/dinheiro) {formatarReais(d.retorno)}</>}
+      {" "}= <span style={{color:"#fbbf24"}}>{formatarReais(d.total)}</span>
+    </div>
+  );
 }
 
 function ModalPedidoDisponivel({ pedido, tipoSom, onAceitar, onRecusar }) {
@@ -1271,20 +1289,7 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
                   <div style={{background:"#3d2a08",border:"1px solid #f59e0b55",borderRadius:8,padding:"6px 8px",marginTop:5,color:"#fbbf24",fontSize:11,fontWeight:700,lineHeight:1.4}}>
                     ❌ Entrega cancelada pelo estabelecimento — você recebe a taxa de cancelamento{e.cancelamentoTipo==="total" ? " (valor inteiro da sua entrega, porque você já tinha chegado na loja ou retirado o pedido)" : " (25% da entrega: o estabelecimento cancelou antes dos 15 minutos que você tinha pra chegar)"}.
                   </div>
-                ) : (e.taxaChamado > 0 || e.taxaDeslocamento > 0 || e.taxaRetorno > 0) && (() => {
-                  const fm = (v) => "R$" + Number(v).toFixed(2).replace(".", ",");
-                  const extras = (Number(e.taxaChamado)||0) + (Number(e.taxaDeslocamento)||0) + (Number(e.taxaRetorno)||0);
-                  const base = Math.max(0, (Number(e.taxa)||0) - extras);
-                  return (
-                    <div style={{color:"#93c5fd",fontSize:11,marginTop:3,fontWeight:700,lineHeight:1.4}}>
-                      🧾 Entrega {fm(base)}
-                      {e.taxaChamado > 0 && <> + chamado {fm(e.taxaChamado)}</>}
-                      {e.taxaDeslocamento > 0 && <> + deslocamento {fm(e.taxaDeslocamento)}</>}
-                      {e.taxaRetorno > 0 && <> + retorno (devolver maquininha/dinheiro) {fm(e.taxaRetorno)}</>}
-                      {" "}= <span style={{color:"#fbbf24"}}>{fm(e.taxa)}</span>
-                    </div>
-                  );
-                })()}
+                ) : <DetalheTaxas e={e}/>}
                 {(e.horaAceite || e.horaEntrega) && (
                   <div style={{color:"#6b7280",fontSize:11,marginTop:3}}>
                     ⏱️ {e.horaAceite && (e.adicionadoCorrida ? <>entrou na corrida que você já estava fazendo</> : <>aceitou {e.horaAceite}</>)}{e.horaChegou && <> · chegou na loja {e.horaChegou}</>}{e.horaSaiu && <> · saiu {e.horaSaiu}</>}{e.horaEntrega && <> · entregou {e.horaEntrega}</>}{e.minutosEntrega!=null && <> · <b style={{color:"#d1d5db"}}>{formatarDuracao(e.minutosEntrega)}</b></>}
@@ -1486,6 +1491,7 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
                 <div style={{color:"#f9fafb",fontWeight:700,fontSize:14}}>{e.clienteNome}</div>
                 <div style={{color:"#9ca3af",fontSize:12,marginTop:2}}>🏪 {e.empresaNome}</div>
                 <div style={{color:"#34d399",fontSize:12,marginTop:2}}>📍 {e.bairro}</div>
+                {entregue && <DetalheTaxas e={e}/>}
               </div>
               <div style={{display:"flex",gap:12,borderTop:"1px solid #1f2937",paddingTop:8,marginTop:4}}>
                 <div style={{fontSize:11,color:"#6b7280"}}>📅 {e.data}</div>
@@ -1532,6 +1538,10 @@ export default function Motoboy() {
   const ofertasAvisadasRef = useRef(new Set());
   const aceitandoRef = useRef(false);
   const corridaAtivaRef = useRef(null);
+  const conferindoOfertaRef = useRef(false); // evita duas conferências da mesma oferta ao mesmo tempo
+  // Boolean (e não o objeto) pra dependência dos efeitos de oferta: o objeto corridaAtiva é
+  // trocado a cada 3 s pela recarga da corrida (1.0.5, 08/11/2026).
+  const temCorridaAtiva = !!corridaAtiva;
   const [avisoCorridaCancelada, setAvisoCorridaCancelada] = useState(null);
   const [avisoCorridaAtribuida, setAvisoCorridaAtribuida] = useState(null);
   // Adicionado em 20/09/2026 no site a pedido do Alessandro: além do aviso
@@ -1908,52 +1918,17 @@ export default function Motoboy() {
     // sempre foi (não sobrecarrega ninguém sem querer).
     if (!online || !motoboyId) return;
     if (motoboy?.bloqueado || motoboy?.banido) return;
-    if (corridaAtiva && !ehContaMonitoramento) return;
+    // 08/11/2026 (1.0.5): usa temCorridaAtiva (boolean) em vez do objeto corridaAtiva — o objeto
+    // é trocado a cada 3 s pela recarga da corrida, e isso recriava este efeito (e matava a
+    // conferência da oferta quando ela já estava na tela, ver a trava logo abaixo).
+    if (temCorridaAtiva && !ehContaMonitoramento) return;
     if (pedidoRef.current) return;
 
     async function buscarPedidoReal() {
       if (pedidoRef.current) {
-        const idOferta = pedidoRef.current.id;
-        const { data: verificacao } = await supabase
-          .from("pedidos")
-          .select("status, motoboy_id")
-          .eq("id", idOferta)
-          .maybeSingle();
-        if (!verificacao || verificacao.status !== "aguardando") {
-          if (verificacao && verificacao.status === "cancelado") {
-            setPedidoCancelado(true);
-            setTimeout(() => setPedidoCancelado(false), 4000);
-          }
-          // Adicionado em 07/09/2026 no site a pedido do Alessandro:
-          // motoboys estavam reclamando que o pedido só "sumia" da tela sem
-          // explicação quando outro motoboy aceitava primeiro — pareciam
-          // achar que era bug do app. Agora avisa explicitamente o que
-          // aconteceu. Só o aviso VISUAL — não muda em nada como/quando o
-          // alarme para (linha abaixo, intocada).
-          //
-          // CORRIGIDO em 25/09/2026: essa checagem não sabia DE QUEM era o
-          // "aceito" — se o Admin atribuísse esse MESMO pedido (que também
-          // estava sendo ofertado normalmente pra esse motoboy, já que todo
-          // motoboy online vê a mesma fila de "aguardando") direto pra ELE
-          // MESMO, isso disparava por engano o aviso de "já pegaram",
-          // atropelando o aviso/alarme corretos da atribuição direta (ver
-          // branch (2) do listener de UPDATE, mais abaixo). Só mostra "já
-          // pegaram" quando for de verdade outra pessoa.
-          if (verificacao && verificacao.status === "aceito" && verificacao.motoboy_id !== motoboyId) {
-            setPedidoPegoOutro(true);
-            setTimeout(() => setPedidoPegoOutro(false), 4000);
-          }
-          if (Capacitor.isNativePlatform()) RideAlert.stopAlert();
-          setPedidoDisponivel(null);
-          pedidoRef.current = null;
-          ofertaAtivaRef.current = null;
-          tentativas.current = 0;
-          // 1.0.5 (09/11/2026): a leitura voltou null (RLS não deixa mais ler o
-          // pedido de outro motoboy) — pergunta ao servidor o que aconteceu e
-          // avisa. Roda DEPOIS da limpeza acima, em segundo plano: não muda
-          // nada de como/quando o alarme e a oferta somem.
-          if (!verificacao) avisarFimDaOfertaPeloServidor(idOferta);
-        }
+        // A conferência da oferta que está na tela agora é feita por conferirOfertaNaTela
+        // (também roda num efeito próprio, independente deste, ver mais abaixo).
+        await conferirOfertaNaTela(pedidoRef.current.id);
         return;
       }
 
@@ -2197,7 +2172,7 @@ export default function Motoboy() {
         // ADICIONADO em 24/09/2026: liga o RideAlertService pra esse gatilho
         // novo, do mesmo jeito que já liga pra uma oferta normal.
         if (atualizado.status === "aceito" || atualizado.status === "saiu_estabelecimento") {
-          const jaTenho = corridaAtiva?.pedidos?.some(p => p.id === atualizado.id);
+          const jaTenho = corridaAtivaRef.current?.pedidos?.some(p => p.id === atualizado.id);
           if (!jaTenho) {
             const { data: pedidoCompleto } = await supabase
               .from("pedidos")
@@ -2274,11 +2249,19 @@ export default function Motoboy() {
     const intervalo = setInterval(buscarPedidoReal, 2000);
 
     return () => { supabase.removeChannel(canal); clearInterval(intervalo); };
-  },[online, corridaAtiva, motoboyId, ehContaMonitoramento]);
+  },[online, temCorridaAtiva, motoboyId, ehContaMonitoramento]);
 
   useEffect(()=>{
     if (!pedidoDisponivel) return;
-    const t = setTimeout(()=>{
+    const t = setTimeout(async ()=>{
+      // 1.0.5 (08/11/2026): antes de renovar a oferta (e REACENDER o alarme nativo), confere se
+      // o pedido ainda está aguardando. Sem isso, uma oferta presa na tela (pedido já cancelado
+      // ou aceito por outro) religava o alarme a cada 30 s.
+      const idRenovar = pedidoRef.current?.id;
+      if (idRenovar) {
+        await conferirOfertaNaTela(idRenovar);
+        if (pedidoRef.current?.id !== idRenovar) return; // a oferta já foi encerrada
+      }
       tentativas.current += 1;
       if (tentativas.current >= MAX_TENTATIVAS) {
         if (Capacitor.isNativePlatform()) RideAlert.stopAlert();
@@ -2373,14 +2356,9 @@ export default function Motoboy() {
   //  - nunca se o pedido foi aceito por MIM (aceitandoRef) ou já está na minha
   //    corrida ativa (aceito por mim ou atribuído a mim pelo Admin);
   //  - nunca mexe no alarme nem na corrida ativa — só mostra o aviso na tela.
-  async function avisarFimDaOfertaPeloServidor(idOferta) {
+  // Mostra o aviso de acordo com o status que o servidor devolveu (uma vez por oferta).
+  function mostrarAvisoPorStatus(idOferta, status) {
     if (!idOferta || ofertasAvisadasRef.current.has(idOferta)) return;
-    const ehMeu = () =>
-      aceitandoRef.current ||
-      !!(corridaAtivaRef.current?.pedidos || []).some(p => String(p.id) === String(idOferta));
-    if (ehMeu()) return;
-    const status = await consultarStatusPedidoServidor(idOferta);
-    if (!status || ofertasAvisadasRef.current.has(idOferta) || ehMeu()) return;
     if (status === "cancelado") {
       ofertasAvisadasRef.current.add(idOferta);
       setPedidoCancelado(true);
@@ -2390,6 +2368,65 @@ export default function Motoboy() {
       setPedidoPegoOutro(true);
       setTimeout(() => setPedidoPegoOutro(false), 4000);
     }
+  }
+
+  // Confere a oferta que está NA TELA (1.0.5, 08/11/2026). Antes, essa conferência só existia
+  // dentro do efeito principal de ofertas, que é recriado e (com oferta na tela) NÃO recriava o
+  // intervalo — a oferta ficava presa e o alarme era renovado a cada 30 s. Agora roda também
+  // num efeito próprio (só depende do id da oferta) e antes de cada renovação de 30 s.
+  // Se o pedido não está mais "aguardando": avisa (cancelado / já pegaram), para o alarme e
+  // limpa a oferta — igual ao comportamento antigo, só que sempre.
+  async function conferirOfertaNaTela(idOferta) {
+    if (!idOferta || pedidoRef.current?.id !== idOferta || conferindoOfertaRef.current) return;
+    conferindoOfertaRef.current = true;
+    try {
+      const { data: verificacao } = await supabase
+        .from("pedidos")
+        .select("status, motoboy_id")
+        .eq("id", idOferta)
+        .maybeSingle();
+      // Outro caminho (aceitar, recusar, listener) já tratou essa oferta enquanto a consulta rodava.
+      if (pedidoRef.current?.id !== idOferta) return;
+      if (verificacao && verificacao.status === "aguardando") return;
+
+      // Adicionado em 07/09/2026 no site: motoboys achavam que o pedido "sumia" sem explicação
+      // quando outro aceitava primeiro — avisa explicitamente. CORRIGIDO em 25/09/2026: só mostra
+      // "já pegaram" quando o aceito é de OUTRA pessoa (se o Admin atribuiu pra mim, não).
+      if (verificacao && verificacao.status === "cancelado") mostrarAvisoPorStatus(idOferta, "cancelado");
+      if (verificacao && verificacao.status === "aceito" && verificacao.motoboy_id !== motoboyId) {
+        mostrarAvisoPorStatus(idOferta, "aceito");
+      }
+      if (Capacitor.isNativePlatform()) RideAlert.stopAlert();
+      setPedidoDisponivel(null);
+      pedidoRef.current = null;
+      ofertaAtivaRef.current = null;
+      tentativas.current = 0;
+      // Leitura null (RLS não deixa mais ler pedido de outro motoboy): pergunta ao servidor o que
+      // aconteceu e avisa — depois da limpeza acima, em segundo plano.
+      if (!verificacao) avisarFimDaOfertaPeloServidor(idOferta);
+    } finally {
+      conferindoOfertaRef.current = false;
+    }
+  }
+
+  // Efeito próprio: enquanto houver oferta na tela, confere a cada 2 s, não importa o que
+  // aconteça com os outros efeitos (corridaAtiva, online etc.).
+  useEffect(()=>{
+    const idOferta = pedidoDisponivel?.id;
+    if (!idOferta) return;
+    const t = setInterval(()=>{ conferirOfertaNaTela(idOferta); }, 2000);
+    return ()=>clearInterval(t);
+  },[pedidoDisponivel?.id]);
+
+  async function avisarFimDaOfertaPeloServidor(idOferta) {
+    if (!idOferta || ofertasAvisadasRef.current.has(idOferta)) return;
+    const ehMeu = () =>
+      aceitandoRef.current ||
+      !!(corridaAtivaRef.current?.pedidos || []).some(p => String(p.id) === String(idOferta));
+    if (ehMeu()) return;
+    const status = await consultarStatusPedidoServidor(idOferta);
+    if (!status || ofertasAvisadasRef.current.has(idOferta) || ehMeu()) return;
+    mostrarAvisoPorStatus(idOferta, status);
   }
 
   useEffect(()=>{
@@ -2548,17 +2585,19 @@ export default function Motoboy() {
       .maybeSingle();
 
     if (!data) {
-      // 1.0.5: se NÃO foi erro (a gravação rodou e nenhuma linha mudou), outro
-      // motoboy aceitou antes — avisa, em vez de a oferta só sumir.
-      if (!error && !ofertasAvisadasRef.current.has(pedidoDisponivel.id)) {
-        ofertasAvisadasRef.current.add(pedidoDisponivel.id);
-        setPedidoPegoOutro(true);
-        setTimeout(() => setPedidoPegoOutro(false), 4000);
-      }
+      // 1.0.5: se NÃO foi erro (a gravação rodou e nenhuma linha mudou), o pedido já não
+      // estava mais aguardando — ou outro motoboy aceitou antes, ou o estabelecimento
+      // cancelou. Pergunta ao servidor qual dos dois e avisa o texto certo ("Pedido
+      // cancelado" ou "Já pegaram essa corrida"). Se o servidor não responder, assume "já
+      // pegaram" (o caso mais comum).
+      const idPerdido = pedidoDisponivel.id;
       setPedidoDisponivel(null);
       pedidoRef.current = null;
       ofertaAtivaRef.current = null;
       tentativas.current = 0;
+      if (!error && !ofertasAvisadasRef.current.has(idPerdido)) {
+        consultarStatusPedidoServidor(idPerdido).then(st => mostrarAvisoPorStatus(idPerdido, st || "aceito"));
+      }
       return;
     }
 
@@ -2654,11 +2693,25 @@ export default function Motoboy() {
       // Busca os horários gravados no banco (aceite, chegada, saída, entrega) pra
       // linha do histórico já aparecer completa, sem precisar recarregar.
       let tempos = {};
+      // Taxas do pedido: o banco manda (1.0.5, 09/11/2026) — o objeto local da corrida pode estar
+      // desatualizado ou sem os extras, e aí o detalhamento "Entrega + deslocamento = total" não
+      // aparecia até recarregar a tela. Se a consulta falhar, usa o que tem no pedido local.
+      let taxasDB = null;
       try {
         const { data: pdb } = await supabase.from("pedidos")
-          .select("criado_em, aceito_em, chegou_loja_em, saiu_estabelecimento_em, entregue_em")
+          .select("criado_em, aceito_em, chegou_loja_em, saiu_estabelecimento_em, entregue_em, taxa, taxa_motoboy, taxa_chamado, taxa_retorno, taxa_deslocamento, valor_pedido, cancelamento_cobrado")
           .eq("id", pedidoId).maybeSingle();
-        if (pdb) tempos = temposDoPedido(pdb);
+        if (pdb) {
+          tempos = temposDoPedido(pdb);
+          taxasDB = {
+            taxa: pdb.taxa_motoboy || pdb.taxa,
+            taxaChamado: Number(pdb.taxa_chamado) || 0,
+            taxaRetorno: Number(pdb.taxa_retorno) || 0,
+            taxaDeslocamento: Number(pdb.taxa_deslocamento) || 0,
+            valorPedido: pdb.valor_pedido,
+            cancelamentoCobrado: !!pdb.cancelamento_cobrado,
+          };
+        }
       } catch (e) { /* só deixa de mostrar os tempos até recarregar */ }
       setHistorico(prev => [...prev, {
         id: pedido.id,
@@ -2670,6 +2723,7 @@ export default function Motoboy() {
         taxaRetorno: Number(pedido.taxaRetorno) || 0,
         taxaDeslocamento: Number(pedido.taxaDeslocamento) || 0,
         valorPedido: pedido.valorPedido,
+        ...(taxasDB || {}), // o que o banco devolveu vale mais que o objeto local
         status: "Entregue",
         data: agora.toLocaleDateString("pt-BR"),
         dataISO: dataLocalISO(agora),
