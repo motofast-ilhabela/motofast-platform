@@ -1190,6 +1190,15 @@ function temposDoPedido(p) {
 
 function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy }) {
   const [verTudo, setVerTudo] = useState(false);
+  // Ranking (1.0.6): a lista inteira rola dentro da caixa, e abre já na linha do próprio motoboy
+  // (mesmo que ele seja o 40º).
+  const listaRankRef = useRef(null);
+  const minhaLinhaRef = useRef(null);
+  useEffect(()=>{
+    const cont = listaRankRef.current, linha = minhaLinhaRef.current;
+    if (!cont || !linha) return;
+    cont.scrollTop = Math.max(0, linha.offsetTop - (cont.clientHeight - linha.offsetHeight) / 2);
+  },[rankingGeral?.length, motoboyId]);
   const [dataSelecionada, setDataSelecionada] = useState(dataLocalISO());
 
   const agora = new Date();
@@ -1376,6 +1385,12 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
             const proximo = minhaPosicao>0 ? rankingGeral[minhaPosicao-1] : null;
             const faltam = proximo ? proximo.qtd - minhasEntregas + 1 : 0;
 
+            if (pos === 0) return (
+              <div style={{background:"#1a1000",border:"1px solid #f59e0b",borderRadius:12,padding:"12px 16px",marginBottom:12,color:"#9ca3af",fontSize:13}}>
+                🏆 Você ainda não aparece no ranking de {nomeMesAtual} — faça uma entrega para entrar na lista.
+              </div>
+            );
+
             return (
               <div style={{background:"#1a1000",border:"2px solid #f59e0b",borderRadius:12,padding:"14px 16px",marginBottom:12}}>
                 <div style={{display:"flex",alignItems:"center",gap:12}}>
@@ -1397,7 +1412,7 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
             );
           })()}
 
-          <div style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,overflow:"hidden"}}>
+          <div ref={listaRankRef} style={{background:"#111827",border:"1px solid #1f2937",borderRadius:12,position:"relative",maxHeight:440,overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
             {rankingGeral.map((mb, i)=>{
               const isEu = mb.id === motoboyId;
               const medal = i===0?"🥇":i===1?"🥈":i===2?"🥉":null;
@@ -1405,7 +1420,7 @@ function Ganhos({ historico, motoboyId, todosHistorico, rankingGeral, motoboy })
               const maxQtd = rankingGeral[0]?.qtd || 1;
 
               return (
-                <div key={mb.id} style={{
+                <div key={mb.id} ref={isEu?minhaLinhaRef:null} style={{
                   background:corBg,
                   borderBottom:"1px solid #1f2937",
                   borderLeft:`3px solid ${isEu?"#34d399":"transparent"}`,
@@ -1761,37 +1776,16 @@ export default function Motoboy() {
           const mesAtualRank = new Date().getMonth()+1;
           const anoAtualRank = new Date().getFullYear();
           const inicioMes = new Date(anoAtualRank, mesAtualRank-1, 1).toISOString();
-          // Paginada desde 28/09/2026 no site (replicado aqui em 06/10/2026):
-          // as entregas do mês de TODOS os motoboys passam de 1.000, e acima
-          // disso o Supabase cortava sem avisar e o ranking saía errado (ver
-          // buscarTodasPaginado lá em cima).
-          const { data: pedidosMes, error: pedidosMesErr } = await buscarTodasPaginado(() => supabase
-            .from("pedidos")
-            .select("motoboy_id, taxa, motoboys!pedidos_motoboy_id_fkey(nome_completo)")
-            .eq("status", "entregue")
-            .gte("criado_em", inicioMes)
-            .order("criado_em", { ascending: true })
-            .order("id", { ascending: true }));
-
-          if (pedidosMesErr) console.error("Erro ao carregar ranking:", pedidosMesErr);
-
-          if (pedidosMes) {
-            const contagem = {};
-            pedidosMes.forEach(p=>{
-              if (!p.motoboy_id) return;
-              if (!contagem[p.motoboy_id]) {
-                contagem[p.motoboy_id] = {
-                  id: p.motoboy_id,
-                  nome: p.motoboys?.nome_completo || "Motoboy",
-                  qtd: 0,
-                  ganhos: 0,
-                };
-              }
-              contagem[p.motoboy_id].qtd++;
-              contagem[p.motoboy_id].ganhos += p.taxa || 0;
-            });
-            const rank = Object.values(contagem).sort((a,b)=>b.qtd-a.qtd);
-            setRankingGeral(rank);
+          // 10/11/2026 (1.0.6): o ranking vem de uma FUNÇÃO do banco (ranking_motoboys), que só devolve
+          // motoboy_id, nome e quantidade de entregas do mês de cada motoboy. Antes ele lia a tabela
+          // pedidos, mas desde a trava de segurança (RLS) de 05/11 cada motoboy só enxerga os próprios
+          // pedidos — então o ranking mostrava só ele mesmo, sempre em 1º ("1 motoboy").
+          const { data: rankDB, error: erroRank } = await supabase.rpc("ranking_motoboys", { p_inicio: inicioMes });
+          if (erroRank) console.error("Erro ao carregar ranking:", erroRank);
+          if (rankDB) {
+            const rank = rankDB.map(r => ({ id: r.motoboy_id, nome: r.nome || "Motoboy", qtd: Number(r.qtd) || 0, ganhos: 0 }));
+            // A função já devolve do maior para o menor; reforça a ordem (estável: empate mantém a ordem dela).
+            setRankingGeral(rank.sort((x,y)=>y.qtd-x.qtd));
           }
         }
       } catch (e) {
