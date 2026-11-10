@@ -1575,30 +1575,14 @@ export default function AppMotoboy() {
           const mesAtualRank = new Date().getMonth()+1;
           const anoAtualRank = new Date().getFullYear();
           const inicioMes = new Date(anoAtualRank, mesAtualRank-1, 1).toISOString();
-          const { data: pedidosMes } = await buscarTodasPaginado(() => supabase
-            .from("pedidos")
-            .select("motoboy_id, taxa, motoboys!motoboy_id(nome_completo)")
-            .eq("status", "entregue")
-            .gte("criado_em", inicioMes)
-            .order("criado_em", { ascending: true })
-            .order("id", { ascending: true }));
-
-          if (pedidosMes) {
-            const contagem = {};
-            pedidosMes.forEach(p=>{
-              if (!p.motoboy_id) return;
-              if (!contagem[p.motoboy_id]) {
-                contagem[p.motoboy_id] = {
-                  id: p.motoboy_id,
-                  nome: p.motoboys?.nome_completo || "Motoboy",
-                  qtd: 0,
-                  ganhos: 0,
-                };
-              }
-              contagem[p.motoboy_id].qtd++;
-              contagem[p.motoboy_id].ganhos += p.taxa || 0;
-            });
-            const rank = Object.values(contagem).sort((a,b)=>b.qtd-a.qtd);
+          // 10/11/2026: o ranking agora vem de uma função do banco (ranking_motoboys) que só devolve
+          // nome e quantidade de entregas de cada motoboy. Antes ele lia todos os pedidos, mas desde a
+          // trava de segurança de 05/11 cada motoboy só enxerga os próprios pedidos — então o ranking
+          // mostrava só ele mesmo, sempre em 1º lugar.
+          const { data: rankDB, error: erroRank } = await supabase.rpc("ranking_motoboys", { p_inicio: inicioMes });
+          if (erroRank) console.error("Erro ao carregar ranking:", erroRank);
+          if (rankDB) {
+            const rank = rankDB.map(r => ({ id: r.motoboy_id, nome: r.nome || "Motoboy", qtd: Number(r.qtd) || 0, ganhos: 0 }));
             setRankingGeral(rank);
           }
         }
