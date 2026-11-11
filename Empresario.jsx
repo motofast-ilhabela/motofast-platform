@@ -3469,6 +3469,11 @@ export default function AppEmpresario() {
                   pagamento: p.forma_pagamento, taxa: p.taxa, taxaMotoboy: p.taxa_motoboy || 0,
                   valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
                   distanciaKm: p.distancia_km, metodoCalculoKm: p.metodo_calculo_km,
+                  // 11/11/2026: guarda os extras já embutidos na taxa, pra poder tirá-los antes de
+                  // republicar (senão o deslocamento/retorno era somado uma 2ª vez).
+                  taxaChamado: Number(p.taxa_chamado) || 0,
+                  taxaRetorno: Number(p.taxa_retorno) || 0,
+                  taxaDeslocamento: Number(p.taxa_deslocamento) || 0,
                 });
               }
               // Adicionado em 07/09/2026: atualiza a tela DIRETO com o dado que
@@ -3497,6 +3502,9 @@ export default function AppEmpresario() {
                     entregueEm: p.entregue_em || null,
                     distanciaKm: p.distancia_km || null,
                     metodoCalculoKm: p.metodo_calculo_km || null,
+                    taxaChamado: Number(p.taxa_chamado) || 0,
+                    taxaRetorno: Number(p.taxa_retorno) || 0,
+                    taxaDeslocamento: Number(p.taxa_deslocamento) || 0,
                   };
                   if (!existente) {
                     // Se já entregou/cancelou antes mesmo de aparecer aqui, não
@@ -4309,7 +4317,20 @@ export default function AppEmpresario() {
                 publicarPedido() usada na tela de Nova Entrega. */}
             <button onClick={async()=>{
                 setPublicandoNovoAposCancelamento(true);
-                await publicarPedido(avisoCancelamentoMotoboy);
+                // 11/11/2026: a taxa do pedido cancelado JÁ inclui chamado/retorno/deslocamento.
+                // publicarPedido soma de novo, então tira eles antes (igual republicarPedidoCancelado).
+                {
+                  const av = avisoCancelamentoMotoboy;
+                  const extrasAv = (Number(av.taxaChamado)||0) + (Number(av.taxaRetorno)||0) + (Number(av.taxaDeslocamento)||0);
+                  await publicarPedido({
+                    ...av,
+                    id: Date.now(),
+                    taxa: Math.max(0, (Number(av.taxa)||0) - extrasAv),
+                    taxaMotoboy: Math.max(0, (Number(av.taxaMotoboy)||0) - extrasAv),
+                    taxaChamado: 0, taxaRetorno: 0, taxaDeslocamento: 0,
+                    status: "aguardando", criadoEm: Date.now(),
+                  });
+                }
                 setPublicandoNovoAposCancelamento(false);
                 setAvisoCancelamentoMotoboy(null);
               }}
