@@ -3495,13 +3495,9 @@ export default function AppEmpresario() {
                 const chaveVolta = p.id + "|" + p.ultimo_cancelamento_em;
                 if (!notificadosCancelamento.current.has(chaveVolta)) {
                   notificadosCancelamento.current.add(chaveVolta);
-                  setAvisoCancelamentoMotoboy({
-                    voltouFila: true,
-                    clienteNome: p.cliente_nome, bairro: p.bairro,
-                    motivo: p.ultimo_cancelamento_motivo || "Não informado",
-                    motoboyNome: p.ultimo_cancelamento_motoboy_nome || "Motoboy",
-                    motoboyTel: "",
-                  });
+                  // Sem pop-up e sem alarme repetindo: o pedido já foi chamado de novo sozinho, a loja
+                  // não precisa fazer nada. Toca só UM bipe curto, e o aviso vermelho fica no cartão do pedido.
+                  tocarSomCancelamento();
                 }
               }
               // Adicionado em 07/09/2026: atualiza a tela DIRETO com o dado que
@@ -4340,7 +4336,7 @@ export default function AppEmpresario() {
             <div style={{color:"#9ca3af",fontSize:13,marginBottom:18,lineHeight:1.6}}>
               {avisoCancelamentoMotoboy.voltouFila
                 ? <><strong style={{color:"#f9fafb"}}>{avisoCancelamentoMotoboy.motoboyNome}</strong> saiu da corrida. <strong style={{color:"#34d399"}}>Já estamos chamando outros motoboys para o seu pedido</strong>. O valor da entrega continua o mesmo e você não precisa fazer nada.</>
-                : <>Entre em contato com <strong style={{color:"#f9fafb"}}>{avisoCancelamentoMotoboy.motoboyNome}</strong> para mais informações, se precisar.</>}
+                : <><strong style={{color:"#f9fafb"}}>{avisoCancelamentoMotoboy.motoboyNome}</strong> já saiu com o pedido de <strong style={{color:"#f9fafb"}}>{avisoCancelamentoMotoboy.clienteNome}</strong> e teve um problema. <strong style={{color:"#fbbf24"}}>Ligue para ele agora</strong> para combinar como recuperar o pedido ou entregar ao cliente.</>}
             </div>
             {avisoCancelamentoMotoboy.motoboyTel && (
               <div style={{display:"flex",gap:8,marginBottom:10}}>
@@ -4354,33 +4350,10 @@ export default function AppEmpresario() {
                 </a>
               </div>
             )}
-            {/* Adicionado em 07/09/2026 a pedido do Alessandro: republica o
-                mesmo pedido com 1 clique, sem precisar digitar tudo de novo
-                (endereço, forma de pagamento, etc.) — reaproveita a mesma
-                publicarPedido() usada na tela de Nova Entrega. */}
-            {!avisoCancelamentoMotoboy.voltouFila && <button onClick={async()=>{
-                setPublicandoNovoAposCancelamento(true);
-                // 11/11/2026: a taxa do pedido cancelado JÁ inclui chamado/retorno/deslocamento.
-                // publicarPedido soma de novo, então tira eles antes (igual republicarPedidoCancelado).
-                {
-                  const av = avisoCancelamentoMotoboy;
-                  const extrasAv = (Number(av.taxaChamado)||0) + (Number(av.taxaRetorno)||0) + (Number(av.taxaDeslocamento)||0);
-                  await publicarPedido({
-                    ...av,
-                    id: Date.now(),
-                    taxa: Math.max(0, (Number(av.taxa)||0) - extrasAv),
-                    taxaMotoboy: Math.max(0, (Number(av.taxaMotoboy)||0) - extrasAv),
-                    taxaChamado: 0, taxaRetorno: 0, taxaDeslocamento: 0,
-                    status: "aguardando", criadoEm: Date.now(),
-                  });
-                }
-                setPublicandoNovoAposCancelamento(false);
-                setAvisoCancelamentoMotoboy(null);
-              }}
-              disabled={publicandoNovoAposCancelamento}
-              style={{width:"100%",padding:"14px",borderRadius:10,background:"#f59e0b",border:"none",color:"#000",fontWeight:900,fontSize:15,cursor:publicandoNovoAposCancelamento?"not-allowed":"pointer",marginBottom:10,opacity:publicandoNovoAposCancelamento?0.6:1}}>
-              {publicandoNovoAposCancelamento ? "Chamando..." : "🏍️ Chamar novo motoboy agora"}
-            </button>}
+            {/* 12/11/2026: o botão "Chamar novo motoboy agora" foi REMOVIDO daqui. Esse aviso só aparece
+                quando o motoboy já saiu com o pedido; nesse caso a loja precisa falar com ele primeiro,
+                chamar outro motoboy na hora não resolve (o pedido está na mão do motoboy). */}
+            
             <button onClick={()=>setAvisoCancelamentoMotoboy(null)}
               style={{width:"100%",padding:"12px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:14,cursor:"pointer"}}>
               Fechar
