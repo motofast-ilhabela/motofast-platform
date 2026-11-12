@@ -948,6 +948,9 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                   style={{background:"#0f172a",border:"1px solid #ef4444",borderRadius:8,color:"#f9fafb",padding:"10px 12px",width:"100%",fontSize:13,outline:"none",resize:"none",boxSizing:"border-box"}}/>
               </div>
             )}
+            <div style={{background:"#3d2a00",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+              <div style={{color:"#fbbf24",fontSize:12,fontWeight:800,lineHeight:1.5}}>📋 O endereço aparece para você antes de aceitar a corrida. Todo cancelamento fica registrado no seu histórico, com o motivo.</div>
+            </div>
             <div style={{background:"#3d1010",borderRadius:8,padding:"10px 14px",marginBottom:14}}>
               <div style={{color:"#f87171",fontSize:12,fontWeight:700}}>⚠️ Ao confirmar você ficará offline automaticamente e o empresário receberá um aviso automático na tela dele com o motivo.</div>
               <div style={{color:"#fbbf24",fontSize:11,marginTop:6}}>💡 Se der, avisa o estabelecimento direto pelo WhatsApp também (botão "Falar com o estabelecimento" na tela da corrida) — assim ele já sabe na hora e não fica esperando.</div>
@@ -1697,6 +1700,8 @@ export default function AppMotoboy() {
         const candidatosValidos = data.filter(p=>{
           const recusadoEm = recusadosRef.current[p.id];
           if (recusadoEm && (agora - recusadoEm < TEMPO_COOLDOWN_RECUSA_MS)) return false;
+          // 12/11/2026: se EU cancelei esse pedido, ele volta pra fila pros outros, mas nunca pra mim.
+          if (Array.isArray(p.motoboys_cancelaram) && p.motoboys_cancelaram.includes(motoboyId)) return false;
           if (p.prioridade_ate && new Date(p.prioridade_ate).getTime() > agora) {
             // Prioridade por horário específico (criada em 06/09/2026) manda
             // mais que o Turno Fixo — se o pedido tem um motoboy_id
@@ -2332,13 +2337,33 @@ export default function AppMotoboy() {
     setAvisoCorridaCancelada(null);
   }
 
+  // 12/11/2026: quando o motoboy cancela, o pedido VOLTA PRA FILA sozinho (status "aguardando")
+  // e os outros motoboys são chamados na hora. Antes ele ficava "cancelado" e o estabelecimento
+  // só descobria quando olhava a tela, o que atrasava muito a entrega. A função do banco
+  // (motoboy_cancela_pedido) decide: se o motoboy ainda não saiu com o pedido, volta pra fila;
+  // se já saiu com o pedido na mão, fica cancelado (o estabelecimento é avisado pra ligar).
+  // Também registra o cancelamento (quem, quando, fase e motivo) pra você acompanhar no Admin.
+  async function devolverPedidoParaFila(p, motivo) {
+    const { data: resultado, error } = await supabase.rpc("motoboy_cancela_pedido", { p_pedido_id: p.id, p_motivo: motivo });
+    if (error) { console.error("Erro ao cancelar pedido:", error); return false; }
+    if (resultado === "voltou_fila") {
+      fetch("/api/notificar-motoboys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          titulo: "🏍️ Novo Pedido MotoFast!",
+          corpo: `Entrega em ${p.bairro || ""} — R$${p.taxa}`,
+          pedidoId: p.id,
+        }),
+      }).catch(e => console.log("Erro ao notificar motoboys após cancelamento:", e));
+    }
+    return true;
+  }
+
   async function cancelarPedidoIndividual(pedidoId, motivo) {
-    await supabase.from("pedidos").update({
-      status: "cancelado",
-      motivo_cancelamento: motivo,
-      cancelado_por_motoboy: true,
-      cancelado_em: new Date().toISOString(),
-    }).eq("id", pedidoId);
+    const pedido = corridaAtiva?.pedidos?.find(p => p.id === pedidoId) || { id: pedidoId };
+    const ok = await devolverPedidoParaFila(pedido, motivo);
+    if (!ok) { alert("Não foi possível cancelar agora. Tente de novo em alguns segundos."); return; }
     setCorridaAtiva(prev => {
       if (!prev) return prev;
       const restantes = prev.pedidos.filter(p => p.id !== pedidoId);
@@ -2352,12 +2377,7 @@ export default function AppMotoboy() {
   async function cancelarCorrida(motivo) {
     if (corridaAtiva) {
       for (const p of corridaAtiva.pedidos) {
-        await supabase.from("pedidos").update({
-          status: "cancelado",
-          motivo_cancelamento: motivo,
-          cancelado_por_motoboy: true,
-          cancelado_em: new Date().toISOString(),
-        }).eq("id", p.id);
+        await devolverPedidoParaFila(p, motivo);
       }
     }
     setCorridaAtiva(null);

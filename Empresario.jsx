@@ -1914,6 +1914,18 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
               </div>
             </div>
 
+            {/* 12/11/2026: motoboy saiu da corrida e o pedido voltou pra fila */}
+            {p.ultimoCancelamentoMotoboy && p.ultimoCancelamentoEm && (
+              <div style={{background:"#3b1d1d",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12}}>
+                <div style={{color:"#fca5a5",fontSize:13,fontWeight:800}}>
+                  ⚠️ {p.ultimoCancelamentoMotoboy} saiu da sua corrida às {new Date(p.ultimoCancelamentoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}
+                </div>
+                <div style={{color:"#d1d5db",fontSize:12,marginTop:3}}>
+                  Motivo: {p.ultimoCancelamentoMotivo || "não informado"}. Já estamos chamando outros motoboys para o seu pedido. O valor da entrega continua o mesmo.
+                </div>
+              </div>
+            )}
+
             {/* Endereço */}
             <div style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginBottom:12}}>
               <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:4}}>📍 ENDEREÇO DE ENTREGA</div>
@@ -3476,6 +3488,22 @@ export default function AppEmpresario() {
                   taxaDeslocamento: Number(p.taxa_deslocamento) || 0,
                 });
               }
+              // 12/11/2026: o motoboy cancelou e o pedido VOLTOU PRA FILA sozinho. Avisa a loja
+              // na hora (pop-up + aviso no cartão do pedido) pra ela não ficar esperando à toa.
+              if (p && p.status==="aguardando" && p.ultimo_cancelamento_em
+                  && (Date.now() - new Date(p.ultimo_cancelamento_em).getTime()) < 3*60*1000) {
+                const chaveVolta = p.id + "|" + p.ultimo_cancelamento_em;
+                if (!notificadosCancelamento.current.has(chaveVolta)) {
+                  notificadosCancelamento.current.add(chaveVolta);
+                  setAvisoCancelamentoMotoboy({
+                    voltouFila: true,
+                    clienteNome: p.cliente_nome, bairro: p.bairro,
+                    motivo: p.ultimo_cancelamento_motivo || "Não informado",
+                    motoboyNome: p.ultimo_cancelamento_motoboy_nome || "Motoboy",
+                    motoboyTel: "",
+                  });
+                }
+              }
               // Adicionado em 07/09/2026: atualiza a tela DIRETO com o dado que
               // já veio nesse evento, sem esperar o recarregarPedidos() (que
               // depende de rede/join e, se falhar silenciosamente por qualquer
@@ -3505,6 +3533,11 @@ export default function AppEmpresario() {
                     taxaChamado: Number(p.taxa_chamado) || 0,
                     taxaRetorno: Number(p.taxa_retorno) || 0,
                     taxaDeslocamento: Number(p.taxa_deslocamento) || 0,
+                    ultimoCancelamentoMotoboy: p.ultimo_cancelamento_motoboy_nome || null,
+                    ultimoCancelamentoMotivo: p.ultimo_cancelamento_motivo || null,
+                    ultimoCancelamentoFase: p.ultimo_cancelamento_fase || null,
+                    ultimoCancelamentoEm: p.ultimo_cancelamento_em ? new Date(p.ultimo_cancelamento_em).getTime() : null,
+                    qtdCancelamentosMotoboy: Number(p.qtd_cancelamentos_motoboy) || 0,
                   };
                   if (!existente) {
                     // Se já entregou/cancelou antes mesmo de aparecer aqui, não
@@ -3689,6 +3722,11 @@ export default function AppEmpresario() {
       taxaChamado: Number(p.taxa_chamado) || 0,
       taxaRetorno: Number(p.taxa_retorno) || 0,
       taxaDeslocamento: Number(p.taxa_deslocamento) || 0,
+      ultimoCancelamentoMotoboy: p.ultimo_cancelamento_motoboy_nome || null,
+      ultimoCancelamentoMotivo: p.ultimo_cancelamento_motivo || null,
+      ultimoCancelamentoFase: p.ultimo_cancelamento_fase || null,
+      ultimoCancelamentoEm: p.ultimo_cancelamento_em ? new Date(p.ultimo_cancelamento_em).getTime() : null,
+      qtdCancelamentosMotoboy: Number(p.qtd_cancelamentos_motoboy) || 0,
       valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco, edicoes: p.edicoes||[],
       status: p.status==="aceito"||p.status==="saiu_estabelecimento" ? "em_rota" : p.status,
       criadoEm: new Date(p.criado_em).getTime(),
@@ -3836,7 +3874,10 @@ export default function AppEmpresario() {
 
     // Cria um timer separado para CADA pedido aguardando, baseado no criadoEm de cada um
     const timers = aguardando.map(pedidoAlvo => {
-      const decorrido = Date.now() - pedidoAlvo.criadoEm;
+      // 12/11/2026: se o motoboy cancelou e o pedido voltou pra fila, a contagem dos 10 minutos
+      // recomeça do momento do cancelamento (senão cancelava o pedido na hora).
+      const baseTempo = Math.max(pedidoAlvo.criadoEm || 0, pedidoAlvo.ultimoCancelamentoEm || 0);
+      const decorrido = Date.now() - baseTempo;
       const restante = Math.max(1000, 10*60*1000 - decorrido); // mínimo 1s para não cancelar na hora
       return setTimeout(async ()=>{
         await supabase.from("pedidos")
@@ -4289,7 +4330,7 @@ export default function AppEmpresario() {
         <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:"#111827",border:"2px solid #ef4444",borderRadius:16,width:"100%",maxWidth:440,padding:28,textAlign:"center"}}>
             <div style={{fontSize:56,marginBottom:12}}>⚠️</div>
-            <div style={{color:"#f87171",fontWeight:900,fontSize:22,marginBottom:14}}>Motoboy cancelou a entrega</div>
+            <div style={{color:"#f87171",fontWeight:900,fontSize:22,marginBottom:14}}>{avisoCancelamentoMotoboy.voltouFila ? "Motoboy saiu da sua corrida" : "Motoboy cancelou a entrega"}</div>
             <div style={{background:"#0f172a",borderRadius:10,padding:"14px 18px",marginBottom:16,textAlign:"left"}}>
               <div style={{color:"#9ca3af",fontSize:12}}>Cliente</div>
               <div style={{color:"#f9fafb",fontWeight:700,fontSize:15,marginBottom:8}}>{avisoCancelamentoMotoboy.clienteNome} — {avisoCancelamentoMotoboy.bairro}</div>
@@ -4297,7 +4338,9 @@ export default function AppEmpresario() {
               <div style={{color:"#fbbf24",fontWeight:700,fontSize:15}}>{avisoCancelamentoMotoboy.motivo}</div>
             </div>
             <div style={{color:"#9ca3af",fontSize:13,marginBottom:18,lineHeight:1.6}}>
-              Entre em contato com <strong style={{color:"#f9fafb"}}>{avisoCancelamentoMotoboy.motoboyNome}</strong> para mais informações, se precisar.
+              {avisoCancelamentoMotoboy.voltouFila
+                ? <><strong style={{color:"#f9fafb"}}>{avisoCancelamentoMotoboy.motoboyNome}</strong> saiu da corrida. <strong style={{color:"#34d399"}}>Já estamos chamando outros motoboys para o seu pedido</strong>. O valor da entrega continua o mesmo e você não precisa fazer nada.</>
+                : <>Entre em contato com <strong style={{color:"#f9fafb"}}>{avisoCancelamentoMotoboy.motoboyNome}</strong> para mais informações, se precisar.</>}
             </div>
             {avisoCancelamentoMotoboy.motoboyTel && (
               <div style={{display:"flex",gap:8,marginBottom:10}}>
@@ -4315,7 +4358,7 @@ export default function AppEmpresario() {
                 mesmo pedido com 1 clique, sem precisar digitar tudo de novo
                 (endereço, forma de pagamento, etc.) — reaproveita a mesma
                 publicarPedido() usada na tela de Nova Entrega. */}
-            <button onClick={async()=>{
+            {!avisoCancelamentoMotoboy.voltouFila && <button onClick={async()=>{
                 setPublicandoNovoAposCancelamento(true);
                 // 11/11/2026: a taxa do pedido cancelado JÁ inclui chamado/retorno/deslocamento.
                 // publicarPedido soma de novo, então tira eles antes (igual republicarPedidoCancelado).
@@ -4337,7 +4380,7 @@ export default function AppEmpresario() {
               disabled={publicandoNovoAposCancelamento}
               style={{width:"100%",padding:"14px",borderRadius:10,background:"#f59e0b",border:"none",color:"#000",fontWeight:900,fontSize:15,cursor:publicandoNovoAposCancelamento?"not-allowed":"pointer",marginBottom:10,opacity:publicandoNovoAposCancelamento?0.6:1}}>
               {publicandoNovoAposCancelamento ? "Chamando..." : "🏍️ Chamar novo motoboy agora"}
-            </button>
+            </button>}
             <button onClick={()=>setAvisoCancelamentoMotoboy(null)}
               style={{width:"100%",padding:"12px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:14,cursor:"pointer"}}>
               Fechar
