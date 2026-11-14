@@ -744,7 +744,11 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
 
                 {!(p.chegouLojaEm || chegouLoja[p.id]) ? (
                   <>
-                    <button onClick={()=>chegueiNaLoja(p)} style={{width:"100%",padding:"14px",borderRadius:10,background:"#3b82f6",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
+                    <button onClick={()=>{
+                      // 13/11/2026: trava contra clique sem querer (um motoboy marcou "cheguei" estando longe e o estabelecimento ficou esperando à toa).
+                      if (!window.confirm(`Você está NO estabelecimento (${p.empresaNome || "loja"}) agora?\n\nSó confirme se já chegou. O horário e a sua localização ficam registrados, e esse aviso não pode ser desfeito.`)) return;
+                      chegueiNaLoja(p);
+                    }} style={{width:"100%",padding:"14px",borderRadius:10,background:"#3b82f6",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
                       📍 Cheguei na loja
                     </button>
                     <div style={{color:"#4b5563",fontSize:11,textAlign:"center",marginTop:6}}>
