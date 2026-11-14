@@ -474,7 +474,8 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   const bairrosDisponiveis = Object.keys(taxasEmpresa);
   const endEfetivo = (clienteSel && modoEndereco==="salvo") ? {rua:clienteSel.rua,num:clienteSel.num,bairro:clienteSel.bairro,ref:clienteSel.ref} : novoEndereco;
   const coordSalva = (clienteSel && modoEndereco==="salvo" && clienteSel.lat != null && clienteSel.lng != null) ? { lat: Number(clienteSel.lat), lng: Number(clienteSel.lng) } : null;
-  const bairroFinal = endEfetivo.bairro || bairrosDisponiveis[0] || "";
+  // 14/11/2026: NÃO escolhe mais bairro automático (antes caía no primeiro da lista, Perequê).
+  const bairroFinal = (endEfetivo.bairro || "").trim();
   const taxaKey = Object.keys(taxasEmpresa).find(k => normalizarTexto(k) === normalizarTexto(bairroFinal)) || bairroFinal;
   const taxa = taxasEmpresa[taxaKey] || {e:0,m:0};
 
@@ -679,8 +680,7 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
   }
 
   function handleRua(v) {
-    const b = detectarBairro(v);
-    setNovoEndereco(prev=>({...prev, rua:v, bairro:b||prev.bairro}));
+    setNovoEndereco(prev=>({...prev, rua:v}));
   }
 
   async function publicar() {
@@ -695,6 +695,10 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
     }
     if (!nomeEfetivo || !endEfetivo.rua || !endEfetivo.num) {
       setErro("Preencha o nome do cliente e o endereço completo."); return;
+    }
+    if (!bairroFinal) {
+      setErro("Falta o bairro do cliente. O bairro é obrigatório porque é ele que mostra ao motoboy onde fica a rua. Edite o cliente na aba \"Clientes\" ou escolha \"endereço diferente\" e preencha o bairro.");
+      return;
     }
     if (!telValido) {
       setErro("Preencha o telefone/WhatsApp do cliente — é essencial pro motoboy conseguir falar com ele na entrega.");
@@ -837,9 +841,14 @@ function SolicitarEntrega({ clientes, setClientes, onPublicar, empresa }) {
               <Inp label="Número *" value={novoEndereco.num} onChange={v=>setNovoEndereco(p=>({...p,num:v}))} placeholder="123"/>
             </div>
           </div>
-          <SelInput label="Bairro *" value={novoEndereco.bairro} onChange={v=>setNovoEndereco(p=>({...p,bairro:v}))}>
-            {bairrosDisponiveis.map(b=><option key={b}>{b}</option>)}
-          </SelInput>
+          {empresa.modeloPrecificacao === "bairro" ? (
+            <SelInput label="Bairro *" value={novoEndereco.bairro} onChange={v=>setNovoEndereco(p=>({...p,bairro:v}))}>
+              <option value="">Escolha o bairro...</option>
+              {bairrosDisponiveis.map(b=><option key={b} value={b}>{b}</option>)}
+            </SelInput>
+          ) : (
+            <Inp label="Bairro *" value={novoEndereco.bairro} onChange={v=>setNovoEndereco(p=>({...p,bairro:v}))} placeholder="Ex: Engenho d'Água, Perequê, Vila..." hint="Obrigatório — é o bairro que o motoboy vai ver"/>
+          )}
           {/* Preview + taxa */}
           {novoEndereco.rua && novoEndereco.num && (
             <div style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginTop:4}}>
@@ -1059,7 +1068,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
   const [modoEndereco, setModoEndereco] = useState("salvo");
   const taxasEmpresa2 = (empresa && empresa.taxas && Object.keys(empresa.taxas).length>0) ? empresa.taxas : EMPRESA.taxas;
   const bairrosDisponiveis2 = Object.keys(taxasEmpresa2);
-  const [novoEndereco, setNovoEndereco] = useState({rua:"",num:"",bairro:bairrosDisponiveis2[0]||"",ref:""});
+  const [novoEndereco, setNovoEndereco] = useState({rua:"",num:"",bairro:"",ref:""});
   const [clienteNome, setClienteNome] = useState("");
   const [clienteTel, setClienteTel] = useState("");
   const [pagamento, setPagamento] = useState("pix");
@@ -1075,7 +1084,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
 
   const endEfetivo = (clienteSel && modoEndereco==="salvo") ? {rua:clienteSel.rua,num:clienteSel.num,bairro:clienteSel.bairro,ref:clienteSel.ref} : novoEndereco;
   const coordSalva = (clienteSel && modoEndereco==="salvo" && clienteSel.lat != null && clienteSel.lng != null) ? { lat: Number(clienteSel.lat), lng: Number(clienteSel.lng) } : null;
-  const bairroFinal = endEfetivo.bairro || bairrosDisponiveis2[0] || "";
+  const bairroFinal = (endEfetivo.bairro || "").trim();
   const taxaKey2 = Object.keys(taxasEmpresa2).find(k => normalizarTexto(k) === normalizarTexto(bairroFinal)) || bairroFinal;
   const taxa = taxasEmpresa2[taxaKey2] || {e:0,m:0};
   const nomeEfetivo = clienteSel ? clienteSel.nome : clienteNome;
@@ -1236,8 +1245,7 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
     return null;
   }
   function handleRua(v) {
-    const b = detectarBairro(v);
-    setNovoEndereco(prev=>({...prev, rua:v, bairro:b||prev.bairro}));
+    setNovoEndereco(prev=>({...prev, rua:v}));
   }
 
   async function salvar() {
@@ -1260,6 +1268,10 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
     }
     if (!nomeEfetivo || !endEfetivo.rua || !endEfetivo.num) {
       setErro("Preencha o nome do cliente e o endereço completo."); return;
+    }
+    if (!bairroFinal) {
+      setErro("Falta o bairro do cliente. O bairro é obrigatório porque é ele que mostra ao motoboy onde fica a rua. Edite o cliente na aba \"Clientes\" ou escolha \"endereço diferente\" e preencha o bairro.");
+      return;
     }
     if (!telValido) {
       setErro("Preencha o telefone/WhatsApp do cliente — é essencial pro motoboy conseguir falar com ele na entrega.");
@@ -1381,9 +1393,14 @@ function ModalAddPedidoCorrida({ clientes, setClientes, motoboyId, motoboyNome, 
             <div style={{flex:3}}><Inp label="Rua / Avenida *" value={novoEndereco.rua} onChange={handleRua} placeholder="Ex: Rua das Flores"/></div>
             <div style={{flex:1}}><Inp label="Número *" value={novoEndereco.num} onChange={v=>setNovoEndereco(p=>({...p,num:v}))} placeholder="123"/></div>
           </div>
-          <SelInput label="Bairro *" value={novoEndereco.bairro} onChange={v=>setNovoEndereco(p=>({...p,bairro:v}))}>
-            {bairrosDisponiveis2.map(b=><option key={b}>{b}</option>)}
-          </SelInput>
+          {empresa.modeloPrecificacao === "bairro" ? (
+            <SelInput label="Bairro *" value={novoEndereco.bairro} onChange={v=>setNovoEndereco(p=>({...p,bairro:v}))}>
+              <option value="">Escolha o bairro...</option>
+              {bairrosDisponiveis2.map(b=><option key={b} value={b}>{b}</option>)}
+            </SelInput>
+          ) : (
+            <Inp label="Bairro *" value={novoEndereco.bairro} onChange={v=>setNovoEndereco(p=>({...p,bairro:v}))} placeholder="Ex: Engenho d'Água, Perequê, Vila..." hint="Obrigatório — é o bairro que o motoboy vai ver"/>
+          )}
           {novoEndereco.rua && novoEndereco.num && (
             <div style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginTop:4}}>
               <div style={{color:"#f9fafb",fontSize:13,fontWeight:600}}>{novoEndereco.rua}, {novoEndereco.num} — {bairroFinal}</div>
@@ -3012,6 +3029,10 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
   }
 
   async function salvar() {
+    if (!(form.endereco.bairro||"").trim()) {
+      setErro("Preencha o bairro do cliente. Ele é obrigatório: é o bairro que o motoboy vê para achar a rua.");
+      return;
+    }
     const loc = lerLocalizacaoForm();
     if (!loc.ok) { setErro(loc.erro); return; }
     const { error } = await supabase.from("clientes").update({
@@ -3045,6 +3066,10 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
       return;
     }
     if (!form.nome.trim() || !form.endereco.rua.trim() || !form.endereco.num.trim()) return;
+    if (!form.endereco.bairro.trim()) {
+      setErro("Preencha o bairro do cliente. Ele é obrigatório: é o bairro que o motoboy vê para achar a rua.");
+      return;
+    }
     if (!telFormValido) {
       setErro("Preencha o telefone/WhatsApp do cliente — é obrigatório, o motoboy precisa desse número pra fazer a entrega.");
       return;
@@ -3172,7 +3197,7 @@ function ClientesSalvos({ clientes, setClientes, empresaId }) {
             <div style={{flex:3}}><Inp label="Rua" value={form.endereco.rua} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,rua:v}}))}/></div>
             <div style={{flex:1}}><Inp label="Nº" value={form.endereco.num} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,num:v}}))}/></div>
           </div>
-          <Inp label="Bairro" value={form.endereco.bairro} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,bairro:v}}))} placeholder="Ex: Perequê, Vila, Feiticeira..."/>
+          <Inp label="Bairro *" value={form.endereco.bairro} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,bairro:v}}))} placeholder="Ex: Perequê, Vila, Feiticeira..."/>
           <Inp label="Referência" value={form.endereco.ref} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,ref:v}}))} placeholder="Casa de cor, portão..."/>
           <Inp label="📍 Localização exata (opcional)" value={form.endereco.mapa||""} onChange={v=>setForm(f=>({...f,endereco:{...f.endereco,mapa:v}}))}
             placeholder="Link do Google Maps ou coordenadas"
