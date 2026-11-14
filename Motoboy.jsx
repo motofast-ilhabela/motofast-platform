@@ -499,6 +499,7 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
   // motoboy avisou que chegou (por pedido). O que vem do banco (p.chegouLojaEm)
   // vale mais que isso — aqui é só pra a tela reagir na hora do clique.
   const [chegouLoja, setChegouLoja] = useState({});
+  const entregandoAgoraRef = useRef({}); // 14/11/2026: impede registrar a mesma entrega duas vezes
   const [modalCancelar, setModalCancelar] = useState(false);
   const [motivoCancelamento, setMotivoCancelamento] = useState("");
   const [motivoCustom, setMotivoCustom] = useState("");
@@ -555,6 +556,7 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
   }
 
   async function marcarEntregue(pedidoId) {
+    if (pedidosEntregues.includes(pedidoId)) return; // 14/11/2026: já entregue, não registra de novo
     const novos = [...pedidosEntregues, pedidoId];
     setPedidosEntregues(novos);
     // Corrigido em 07/09/2026 a pedido do Alessandro: antes, o banco só era
@@ -850,14 +852,15 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                     let ok = false;
                     while (!ok) {
                       const digitado = window.prompt(`Peça ao cliente ${p.clienteNome} o CÓDIGO de entrega (os 4 últimos dígitos do WhatsApp dele) e digite aqui:`, "");
-                      if (digitado === null) {
-                        if (window.confirm("Cliente não sabe o código? Você pode entregar sem ele, mas isso fica registrado. Entregar sem código?")) { statusCodigo = "pulado"; break; }
-                        continue;
-                      }
+                      // 14/11/2026: a entrega só finaliza COM o código. Cancelar a janela do código só volta
+                      // pra tela normal do pedido (nada é gravado). Não existe mais "entregar sem código".
+                      if (digitado === null) return;
                       if (digitado.replace(/\D/g, "") === cod4) { ok = true; statusCodigo = "confirmado"; }
                       else alert("Código errado. Confira com o cliente e tente de novo.");
                     }
                   } else if (!window.confirm(`Confirma que entregou pra ${p.clienteNome}?`)) return;
+                  if (entregandoAgoraRef.current[p.id]) return; // trava contra clique duplo
+                  entregandoAgoraRef.current[p.id] = true;
                   if (statusCodigo) { try { await supabase.from("pedidos").update({ codigo_entrega_status: statusCodigo }).eq("id", p.id); } catch (e) {} }
                   marcarEntregue(p.id);
                 }} style={{width:"100%",padding:"14px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
@@ -1439,6 +1442,7 @@ export default function AppMotoboy() {
   const pedidoRef = useRef(null);
   const ofertaAtivaRef = useRef(null);
   const recusadosRef = useRef({});
+  const entregasProcessadasRef = useRef(new Set()); // 14/11/2026: pedidos já marcados como entregues nesta sessão
   const [permissaoNotificacao, setPermissaoNotificacao] = useState(()=>{
     try { return ("Notification" in window) ? Notification.permission : "unsupported"; }
     catch(e) { return "unsupported"; }
@@ -2219,6 +2223,9 @@ export default function AppMotoboy() {
   // Agora cada entrega entra no histórico local (e no saldo) assim que ELA
   // MESMA é confirmada, não precisa esperar as outras da mesma corrida.
   async function entregarItemIndividual(pedidoId) {
+    // 14/11/2026: se a mesma entrega for confirmada duas vezes (clique duplo, janelas repetidas), só vale a primeira
+    if (entregasProcessadasRef.current.has(pedidoId)) return;
+    entregasProcessadasRef.current.add(pedidoId);
     await supabase.from("pedidos").update({
       status: "entregue",
       entregue_em: new Date().toISOString(),
