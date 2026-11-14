@@ -103,6 +103,13 @@ public class RideAlertNotificationExtension implements INotificationServiceExten
         // em produção, onde o alarme nunca parava sozinho mesmo já tendo
         // sido aceito por outro motoboy minutos antes.
         String pedidoId = dados != null ? dados.optString("pedidoId", null) : null;
+        // 1.0.7: se ESTE motoboy cancelou esse pedido (ele voltou pra fila e o servidor avisou
+        // todo mundo por push), o alarme NÃO toca aqui. A lista é gravada pelo app antes de
+        // cancelar (RideAlertPlugin.ignorarPedido) e vale 1 hora.
+        if (RideAlertService.pedidoIgnorado(context, pedidoId)) {
+            android.util.Log.d(TAG, "Push IGNORADO: pedido " + pedidoId + " foi cancelado por este motoboy — alarme não liga.");
+            return;
+        }
         android.util.Log.d(TAG, "tipo=nova_corrida (ou sem tipo) — ligando alarme. titulo=" + titulo + " pedidoId=" + pedidoId);
 
         Intent intent = new Intent(context, RideAlertService.class);

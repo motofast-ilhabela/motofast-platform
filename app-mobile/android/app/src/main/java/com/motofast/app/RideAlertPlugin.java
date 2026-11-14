@@ -25,8 +25,31 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 @CapacitorPlugin(name = "RideAlert")
 public class RideAlertPlugin extends Plugin {
 
+    // 1.0.7: o Motoboy.jsx chama isto ANTES de cancelar um pedido (ver
+    // RideAlertService.marcarPedidoIgnorado). O pedido volta pra fila e o servidor avisa
+    // os motoboys por push — esse push não pode tocar o alarme no celular de quem cancelou.
+    // Se o alarme já estiver tocando justamente esse pedido, para na hora.
+    @PluginMethod
+    public void ignorarPedido(PluginCall call) {
+        String pedidoId = call.getString("pedidoId");
+        if (pedidoId != null && !pedidoId.isEmpty()) {
+            RideAlertService.marcarPedidoIgnorado(getContext(), pedidoId);
+            if (pedidoId.equals(RideAlertService.lerPedidoAtual(getContext()))) {
+                Intent parar = new Intent(getContext(), RideAlertService.class);
+                parar.setAction(RideAlertService.ACTION_STOP);
+                getContext().startService(parar); // startService puro (ver stopAlert)
+            }
+        }
+        call.resolve();
+    }
+
     @PluginMethod
     public void startAlert(PluginCall call) {
+        // 1.0.7: nunca toca para um pedido que este motoboy cancelou.
+        if (RideAlertService.pedidoIgnorado(getContext(), call.getString("pedidoId"))) {
+            call.resolve();
+            return;
+        }
         Intent intent = new Intent(getContext(), RideAlertService.class);
         intent.setAction(RideAlertService.ACTION_START);
         intent.putExtra(RideAlertService.EXTRA_TITLE, call.getString("titulo"));

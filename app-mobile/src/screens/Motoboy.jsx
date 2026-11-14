@@ -663,6 +663,7 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
   // motoboy avisou que chegou (por pedido). O que vem do banco (p.chegouLojaEm)
   // vale mais que isso — aqui é só pra a tela reagir na hora do clique.
   const [chegouLoja, setChegouLoja] = useState({});
+  const entregandoAgoraRef = useRef({}); // 14/11/2026: impede registrar a mesma entrega duas vezes
   const [modalCancelar, setModalCancelar] = useState(false);
   const [motivoCancelamento, setMotivoCancelamento] = useState("");
   const [motivoCustom, setMotivoCustom] = useState("");
@@ -720,6 +721,7 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
   }
 
   async function marcarEntregue(pedidoId) {
+    if (pedidosEntregues.includes(pedidoId)) return; // 14/11/2026: já entregue, não registra de novo
     const novos = [...pedidosEntregues, pedidoId];
     setPedidosEntregues(novos);
     // Adicionado em 07/09/2026 no site: antes, o banco só era atualizado
@@ -910,7 +912,11 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
 
                 {!(p.chegouLojaEm || chegouLoja[p.id]) ? (
                   <>
-                    <button onClick={()=>chegueiNaLoja(p)} style={{width:"100%",padding:"14px",borderRadius:10,background:"#3b82f6",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
+                    <button onClick={()=>{
+                      // 13/11/2026: trava contra clique sem querer (um motoboy marcou "cheguei" estando longe e o estabelecimento ficou esperando à toa).
+                      if (!window.confirm(`Você está NO estabelecimento (${p.empresaNome || "loja"}) agora?\n\nSó confirme se já chegou. O horário e a sua localização ficam registrados, e esse aviso não pode ser desfeito.`)) return;
+                      chegueiNaLoja(p);
+                    }} style={{width:"100%",padding:"14px",borderRadius:10,background:"#3b82f6",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
                       📍 Cheguei na loja
                     </button>
                     <div style={{color:"#4b5563",fontSize:11,textAlign:"center",marginTop:6}}>
@@ -1014,14 +1020,15 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                     let ok = false;
                     while (!ok) {
                       const digitado = window.prompt(`Peça ao cliente ${p.clienteNome} o CÓDIGO de entrega (os 4 últimos dígitos do WhatsApp dele) e digite aqui:`, "");
-                      if (digitado === null) {
-                        if (window.confirm("Cliente não sabe o código? Você pode entregar sem ele, mas isso fica registrado. Entregar sem código?")) { statusCodigo = "pulado"; break; }
-                        continue;
-                      }
+                      // 14/11/2026: a entrega só finaliza COM o código. Cancelar a janela do código só volta
+                      // pra tela normal do pedido (nada é gravado). Não existe mais "entregar sem código".
+                      if (digitado === null) return;
                       if (digitado.replace(/\D/g, "") === cod4) { ok = true; statusCodigo = "confirmado"; }
                       else alert("Código errado. Confira com o cliente e tente de novo.");
                     }
                   } else if (!window.confirm(`Confirma que entregou pra ${p.clienteNome}?`)) return;
+                  if (entregandoAgoraRef.current[p.id]) return; // trava contra clique duplo
+                  entregandoAgoraRef.current[p.id] = true;
                   if (statusCodigo) { try { await supabase.from("pedidos").update({ codigo_entrega_status: statusCodigo }).eq("id", p.id); } catch (e) {} }
                   marcarEntregue(p.id);
                 }} style={{width:"100%",padding:"14px",borderRadius:10,background:"#10b981",border:"none",color:"#fff",fontWeight:900,fontSize:16,cursor:"pointer"}}>
@@ -1117,6 +1124,9 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
                   style={{background:"#0f172a",border:"1px solid #ef4444",borderRadius:8,color:"#f9fafb",padding:"10px 12px",width:"100%",fontSize:13,outline:"none",resize:"none",boxSizing:"border-box"}}/>
               </div>
             )}
+            <div style={{background:"#3d2a00",border:"1px solid #f59e0b",borderRadius:8,padding:"10px 14px",marginBottom:10}}>
+              <div style={{color:"#fbbf24",fontSize:12,fontWeight:800,lineHeight:1.5}}>📋 O endereço aparece para você antes de aceitar a corrida. Todo cancelamento fica registrado no seu histórico, com o motivo.</div>
+            </div>
             <div style={{background:"#3d1010",borderRadius:8,padding:"10px 14px",marginBottom:14}}>
               <div style={{color:"#f87171",fontSize:12,fontWeight:700}}>⚠️ Ao confirmar você ficará offline automaticamente e o empresário receberá um aviso automático na tela dele com o motivo.</div>
               <div style={{color:"#fbbf24",fontSize:11,marginTop:6}}>💡 Se der, avisa o estabelecimento direto pelo WhatsApp também (botão "Falar com o estabelecimento" na tela da corrida) — assim ele já sabe na hora e não fica esperando.</div>
@@ -1602,6 +1612,7 @@ export default function Motoboy() {
   const pedidoRef = useRef(null);
   const ofertaAtivaRef = useRef(null);
   const recusadosRef = useRef({});
+  const entregasProcessadasRef = useRef(new Set()); // 14/11/2026: pedidos já marcados como entregues nesta sessão
   const [permissaoNotificacao, setPermissaoNotificacao] = useState(()=>{
     try { return ("Notification" in window) ? Notification.permission : "unsupported"; }
     catch(e) { return "unsupported"; }
@@ -1980,6 +1991,8 @@ export default function Motoboy() {
         const candidatosValidos = data.filter(p=>{
           const recusadoEm = recusadosRef.current[p.id];
           if (recusadoEm && (agora - recusadoEm < TEMPO_COOLDOWN_RECUSA_MS)) return false;
+          // 12/11/2026: se EU cancelei esse pedido, ele volta pra fila pros outros, mas nunca pra mim.
+          if (Array.isArray(p.motoboys_cancelaram) && p.motoboys_cancelaram.includes(motoboyId)) return false;
           if (p.prioridade_ate && new Date(p.prioridade_ate).getTime() > agora) {
             // Prioridade por horário específico (adicionada em 06/09/2026 no
             // site) manda mais que o Turno Fixo — se o pedido tem um
@@ -2676,6 +2689,9 @@ export default function Motoboy() {
   // que ELA MESMA é confirmada, não precisa esperar as outras da mesma
   // corrida.
   async function entregarItemIndividual(pedidoId) {
+    // 14/11/2026: se a mesma entrega for confirmada duas vezes (clique duplo, janelas repetidas), só vale a primeira
+    if (entregasProcessadasRef.current.has(pedidoId)) return;
+    entregasProcessadasRef.current.add(pedidoId);
     await supabase.from("pedidos").update({
       status: "entregue",
       entregue_em: new Date().toISOString(),
@@ -2762,13 +2778,42 @@ export default function Motoboy() {
   // Adicionado em 07/09/2026 no site: cancela só ESSE pedido específico da
   // corrida (ex: lançado em duplicidade) — os outros continuam normais, o
   // motoboy não fica offline e não precisa refazer nada.
+  // 12/11/2026 (site) / 1.0.7 (app): quando o motoboy cancela, o pedido VOLTA PRA FILA sozinho
+  // (status "aguardando") e os outros motoboys são chamados na hora. Antes ele ficava "cancelado"
+  // e o estabelecimento só descobria quando olhava a tela, o que atrasava muito a entrega. A função
+  // do banco (motoboy_cancela_pedido) decide: se o motoboy ainda não saiu com o pedido, volta pra
+  // fila (resultado "voltou_fila"); se já saiu com o pedido na mão, fica cancelado (o
+  // estabelecimento é avisado pra ligar). Também registra o cancelamento (quem, quando, fase e
+  // motivo). O app NÃO atualiza mais o pedido direto pra cancelar.
+  // Devolve true se o banco aceitou o cancelamento.
+  async function devolverPedidoParaFila(p, motivo) {
+    // 1.0.7: ANTES de cancelar, avisa o alarme nativo pra IGNORAR esse pedido neste celular. O pedido
+    // volta pra fila e o servidor manda push pra todo mundo online — inclusive pra quem acabou de
+    // cancelar. A tela já esconde o pedido dele (motoboys_cancelaram), mas o alarme nativo toca
+    // sozinho, sem passar pelo JS.
+    if (Capacitor.isNativePlatform()) {
+      try { await RideAlert.ignorarPedido({ pedidoId: String(p.id) }); } catch (e) { console.log("ignorarPedido:", e); }
+    }
+    const { data: resultado, error } = await supabase.rpc("motoboy_cancela_pedido", { p_pedido_id: p.id, p_motivo: motivo });
+    if (error) { console.error("Erro ao cancelar pedido:", error); return false; }
+    if (resultado === "voltou_fila") {
+      fetch(`${WEB_APP_URL}/api/notificar-motoboys`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          titulo: "🏍️ Novo Pedido MotoFast!",
+          corpo: `Entrega em ${p.bairro || ""} — R$${p.taxa}`,
+          pedidoId: p.id,
+        }),
+      }).catch(e => console.log("Erro ao notificar motoboys após cancelamento:", e));
+    }
+    return true;
+  }
+
   async function cancelarPedidoIndividual(pedidoId, motivo) {
-    await supabase.from("pedidos").update({
-      status: "cancelado",
-      motivo_cancelamento: motivo,
-      cancelado_por_motoboy: true,
-      cancelado_em: new Date().toISOString(),
-    }).eq("id", pedidoId);
+    const pedido = corridaAtiva?.pedidos?.find(p => p.id === pedidoId) || { id: pedidoId };
+    const ok = await devolverPedidoParaFila(pedido, motivo);
+    if (!ok) { alert("Não foi possível cancelar agora. Tente de novo em alguns segundos."); return; }
     setCorridaAtiva(prev => {
       if (!prev) return prev;
       const restantes = prev.pedidos.filter(p => p.id !== pedidoId);
@@ -2780,21 +2825,27 @@ export default function Motoboy() {
   }
 
   async function cancelarCorrida(motivo) {
-    if (corridaAtiva) {
-      for (const p of corridaAtiva.pedidos) {
-        await supabase.from("pedidos").update({
-          status: "cancelado",
-          motivo_cancelamento: motivo,
-          cancelado_por_motoboy: true,
-          cancelado_em: new Date().toISOString(),
-        }).eq("id", p.id);
-      }
-    }
-    setCorridaAtiva(null);
+    // 1.0.7: o motoboy fica OFFLINE no banco ANTES de devolver os pedidos pra fila — assim o
+    // servidor (que só avisa quem está online) não manda o push de "pedido novo" pra ele mesmo.
     setOnline(false);
     if (motoboyId) {
-      await supabase.from("motoboys").update({online: false}).eq("id", motoboyId);
+      try { await supabase.from("motoboys").update({online: false}).eq("id", motoboyId); } catch (e) { console.log("offline antes de cancelar:", e); }
     }
+    const falharam = [];
+    if (corridaAtiva) {
+      for (const p of corridaAtiva.pedidos) {
+        const ok = await devolverPedidoParaFila(p, motivo);
+        if (!ok) falharam.push(p);
+      }
+    }
+    if (falharam.length > 0) {
+      // O banco não aceitou o cancelamento desses pedidos: eles continuam sendo dele, então a
+      // corrida fica na tela só com eles (nada some sem aviso).
+      alert(`Não foi possível cancelar ${falharam.length} pedido${falharam.length!==1?"s":""} agora. Ele${falharam.length!==1?"s continuam":" continua"} na sua corrida — tente cancelar de novo em alguns segundos.`);
+      setCorridaAtiva(prev => prev ? { ...prev, pedidos: prev.pedidos.filter(p => falharam.some(f => f.id === p.id)) } : prev);
+      return;
+    }
+    setCorridaAtiva(null);
     setAba("home");
   }
 

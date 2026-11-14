@@ -24,6 +24,8 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -119,6 +121,21 @@ public class RideAlertService extends Service {
             ? intent.getStringExtra(EXTRA_TITLE) : "Nova corrida disponível!";
         String corpo = intent.getStringExtra(EXTRA_BODY) != null
             ? intent.getStringExtra(EXTRA_BODY) : "Toque para ver os detalhes e aceitar.";
+
+        // 1.0.7: pedido que o próprio motoboy cancelou NUNCA toca neste celular. Quem chama
+        // (extensão do push e plugin) já confere antes e nem chega aqui; esta é a rede de
+        // segurança. Como o serviço foi iniciado por startForegroundService(), o Android EXIGE
+        // startForeground() — por isso sobe a notificação e já encerra (se outro alarme estiver
+        // tocando, ele continua: só não mexemos nele).
+        String pedidoIdIniciar = intent.getStringExtra(EXTRA_PEDIDO_ID);
+        if (pedidoIgnorado(this, pedidoIdIniciar)) {
+            android.util.Log.d("RideAlertService", "ACTION_START ignorado: pedido " + pedidoIdIniciar + " foi cancelado por este motoboy.");
+            boolean jaTocando = mediaPlayer != null;
+            criarCanalNotificacao();
+            startForeground(NOTIFICATION_ID, construirNotificacao(titulo, corpo));
+            if (!jaTocando) pararAlerta();
+            return START_NOT_STICKY;
+        }
 
         // Guarda qual pedido está tocando AGORA nesse celular — usado pelo
         // RideAlertNotificationExtension para saber, quando chega um aviso
@@ -323,6 +340,52 @@ public class RideAlertService extends Service {
     static String lerPedidoAtual(Context context) {
         return context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .getString(KEY_PEDIDO_ATUAL, null);
+    }
+
+    // ── PEDIDOS IGNORADOS (1.0.7, 14/11/2026) ───────────────────────────────────
+    // Quando o motoboy CANCELA um pedido, ele volta pra fila e o servidor avisa os
+    // motoboys por push — e, enquanto o motoboy ainda está online, esse push chega
+    // também no celular de quem cancelou. A tela (Motoboy.jsx) já esconde o pedido
+    // dele, mas o alarme nativo toca por conta própria, sem passar pelo JS. Então o
+    // Motoboy.jsx avisa o plugin (RideAlertPlugin.ignorarPedido) ANTES de cancelar, o
+    // id vai pra esta lista (SharedPreferences, vale 1 hora) e tanto a extensão do
+    // push quanto o plugin e este serviço ignoram qualquer alarme desse pedido.
+    private static final String PREFS_IGNORADOS = "ride_alert_ignorados";
+    private static final String KEY_IGNORADOS = "pedidos"; // entradas "pedidoId|epochMs"
+    private static final long VALIDADE_IGNORADO_MS = 60 * 60_000; // 1 hora
+
+    private static Set<String> ignoradosVigentes(SharedPreferences prefs) {
+        Set<String> vigentes = new HashSet<>();
+        Set<String> guardados = prefs.getStringSet(KEY_IGNORADOS, null);
+        if (guardados == null) return vigentes;
+        long limite = System.currentTimeMillis() - VALIDADE_IGNORADO_MS;
+        for (String entrada : guardados) {
+            int barra = entrada.lastIndexOf('|');
+            if (barra < 0) continue;
+            try {
+                if (Long.parseLong(entrada.substring(barra + 1)) >= limite) vigentes.add(entrada);
+            } catch (NumberFormatException ignored) { /* entrada inválida: descarta */ }
+        }
+        return vigentes;
+    }
+
+    static synchronized void marcarPedidoIgnorado(Context context, String pedidoId) {
+        if (pedidoId == null || pedidoId.isEmpty()) return;
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_IGNORADOS, Context.MODE_PRIVATE);
+        Set<String> novo = ignoradosVigentes(prefs);
+        novo.removeIf(e -> e.startsWith(pedidoId + "|"));
+        novo.add(pedidoId + "|" + System.currentTimeMillis());
+        prefs.edit().putStringSet(KEY_IGNORADOS, novo).apply();
+        android.util.Log.d("RideAlertService", "Pedido " + pedidoId + " marcado como IGNORADO neste celular (1 h).");
+    }
+
+    static synchronized boolean pedidoIgnorado(Context context, String pedidoId) {
+        if (pedidoId == null || pedidoId.isEmpty()) return false;
+        SharedPreferences prefs = context.getSharedPreferences(PREFS_IGNORADOS, Context.MODE_PRIVATE);
+        for (String entrada : ignoradosVigentes(prefs)) {
+            if (entrada.startsWith(pedidoId + "|")) return true;
+        }
+        return false;
     }
 
     @Override

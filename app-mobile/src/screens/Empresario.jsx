@@ -1934,6 +1934,18 @@ function PedidosAtivos({ pedidos, setPedidos, clientes, setClientes, empresa, on
               </div>
             </div>
 
+            {/* 12/11/2026: motoboy saiu da corrida e o pedido voltou pra fila */}
+            {p.ultimoCancelamentoMotoboy && p.ultimoCancelamentoEm && (
+              <div style={{background:"#3b1d1d",border:"1px solid #ef4444",borderRadius:8,padding:"10px 14px",marginBottom:12}}>
+                <div style={{color:"#fca5a5",fontSize:13,fontWeight:800}}>
+                  ⚠️ {p.ultimoCancelamentoMotoboy} saiu da sua corrida às {new Date(p.ultimoCancelamentoEm).toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"})}
+                </div>
+                <div style={{color:"#d1d5db",fontSize:12,marginTop:3}}>
+                  Motivo: {p.ultimoCancelamentoMotivo || "não informado"}. Já estamos chamando outros motoboys para o seu pedido. O valor da entrega continua o mesmo.
+                </div>
+              </div>
+            )}
+
             {/* Endereço */}
             <div style={{background:"#0f172a",borderRadius:8,padding:"10px 14px",marginBottom:12}}>
               <div style={{color:"#9ca3af",fontSize:11,fontWeight:700,marginBottom:4}}>📍 ENDEREÇO DE ENTREGA</div>
@@ -3496,7 +3508,24 @@ export default function Empresario() {
                   pagamento: p.forma_pagamento, taxa: p.taxa, taxaMotoboy: p.taxa_motoboy || 0,
                   valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco,
                   distanciaKm: p.distancia_km, metodoCalculoKm: p.metodo_calculo_km,
+                  // 11/11/2026: guarda os extras já embutidos na taxa, pra poder tirá-los antes de
+                  // republicar (senão o deslocamento/retorno era somado uma 2ª vez).
+                  taxaChamado: Number(p.taxa_chamado) || 0,
+                  taxaRetorno: Number(p.taxa_retorno) || 0,
+                  taxaDeslocamento: Number(p.taxa_deslocamento) || 0,
                 });
+              }
+              // 12/11/2026: o motoboy cancelou e o pedido VOLTOU PRA FILA sozinho. Avisa a loja
+              // na hora (aviso no cartão do pedido + um bipe) pra ela não ficar esperando à toa.
+              if (p && p.status==="aguardando" && p.ultimo_cancelamento_em
+                  && (Date.now() - new Date(p.ultimo_cancelamento_em).getTime()) < 3*60*1000) {
+                const chaveVolta = p.id + "|" + p.ultimo_cancelamento_em;
+                if (!notificadosCancelamento.current.has(chaveVolta)) {
+                  notificadosCancelamento.current.add(chaveVolta);
+                  // Sem pop-up e sem alarme repetindo: o pedido já foi chamado de novo sozinho, a loja
+                  // não precisa fazer nada. Toca só UM bipe curto, e o aviso vermelho fica no cartão do pedido.
+                  tocarSomCancelamento();
+                }
               }
               carregarPedidos(emp.id);
             })
@@ -3640,6 +3669,11 @@ export default function Empresario() {
         taxaChamado: Number(p.taxa_chamado) || 0,
         taxaRetorno: Number(p.taxa_retorno) || 0,
         taxaDeslocamento: Number(p.taxa_deslocamento) || 0,
+        ultimoCancelamentoMotoboy: p.ultimo_cancelamento_motoboy_nome || null,
+        ultimoCancelamentoMotivo: p.ultimo_cancelamento_motivo || null,
+        ultimoCancelamentoFase: p.ultimo_cancelamento_fase || null,
+        ultimoCancelamentoEm: p.ultimo_cancelamento_em ? new Date(p.ultimo_cancelamento_em).getTime() : null,
+        qtdCancelamentosMotoboy: Number(p.qtd_cancelamentos_motoboy) || 0,
         valorPedido: p.valor_pedido, valorReceber: p.valor_receber, troco: p.valor_troco, edicoes: p.edicoes||[],
         status: p.status==="aceito"||p.status==="saiu_estabelecimento" ? "em_rota" : p.status,
         criadoEm: new Date(p.criado_em).getTime(),
@@ -3791,7 +3825,10 @@ export default function Empresario() {
 
     // Cria um timer separado para CADA pedido aguardando, baseado no criadoEm de cada um
     const timers = aguardando.map(pedidoAlvo => {
-      const decorrido = Date.now() - pedidoAlvo.criadoEm;
+      // 12/11/2026: se o motoboy cancelou e o pedido voltou pra fila, a contagem dos 10 minutos
+      // recomeça do momento do cancelamento (senão cancelava o pedido na hora).
+      const baseTempo = Math.max(pedidoAlvo.criadoEm || 0, pedidoAlvo.ultimoCancelamentoEm || 0);
+      const decorrido = Date.now() - baseTempo;
       const restante = Math.max(1000, 10*60*1000 - decorrido); // mínimo 1s para não cancelar na hora
       return setTimeout(async ()=>{
         await supabase.from("pedidos")
@@ -4252,7 +4289,7 @@ export default function Empresario() {
               <div style={{color:"#fbbf24",fontWeight:700,fontSize:15}}>{avisoCancelamentoMotoboy.motivo}</div>
             </div>
             <div style={{color:"#9ca3af",fontSize:13,marginBottom:18,lineHeight:1.6}}>
-              Entre em contato com <strong style={{color:"#f9fafb"}}>{avisoCancelamentoMotoboy.motoboyNome}</strong> para mais informações, se precisar.
+              <strong style={{color:"#f9fafb"}}>{avisoCancelamentoMotoboy.motoboyNome}</strong> já saiu com o pedido de <strong style={{color:"#f9fafb"}}>{avisoCancelamentoMotoboy.clienteNome}</strong> e teve um problema. <strong style={{color:"#fbbf24"}}>Ligue para ele agora</strong> para combinar como recuperar o pedido ou entregar ao cliente.
             </div>
             {avisoCancelamentoMotoboy.motoboyTel && (
               <div style={{display:"flex",gap:8,marginBottom:10}}>
@@ -4266,21 +4303,10 @@ export default function Empresario() {
                 </a>
               </div>
             )}
-            {/* Adicionado no site em 07/09/2026 a pedido do Alessandro:
-                republica o mesmo pedido com 1 clique, sem precisar digitar
-                tudo de novo (endereço, forma de pagamento, etc.) —
-                reaproveita a mesma publicarPedido() usada na tela de Nova
-                Entrega. */}
-            <button onClick={async()=>{
-                setPublicandoNovoAposCancelamento(true);
-                await publicarPedido(avisoCancelamentoMotoboy);
-                setPublicandoNovoAposCancelamento(false);
-                setAvisoCancelamentoMotoboy(null);
-              }}
-              disabled={publicandoNovoAposCancelamento}
-              style={{width:"100%",padding:"14px",borderRadius:10,background:"#f59e0b",border:"none",color:"#000",fontWeight:900,fontSize:15,cursor:publicandoNovoAposCancelamento?"not-allowed":"pointer",marginBottom:10,opacity:publicandoNovoAposCancelamento?0.6:1}}>
-              {publicandoNovoAposCancelamento ? "Chamando..." : "🏍️ Chamar novo motoboy agora"}
-            </button>
+            {/* 12/11/2026 (site) / 1.0.7: o botão "Chamar novo motoboy agora" foi REMOVIDO daqui. Esse aviso
+                só aparece quando o motoboy já saiu com o pedido; nesse caso a loja precisa falar com ele
+                primeiro, chamar outro motoboy na hora não resolve (o pedido está na mão do motoboy).
+                Isso também acaba com a soma dupla do deslocamento ao republicar (11/11). */}
             <button onClick={()=>setAvisoCancelamentoMotoboy(null)}
               style={{width:"100%",padding:"12px",borderRadius:10,background:"#1f2937",border:"1px solid #374151",color:"#9ca3af",fontWeight:700,fontSize:14,cursor:"pointer"}}>
               Fechar
