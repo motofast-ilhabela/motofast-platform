@@ -492,9 +492,25 @@ function TurnosMotoboy({ motoboyId }) {
   );
 }
 
+// Adicionado em 18/11/2026: formata a duração em MM:SS (ou H:MM:SS passando de 1 hora)
+// pro cronômetro de entrega que aparece pro motoboy depois de "Saí do estabelecimento".
+function formatarCronometro(ms) {
+  const total = Math.max(0, Math.floor((ms || 0) / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  const dois = n => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${dois(m)}:${dois(sec)}` : `${dois(m)}:${dois(sec)}`;
+}
+
 function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCancelarItem }) {
   const [pedidosEntregues, setPedidosEntregues] = useState([]);
   const [saiuEstab, setSaiuEstab] = useState({});
+  // 18/11/2026: horário (ISO) em que o motoboy clicou "Saí do estabelecimento" e o tempo
+  // final de cada entrega (pra congelar o cronômetro quando finaliza). O que vem do banco
+  // (p.saiuEstabelecimentoEm) vale mais — aqui é só pra reagir na hora do clique.
+  const [saiuEm, setSaiuEm] = useState({});
+  const [tempoEntrega, setTempoEntrega] = useState({});
   // Adicionado em 18/10/2026: botão "Cheguei na loja". Guarda o horário em que o
   // motoboy avisou que chegou (por pedido). O que vem do banco (p.chegouLojaEm)
   // vale mais que isso — aqui é só pra a tela reagir na hora do clique.
@@ -548,10 +564,12 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
   }
 
   async function sairEstabelecimento(pedidoId) {
+    const agoraISO = new Date().toISOString();
     setSaiuEstab(prev=>({...prev,[pedidoId]:true}));
+    setSaiuEm(prev=>({...prev,[pedidoId]:agoraISO}));
     await supabase.from("pedidos").update({
       status: "saiu_estabelecimento",
-      saiu_estabelecimento_em: new Date().toISOString(),
+      saiu_estabelecimento_em: agoraISO,
     }).eq("id", pedidoId);
   }
 
@@ -559,6 +577,12 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
     if (pedidosEntregues.includes(pedidoId)) return; // 14/11/2026: já entregue, não registra de novo
     const novos = [...pedidosEntregues, pedidoId];
     setPedidosEntregues(novos);
+    // 18/11/2026: congela o cronômetro de entrega no momento em que finaliza.
+    try {
+      const pAtual = corrida.pedidos.find(x => x.id === pedidoId);
+      const iniISO = saiuEm[pedidoId] || (pAtual && pAtual.saiuEstabelecimentoEm);
+      if (iniISO) setTempoEntrega(prev => ({ ...prev, [pedidoId]: Date.now() - new Date(iniISO).getTime() }));
+    } catch (e) { /* só visual */ }
     // Corrigido em 07/09/2026 a pedido do Alessandro: antes, o banco só era
     // atualizado quando TODOS os pedidos da corrida terminavam juntos — até
     // lá, mesmo o que já tinha sido entregue continuava marcado como "a
@@ -773,6 +797,18 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
             {!entregue && saiu && (
               <div>
                 <div style={{background:"#0d3d2e",border:"1px solid #34d399",borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+                  {(()=>{
+                    // 18/11/2026: cronômetro ao vivo do tempo de entrega (da saída da loja até finalizar).
+                    const iniISO = saiuEm[p.id] || p.saiuEstabelecimentoEm;
+                    if (!iniISO) return null;
+                    const dec = Date.now() - new Date(iniISO).getTime();
+                    return (
+                      <div style={{background:"#12305a",border:"1px solid #3b82f6",borderRadius:10,padding:"8px 12px",marginBottom:10,textAlign:"center"}}>
+                        <div style={{color:"#93c5fd",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1}}>⏱️ Tempo de entrega</div>
+                        <div style={{color:"#f9fafb",fontWeight:900,fontSize:28,fontVariantNumeric:"tabular-nums",lineHeight:1.2}}>{formatarCronometro(dec)}</div>
+                      </div>
+                    );
+                  })()}
                   <div style={{color:"#34d399",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>🏠 Entregar ao cliente</div>
                   <div style={{color:"#f9fafb",fontWeight:700,fontSize:15}}>{p.clienteNome}</div>
                   <div style={{color:"#f9fafb",fontWeight:600,fontSize:14,marginTop:2}}>{p.rua}, {p.num}</div>
@@ -872,6 +908,7 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
             {entregue && (
               <div style={{textAlign:"center",padding:"10px",background:"#0d3d2e",borderRadius:8}}>
                 <span style={{color:"#34d399",fontWeight:700,fontSize:13}}>✅ Entregue para {p.clienteNome}!</span>
+                {tempoEntrega[p.id] != null && <div style={{color:"#93c5fd",fontSize:12,fontWeight:700,marginTop:4}}>⏱️ Tempo de entrega: {formatarCronometro(tempoEntrega[p.id])}</div>}
               </div>
             )}
 
@@ -891,8 +928,8 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
       })}
 
       {modalCancelarItem && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-          <div style={{background:"#111827",border:"2px solid #f59e0b",borderRadius:16,width:"100%",maxWidth:420,padding:24}}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:400,display:"flex",overflowY:"auto",WebkitOverflowScrolling:"touch",padding:16}}>
+          <div style={{background:"#111827",border:"2px solid #f59e0b",borderRadius:16,width:"100%",maxWidth:420,padding:24,margin:"auto",boxSizing:"border-box"}}>
             <div style={{color:"#fbbf24",fontWeight:900,fontSize:18,marginBottom:6}}>Cancelar só este pedido</div>
             <div style={{color:"#9ca3af",fontSize:13,marginBottom:14}}>
               Isso cancela <b>apenas este pedido</b>. Os outros pedidos da corrida continuam normais, você não fica offline e não precisa refazer nada.
@@ -927,8 +964,8 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
       </div>
 
       {modalCancelar && (
-        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-          <div style={{background:"#111827",border:"2px solid #ef4444",borderRadius:16,width:"100%",maxWidth:420,padding:24}}>
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",zIndex:400,display:"flex",overflowY:"auto",WebkitOverflowScrolling:"touch",padding:16}}>
+          <div style={{background:"#111827",border:"2px solid #ef4444",borderRadius:16,width:"100%",maxWidth:420,padding:24,margin:"auto",boxSizing:"border-box"}}>
             <div style={{color:"#f87171",fontWeight:900,fontSize:18,marginBottom:6}}>⚠️ Problema na entrega</div>
             <div style={{color:"#9ca3af",fontSize:13,marginBottom:16}}>Selecione o motivo. O empresário e a plataforma serão notificados imediatamente.</div>
             <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14}}>
@@ -962,7 +999,7 @@ function CorridaAtiva({ corrida, onEntregar, onEntregarItem, onCancelar, onCance
               <div style={{color:"#f87171",fontSize:12,fontWeight:700}}>⚠️ Ao confirmar você ficará offline automaticamente e o empresário receberá um aviso automático na tela dele com o motivo.</div>
               <div style={{color:"#fbbf24",fontSize:11,marginTop:6}}>💡 Se der, avisa o estabelecimento direto pelo WhatsApp também (botão "Falar com o estabelecimento" na tela da corrida) — assim ele já sabe na hora e não fica esperando.</div>
             </div>
-            <div style={{display:"flex",gap:8}}>
+            <div style={{display:"flex",gap:8,position:"sticky",bottom:0,background:"#111827",paddingTop:8}}>
               <button onClick={()=>{
                 const motivo = motivoCancelamento==="outro" ? motivoCustom : {pneu:"Pneu furado",gasolina:"Acabou a gasolina",acidente:"Acidente / queda",saude:"Problema de saúde",longe:"Muito longe pra buscar"}[motivoCancelamento];
                 if (!motivo) return;
@@ -1540,6 +1577,7 @@ export default function AppMotoboy() {
                 criadoEm: new Date(p.criado_em).getTime(),
                 aceitoEm: p.aceito_em || null,
                 chegouLojaEm: p.chegou_loja_em || null,
+                saiuEstabelecimentoEm: p.saiu_estabelecimento_em || null,
                 statusBanco: p.status,
               })),
             });
@@ -1901,6 +1939,7 @@ export default function AppMotoboy() {
                 criadoEm: new Date(pedidoCompleto.criado_em).getTime(),
                 aceitoEm: pedidoCompleto.aceito_em || null,
                 chegouLojaEm: pedidoCompleto.chegou_loja_em || null,
+                saiuEstabelecimentoEm: pedidoCompleto.saiu_estabelecimento_em || null,
                 statusBanco: pedidoCompleto.status,
               };
               setCorridaAtiva(prev => prev
@@ -1992,6 +2031,7 @@ export default function AppMotoboy() {
           // quando essa recarga rodava.
           aceitoEm: p.aceito_em || null,
           chegouLojaEm: p.chegou_loja_em || null,
+          saiuEstabelecimentoEm: p.saiu_estabelecimento_em || null,
           statusBanco: p.status,
         })),
       };
